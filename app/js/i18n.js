@@ -9830,7 +9830,7 @@
       "Staff Earnings Matrix, Site Transport & Freelance": "مصفوفة استحقاقات الموظفين وبدل نقل المواقع والمياومين",
       "Staff Employment": "توظيف موظف",
       "Staff Employment / Contract": "عقد عمل موظف",
-      "Staff Enrolment Face ID": "بصمة الوجه لتسجيل الموظفين",
+      "Staff Enrolment Face ID": "بصمة وجه تسجيل الموظفين",
       "Staff Headcount by Linked Role Category": "عدد الموظفين حسب فئة الدور المرتبطة",
       "Staff Meal": "وجبة موظفين",
       "Staff Member": "الموظف",
@@ -10284,7 +10284,7 @@
       "The request did not go through. Try again.": "لم يتم تنفيذ الطلب. أعد المحاولة.",
       "Thermal Slip": "إيصال حراري",
       "Thermal Ticket Preview (80mm · Priced)": "معاينة الإيصال الحراري (80 مم · مسعّر)",
-      "Thermal Ticket Preview (80mm)": "معاينة الإيصال الحراري (80مم)",
+      "Thermal Ticket Preview (80mm)": "معاينة الإيصال الحراري (80 مم)",
       "Thermal Voucher": "قسيمة حرارية",
       "These coordinates are outside the valid range.": "هذه الإحداثيات خارج النطاق الصالح.",
       "Third Party": "طرف ثالث",
@@ -16027,7 +16027,7 @@
       "Rate schedules require individual re-price review": "تتطلب جداول الأسعار مراجعة إعادة التسعير كلٌ على حدة",
       "Closed accounting period": "فترة محاسبية مقفلة",
       "Combined total": "الإجمالي المجمّع",
-      "skipped": "متخطّى",
+      "skipped": "متخطى",
       "Row is locked or outside your scope": "الصف مقفل أو خارج نطاق صلاحياتك",
       "Summary / analytics rows cannot be voided": "لا يمكن إلغاء صفوف الملخصات أو التحليلات",
       "No selected records can be bulk-voided": "لا توجد سجلات محددة قابلة للإلغاء الجماعي",
@@ -16143,7 +16143,89 @@
       "Closing Balance": "الرصيد الختامي",
       "Recipient WhatsApp:": "واتساب المستلم:",
       "Scoped strictly to": "محصور حصرياً بـ",
-      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "لا يوجد رقم واتساب محفوظ في الملف (يفتح واتساب لاختيار جهة الاتصال)"
+      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "لا يوجد رقم واتساب محفوظ في الملف (يفتح واتساب لاختيار جهة الاتصال)",
+      "Rear Camera": "الكاميرا الخلفية",
+      "Front Camera": "الكاميرا الأمامية",
+      "Slip Preview": "معاينة الإيصال",
+      "Recent": "الأخيرة",
+      "Starting Camera": "جارٍ تشغيل الكاميرا",
+      "Camera Ready": "الكاميرا جاهزة",
+      "Live Admin Scanner": "ماسح المشرف المباشر",
+      "Starting Front Camera...": "جارٍ تشغيل الكاميرا الأمامية...",
+      "Starting Rear Camera...": "جارٍ تشغيل الكاميرا الخلفية...",
+      "Starting front camera...": "جارٍ تشغيل الكاميرا الأمامية...",
+      "Starting rear camera...": "جارٍ تشغيل الكاميرا الخلفية...",
+      "Camera unavailable on this browser. Admin Face ID requires camera access.": "الكاميرا غير متوفرة على هذا المتصفح. تتطلب بصمة وجه المشرف الوصول إلى الكاميرا.",
+      "Unpriced Handover Pass": "تصريح تسليم غير مسعّر",
+      "Priced Official Voucher": "سند رسمي مسعّر",
+      "Pump Slip": "إيصال مضخة",
+      "Post & Print Ticket (58mm)": "ترحيل وطباعة الإيصال (58 مم)",
+      "Post & Print Gate Pass (58mm)": "ترحيل وطباعة تصريح الخروج (58 مم)",
+      "Post & Print Gate Pass (80mm)": "ترحيل وطباعة تصريح الخروج (80 مم)",
+      "Post & Print Scale Slip (58mm)": "ترحيل وطباعة فيشة القبان (58 مم)",
+      "Post & Print Scale Slip (80mm)": "ترحيل وطباعة فيشة القبان (80 مم)",
+      "Thermal Ticket Preview (58mm)": "معاينة الإيصال الحراري (58 مم)",
+      "Thermal Ticket Preview (58mm · Priced)": "معاينة الإيصال الحراري (58 مم · مسعّر)",
+      "Thermal Ticket Preview (58mm · Unpriced)": "معاينة الإيصال الحراري (58 مم · غير مسعّر)",
+      "Thermal Ticket Preview (80mm · Unpriced)": "معاينة الإيصال الحراري (80 مم · غير مسعّر)",
+      "Scan Admin/Supervisor Face ID for Station Setup, or ISABI Entry Operator Face ID to enrol staff in your Business Unit": "امسح بصمة وجه المشرف أو المدير لإعداد المحطة، أو مشغّل إدخال ISABI لتسجيل موظفي وحدتك",
+      "Scan an ISABI Entry Operator, Supervisor, or Admin Face ID to enrol staff in your assigned Business Unit": "امسح بصمة وجه مشغّل إدخال ISABI أو المشرف أو المدير لتسجيل موظفي وحدتك المعيّنة",
+      "5-Min Inactivity Auto-Logout": "تسجيل خروج تلقائي بعد 5 دقائق خمول",
+      "Camera permission denied or busy. Tap Restart Scanner to retry.": "تم رفض إذن الكاميرا أو أنها مشغولة. اضغط إعادة تشغيل الماسح للمحاولة مجدداً.",
+      "Position Admin or Manager face inside the oval guide": "ضع وجه المشرف أو المدير داخل الإطار البيضاوي",
+      "Position Admin, Supervisor, or ISABI Entry Operator face inside the oval guide": "ضع وجه المدير أو المشرف أو مشغّل إدخال ISABI داخل الإطار البيضاوي",
+      "Position ISABI Entry Operator, Supervisor, or Admin face inside the oval guide": "ضع وجه مشغّل إدخال ISABI أو المشرف أو المدير داخل الإطار البيضاوي",
+      "Look at the camera to verify Admin or Manager Face ID.": "انظر إلى الكاميرا للتحقق من بصمة وجه المشرف أو المدير.",
+      "Verifying Admin Face ID...": "جارٍ التحقق من بصمة وجه المشرف...",
+      "Print:": "الطباعة:",
+      "· Print:": "· الطباعة:",
+      "Starting Camera...": "جارٍ تشغيل الكاميرا...",
+      "Tap to Start Camera": "اضغط لتشغيل الكاميرا",
+      "Tap below to activate the front camera and capture each guided angle.": "اضغط أدناه لتفعيل الكاميرا والتقاط كل زاوية موجهة.",
+      "Center face inside oval": "وجّه الوجه داخل الإطار البيضاوي",
+      "Live Verify · Look at Camera": "تحقق مباشر · انظر إلى الكاميرا",
+      "By Owner": "حسب المالك",
+      "Hauler / Owner": "الناقل / المالك",
+      "All Haulers": "كل الناقلين",
+      "Unpaid Balance": "رصيد غير مسدّد",
+      "Multi-Truck": "متعدّد الشاحنات",
+      "Fleet Deductions": "حسومات الأسطول",
+      "Booked Haulage ($)": "أجرة النقل المسجّلة ($)",
+      "Fleet Deductions ($)": "حسومات الأسطول ($)",
+      "Net Operating ($)": "الصافي التشغيلي ($)",
+      "Filter hauler or truck...": "تصفية حسب الناقل أو الشاحنة...",
+      "Filter hauler or truck": "تصفية حسب الناقل أو الشاحنة",
+      "hauler": "ناقل",
+      "haulers": "ناقلين",
+      "No external haulers in Own Fleet cohort.": "لا يوجد ناقلون خارجيون ضمن شريحة أسطول الشركة.",
+      "Show All Haulers": "عرض كل الناقلين",
+      "No hauler accounts match the active filter.": "لا توجد حسابات ناقلين مطابقة للتصفية الحالية.",
+      "Open full owner account settlement sheet (defaults to Booked Revenue)": "فتح كشف تسوية حساب المالك الكامل (يفتتح على الإيراد المسجّل)",
+      "+ Settle Matched Leg": "+ تسديد الطرف المطابق",
+      "Settled after statement period": "تم التسديد بعد فترة الكشف",
+      "Locked to Statement 16 leg": "مقفل على طرف كشف الحساب ١٦",
+      "Adjusted for settlements after statement period": "معدل وفق التسديدات اللاحقة لفترة الكشف",
+      "Multi-entity balance: prefilled for selected entity": "رصيد متعدد الشركات: معبأ للشركة المحددة",
+      "Unpriced Loads ($0) on this leg": "نقلات غير مسعرة ($0) على هذا الطرف",
+      "entered": "مُدخل",
+      "Batch Summary": "ملخص الدفعة",
+      "Batch Queue Summary": "ملخص دفعة الإيصالات",
+      "Reopen": "إعادة فتح",
+      "Reopen First Skipped": "إعادة فتح أول متخطى",
+      "Finish & Dismiss": "إنهاء وإغلاق",
+      "Skipped slips": "الإيصالات المتخطاة",
+      "Slip already posted in this batch.": "تم ترحيل هذا الإيصال بالفعل في هذه الدفعة.",
+      "Multi-Slip Stack": "كومة إيصالات متعددة",
+      "Rapid-snap separate slips or invoices (each becomes 1 queue item)": "التقط إيصالات أو فواتير منفصلة بسرعة (كل لقطة تدخل كبند مستقل)",
+      "Rapid-snap separate slips or invoices into a 1-of-N entry queue": "التقط إيصالات أو فواتير منفصلة بسرعة إلى قائمة إدخال 1 من N",
+      "Slip locked. Hold steady or click Capture Slip.": "تم تثبيت الإيصال. اثبت أو اضغط التقاط الإيصال.",
+      "Slip captured! Place next slip or click Queue Slips.": "تم التقاط الإيصال! ضع الإيصال التالي أو اضغط إضافة للقائمة.",
+      "Capture Slip": "التقاط الإيصال",
+      "+ Add Slip": "+ إضافة إيصال",
+      "+ Slip": "+ إيصال",
+      "Queue 1 Slip": "إضافة إيصال واحد للقائمة",
+      "1 Slip Ready": "إيصال واحد جاهز",
+      "Send 1 Slip": "إرسال إيصال واحد"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -25955,7 +26037,7 @@
       "Staff Earnings Matrix, Site Transport & Freelance": "Matrice des gains salariés, transport chantier et extras",
       "Staff Employment": "Embauche collaborateur",
       "Staff Employment / Contract": "Contrat de Travail Collaborateur",
-      "Staff Enrolment Face ID": "Face ID Enrôlement du Personnel",
+      "Staff Enrolment Face ID": "Face ID Enrôlement Personnel",
       "Staff Headcount by Linked Role Category": "Effectif par Catégorie de Fonction",
       "Staff Meal": "Repas du personnel",
       "Staff Member": "Collaborateur",
@@ -26409,7 +26491,7 @@
       "The request did not go through. Try again.": "La demande n'a pas abouti. Réessayez.",
       "Thermal Slip": "Reçu Thermique",
       "Thermal Ticket Preview (80mm · Priced)": "Aperçu Reçu Thermique (80mm · Chiffré)",
-      "Thermal Ticket Preview (80mm)": "Aperçu Ticket Thermique (80mm)",
+      "Thermal Ticket Preview (80mm)": "Aperçu Reçu Thermique (80mm)",
       "Thermal Voucher": "Bon thermique",
       "These coordinates are outside the valid range.": "Ces coordonnées sont hors de la plage valide.",
       "Third Party": "Tiers",
@@ -32152,7 +32234,7 @@
       "Rate schedules require individual re-price review": "Les barèmes tarifaires exigent un contrôle de réévaluation individuel",
       "Closed accounting period": "Période comptable clôturée",
       "Combined total": "Total combiné",
-      "skipped": "ignoré(s)",
+      "skipped": "ignoré",
       "Row is locked or outside your scope": "Ligne verrouillée ou hors de votre périmètre",
       "Summary / analytics rows cannot be voided": "Les lignes de synthèse ou d'analyse ne peuvent pas être annulées",
       "No selected records can be bulk-voided": "Aucun enregistrement sélectionné ne peut être annulé en lot",
@@ -32268,7 +32350,89 @@
       "Closing Balance": "Solde de clôture",
       "Recipient WhatsApp:": "WhatsApp du destinataire :",
       "Scoped strictly to": "Limité strictement à",
-      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "Aucun numéro WhatsApp enregistré (WhatsApp ouvrira le sélecteur)"
+      "No saved WhatsApp number on file (WhatsApp opens contact picker)": "Aucun numéro WhatsApp enregistré (WhatsApp ouvrira le sélecteur)",
+      "Rear Camera": "Caméra Arrière",
+      "Front Camera": "Caméra Avant",
+      "Slip Preview": "Aperçu Reçu",
+      "Recent": "Récents",
+      "Starting Camera": "Démarrage Caméra",
+      "Camera Ready": "Caméra Prête",
+      "Live Admin Scanner": "Scanner Admin Actif",
+      "Starting Front Camera...": "Démarrage caméra avant...",
+      "Starting Rear Camera...": "Démarrage caméra arrière...",
+      "Starting front camera...": "Démarrage caméra avant...",
+      "Starting rear camera...": "Démarrage caméra arrière...",
+      "Camera unavailable on this browser. Admin Face ID requires camera access.": "Caméra indisponible sur ce navigateur. Face ID Admin nécessite l’accès caméra.",
+      "Unpriced Handover Pass": "Bon de Remise Non Chiffré",
+      "Priced Official Voucher": "Bon Officiel Chiffré",
+      "Pump Slip": "Ticket Pompe",
+      "Post & Print Ticket (58mm)": "Valider & Imprimer (58mm)",
+      "Post & Print Gate Pass (58mm)": "Valider & Imprimer Bon Sortie (58mm)",
+      "Post & Print Gate Pass (80mm)": "Valider & Imprimer Bon Sortie (80mm)",
+      "Post & Print Scale Slip (58mm)": "Valider & Imprimer Ticket Bascule (58mm)",
+      "Post & Print Scale Slip (80mm)": "Valider & Imprimer Ticket Bascule (80mm)",
+      "Thermal Ticket Preview (58mm)": "Aperçu Reçu Thermique (58mm)",
+      "Thermal Ticket Preview (58mm · Priced)": "Aperçu Reçu Thermique (58mm · Chiffré)",
+      "Thermal Ticket Preview (58mm · Unpriced)": "Aperçu Reçu Thermique (58mm · Non Chiffré)",
+      "Thermal Ticket Preview (80mm · Unpriced)": "Aperçu Reçu Thermique (80mm · Non Chiffré)",
+      "Scan Admin/Supervisor Face ID for Station Setup, or ISABI Entry Operator Face ID to enrol staff in your Business Unit": "Scannez le Face ID Admin/Superviseur pour configurer la station, ou Opérateur ISABI pour enrôler votre unité",
+      "Scan an ISABI Entry Operator, Supervisor, or Admin Face ID to enrol staff in your assigned Business Unit": "Scannez le Face ID d’un Opérateur ISABI, Superviseur ou Admin pour enrôler le personnel de votre unité",
+      "5-Min Inactivity Auto-Logout": "Déconnexion auto après 5 min d’inactivité",
+      "Camera permission denied or busy. Tap Restart Scanner to retry.": "Accès caméra refusé ou occupé. Appuyez sur Redémarrer le scanner pour réessayer.",
+      "Position Admin or Manager face inside the oval guide": "Placez le visage de l’Admin ou du Responsable dans le guide ovale",
+      "Position Admin, Supervisor, or ISABI Entry Operator face inside the oval guide": "Placez le visage de l’Admin, Superviseur ou Opérateur ISABI dans le guide ovale",
+      "Position ISABI Entry Operator, Supervisor, or Admin face inside the oval guide": "Placez le visage d’un Opérateur ISABI, Superviseur ou Admin dans le guide ovale",
+      "Look at the camera to verify Admin or Manager Face ID.": "Regardez la caméra pour vérifier le Face ID Admin ou Responsable.",
+      "Verifying Admin Face ID...": "Vérification Face ID Admin...",
+      "Print:": "Impression :",
+      "· Print:": "· Impression :",
+      "Starting Camera...": "Démarrage caméra...",
+      "Tap to Start Camera": "Appuyer pour démarrer la caméra",
+      "Tap below to activate the front camera and capture each guided angle.": "Appuyez ci-dessous pour activer la caméra et capturer chaque angle guidé.",
+      "Center face inside oval": "Centrez le visage dans l’ovale",
+      "Live Verify · Look at Camera": "Vérif. en direct · Regardez la caméra",
+      "By Owner": "Par propriétaire",
+      "Hauler / Owner": "Transporteur / Propriétaire",
+      "All Haulers": "Tous les transporteurs",
+      "Unpaid Balance": "Solde impayé",
+      "Multi-Truck": "Multi-camions",
+      "Fleet Deductions": "Déductions flotte",
+      "Booked Haulage ($)": "Transport comptabilisé ($)",
+      "Fleet Deductions ($)": "Déductions flotte ($)",
+      "Net Operating ($)": "Net d'exploitation ($)",
+      "Filter hauler or truck...": "Filtrer transporteur ou camion...",
+      "Filter hauler or truck": "Filtrer transporteur ou camion",
+      "hauler": "transporteur",
+      "haulers": "transporteurs",
+      "No external haulers in Own Fleet cohort.": "Aucun transporteur externe dans la cohorte flotte propre.",
+      "Show All Haulers": "Afficher tous les transporteurs",
+      "No hauler accounts match the active filter.": "Aucun compte transporteur ne correspond au filtre actif.",
+      "Open full owner account settlement sheet (defaults to Booked Revenue)": "Ouvrir le relevé de règlement complet du compte propriétaire (par défaut Revenu Comptabilisé)",
+      "+ Settle Matched Leg": "+ Régler le volet rapproché",
+      "Settled after statement period": "Réglé après la période du relevé",
+      "Locked to Statement 16 leg": "Verrouillé sur le volet du relevé 16",
+      "Adjusted for settlements after statement period": "Ajusté selon les règlements postérieurs à la période",
+      "Multi-entity balance: prefilled for selected entity": "Solde multi-entités : prérempli pour l’entité sélectionnée",
+      "Unpriced Loads ($0) on this leg": "Chargements non tarifés (0 $) sur ce volet",
+      "entered": "saisi",
+      "Batch Summary": "Résumé du lot",
+      "Batch Queue Summary": "Résumé de la file du lot",
+      "Reopen": "Rouvrir",
+      "Reopen First Skipped": "Rouvrir le 1er ignoré",
+      "Finish & Dismiss": "Terminer et fermer",
+      "Skipped slips": "Pièces ignorées",
+      "Slip already posted in this batch.": "Cette pièce a déjà été comptabilisée dans ce lot.",
+      "Multi-Slip Stack": "Pile multi-pièces",
+      "Rapid-snap separate slips or invoices (each becomes 1 queue item)": "Capturez rapidement plusieurs justificatifs séparés (chacun devient 1 élément de file)",
+      "Rapid-snap separate slips or invoices into a 1-of-N entry queue": "Capturez rapidement des justificatifs séparés dans une file de saisie 1 sur N",
+      "Slip locked. Hold steady or click Capture Slip.": "Justificatif cadré. Restez stable ou cliquez sur Capturer la pièce.",
+      "Slip captured! Place next slip or click Queue Slips.": "Pièce capturée ! Placez la suivante ou cliquez sur Mettre en file.",
+      "Capture Slip": "Capturer la pièce",
+      "+ Add Slip": "+ Ajouter pièce",
+      "+ Slip": "+ Pièce",
+      "Queue 1 Slip": "Mettre 1 pièce en file",
+      "1 Slip Ready": "1 pièce prête",
+      "Send 1 Slip": "Envoyer 1 pièce"
     }
   };
 
@@ -35401,13 +35565,44 @@
     m = trimmed.match(/^WTC vs\. BBConstruction Work Coverage Matrix\s*\((\d+)\s+Trips for Selected\s+(\d+)\s+Trucks\)$/i);
     if (m) return lang === 'ar' ? `مصفوفة تغطية العمل بين WTC و BBConstruction (${m[1]} نقلة للشاحنات الـ ${m[2]} المحددة)` : `Matrice de Couverture WTC vs BBConstruction (${m[1]} Voyages pour ${m[2]} Camions)`;
 
-    m = trimmed.match(/^ESC\/POS Stream Ready\s*·\s*([\d,]+)\s*bytes\s*·\s*80mm\s*\((\d+)\s*cols\)\s*·\s*(.+)$/i);
+    m = trimmed.match(/^ESC\/POS Stream Ready\s*·\s*([\d,]+)\s*bytes\s*·\s*(58|80)mm\s*\((\d+)\s*cols\)\s*·\s*(.+)$/i);
     if (m) {
-      const modeAr = /PRICED/i.test(m[3]) ? 'سند مسعّر' : 'تصريح مرور غير مسعّر';
-      const modeFr = /PRICED/i.test(m[3]) ? 'BON CHIFFRÉ' : 'BON NON CHIFFRÉ';
+      const modeAr = /PRICED/i.test(m[4]) && !/UNPRICED/i.test(m[4]) ? 'سند مسعّر' : 'تصريح مرور غير مسعّر';
+      const modeFr = /PRICED/i.test(m[4]) && !/UNPRICED/i.test(m[4]) ? 'BON CHIFFRÉ' : 'BON NON CHIFFRÉ';
       return lang === 'ar'
-        ? `بث الطباعة الحرارية جاهز · ${m[1]} بايت · 80مم (${m[2]} عموداً) · ${modeAr}`
-        : `Flux ESC/POS Prêt · ${m[1]} octets · 80mm (${m[2]} col.) · ${modeFr}`;
+        ? `بث الطباعة الحرارية جاهز · ${m[1]} بايت · ${m[2]}مم (${m[3]} عموداً) · ${modeAr}`
+        : `Flux ESC/POS Prêt · ${m[1]} octets · ${m[2]}mm (${m[3]} col.) · ${modeFr}`;
+    }
+
+    m = trimmed.match(/^Ready\s*·\s*(58|80)mm\s*\((\d+)\s*cols\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جاهز · ${m[1]}مم (${m[2]} عموداً)`
+        : `Prêt · ${m[1]}mm (${m[2]} col.)`;
+    }
+
+    m = trimmed.match(/^(58|80)mm\s*·\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${m[1]} مم · ${inner}` : `${m[1]}mm · ${inner}`;
+    }
+
+    m = trimmed.match(/^Preparing lens for\s+(.+?)\.\s*Hold (?:device|tablet) steady at eye level\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جارٍ تجهيز العدسة لـ ${m[1]}. ثبّت الجهاز بمستوى النظر.`
+        : `Préparation de la caméra pour ${m[1]}. Maintenez l'appareil stable à hauteur des yeux.`;
+    }
+
+    m = trimmed.match(/^·\s*Print:\s*$/i);
+    if (m) {
+      return lang === 'ar' ? ' · الطباعة: ' : ' · Impression : ';
+    }
+
+    m = trimmed.match(/^Pose\s+(\d+)\s+of\s+3(?:\s*·\s*(.+))?$/i);
+    if (m) {
+      const suf = m[2] ? ` · ${translateCore(m[2].trim(), lang, depth + 1)}` : '';
+      return lang === 'ar' ? `الوضعية ${m[1]} من 3${suf}` : `Pose ${m[1]} sur 3${suf}`;
     }
 
     m = trimmed.match(/^TICKET\s+#\s*(\S+)$/i);
@@ -39107,6 +39302,117 @@
       };
     }
 
+    m = trimmed.match(/^Queue (\d+) Slips?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'إضافة إيصال واحد للقائمة' : `إضافة ${n} إيصالات للقائمة`)
+          : `Mettre ${n} ${n === 1 ? 'pièce' : 'pièces'} en file`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d+) Slips? Ready$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'إيصال واحد جاهز' : `${n} إيصالات جاهزة`)
+          : (n === 1 ? '1 pièce prête' : `${n} pièces prêtes`),
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Send (\d+) Slips?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? (n === 1 ? 'إرسال إيصال واحد' : `إرسال ${n} إيصالات`)
+          : `Envoyer ${n} ${n === 1 ? 'pièce' : 'pièces'}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Send (\d+) Pages?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? `إرسال ${n} ${n === 1 ? 'صفحة' : 'صفحات'}`
+          : `Envoyer ${n} ${n === 1 ? 'page' : 'pages'}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Attach (\d+) Scans?( Anyway)?$/i);
+    if (m) {
+      const n = Number(m[1]);
+      const anyway = Boolean(m[2]);
+      if (lang === 'ar') {
+        const unit = n === 1 ? 'مسح' : (n === 2 ? 'مسحين' : 'مسوحات');
+        return { out: `إرفاق ${n === 2 ? unit : `${n} ${unit}`}${anyway ? ' على أي حال' : ''}`, ok: true };
+      }
+      return { out: `Joindre ${n} ${n === 1 ? 'scan' : 'scans'}${anyway ? ' quand même' : ''}`, ok: true };
+    }
+
+    m = trimmed.match(/^(\d+) Cropped Scans? Ready$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? `${n} ${n === 1 ? 'مسح مقصوص جاهز' : 'مسوحات مقصوصة جاهزة'}`
+          : (n === 1 ? '1 scan recadré prêt' : `${n} scans recadrés prêts`),
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Received (\d+) slips? from phone!$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar'
+          ? `تم استلام ${n} ${n === 1 ? 'إيصال' : 'إيصالات'} من الهاتف!`
+          : `${n} ${n === 1 ? 'pièce reçue' : 'pièces reçues'} du téléphone !`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^(\d+) Page\(s\) Received$/i);
+    if (m) {
+      const n = Number(m[1]);
+      return {
+        out: lang === 'ar' ? `تم استلام ${n} صفحات` : `${n} page(s) reçue(s)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Batch queue complete:\s*(?:all\s+)?(\d+)\s+slips?\s+posted(?:\s*·\s*([+-]?\$[\d.,-]+)\s+total)?\.$/i);
+    if (m) {
+      const n = Number(m[1]);
+      const usdPart = m[2] ? ` · ${m[2]}` : '';
+      return {
+        out: lang === 'ar'
+          ? `اكتملت دفعة الإيصالات: تم ترحيل ${n} ${n === 1 ? 'إيصال' : 'إيصالات'}${usdPart ? usdPart + ' الإجمالي' : ''}.`
+          : `Lot terminé : ${n} ${n === 1 ? 'pièce comptabilisée' : 'pièces comptabilisées'}${usdPart ? usdPart + ' au total' : ''}.`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Batch queue closed:\s*(\d+)\s+posted,\s*(\d+)\s+skipped(?:\s*·\s*([+-]?\$[\d.,-]+)\s+entered)?\.$/i);
+    if (m) {
+      const p = Number(m[1]);
+      const s = Number(m[2]);
+      const usdPart = m[3] ? ` · ${m[3]}` : '';
+      return {
+        out: lang === 'ar'
+          ? `تم إغلاق دفعة الإيصالات: ${p} مرحّل، ${s} متخطى${usdPart ? usdPart + ' مُدخل' : ''}.`
+          : `Lot clôturé : ${p} comptabilisé(s), ${s} ignoré(s)${usdPart ? usdPart + ' saisi(s)' : ''}.`,
+        ok: true
+      };
+    }
+
     m = trimmed.match(/^(.+?)\s+Cutover Audit$/i);
     if (m) return { out: lang === 'ar' ? `تدقيق فترة الانتقال (${translateMonthTokens(m[1], lang)})` : `Audit de Bascule (${translateMonthTokens(m[1], lang)})`, ok: true };
 
@@ -39299,6 +39605,26 @@
     if (m) {
       return {
         out: lang === 'ar' ? `توزيع على الفئات (${m[1]} سطور)` : `Ventiler par catégorie (${m[1]} lignes)`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Diesel (-?\$[\d,.]+) · Workshop (-?\$[\d,.]+) · Driver (-?\$[\d,.]+)$/);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `المازوت ${m[1]} · الصيانة ${m[2]} · السائق ${m[3]}`
+          : `Gasoil ${m[1]} · Atelier ${m[2]} · Chauffeur ${m[3]}`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Gross transport excludes (-?\$[\d,.]+) in Fleet deductions \(Diesel (-?\$[\d,.]+), Workshop (-?\$[\d,.]+), Driver (-?\$[\d,.]+)\)\. Click to open Owner Settlement Sheet\.$/);
+    if (m) {
+      return {
+        out: lang === 'ar'
+          ? `إجمالي النقل يستثني ${m[1]} كحسومات الأسطول (المازوت ${m[2]}، الصيانة ${m[3]}، السائق ${m[4]}). انقر لفتح كشف تسوية المالك.`
+          : `Le transport brut exclut ${m[1]} de déductions flotte (Gasoil ${m[2]}, Atelier ${m[3]}, Chauffeur ${m[4]}). Cliquez pour ouvrir le relevé de règlement propriétaire.`,
         ok: true
       };
     }

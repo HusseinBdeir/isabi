@@ -931,6 +931,25 @@ body.kiosk-locked #mobileSmartScanBtn {
 :root[data-theme="dark"] .ss-queue-pill.is-posted {
   color: #4ADE80;
 }
+.ss-queue-done-summary {
+  border-color: rgba(31, 122, 76, 0.42);
+  background: var(--surface, #FAF8F4);
+}
+:root[data-theme="dark"] .ss-queue-done-summary {
+  background: var(--surface-2, #1E293B);
+  border-color: rgba(52, 211, 153, 0.42);
+}
+.ss-reopen-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-reopen-chip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
 @media (max-width: 768px) {
   .ss-queue-target {
     max-width: 100%;

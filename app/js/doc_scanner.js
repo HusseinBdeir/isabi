@@ -1131,7 +1131,7 @@
   const IS_TEST_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
 
   function buildPhoneScanHandoffUrl(sid, tok, preset) {
-    const pCode = preset === 'vin' ? 'v' : (preset === 'card' ? 'c' : (preset === 'document' ? 'd' : (preset === 'id_card' ? 'i' : 'r')));
+    const pCode = preset === 'stack' ? 's' : (preset === 'vin' ? 'v' : (preset === 'card' ? 'c' : (preset === 'document' ? 'd' : (preset === 'id_card' ? 'i' : 'r'))));
     const base = location.origin + location.pathname;
     return `${base}?ps=${encodeURIComponent(sid)}.${encodeURIComponent(tok)}.${pCode}`;
   }
@@ -1202,7 +1202,8 @@
     facingMode: 'environment',
     devices: [],
     deviceIdx: -1,
-    preset: 'receipt', // 'receipt' | 'document' | 'card' | 'vin'
+    preset: 'receipt', // 'receipt' | 'document' | 'card' | 'vin' | 'stack'
+    allowSlipStack: true,
     lastCardSubPreset: 'card', // 'card' | 'vin'
     zoom: 1,
     hwZoomApplied: 1,
@@ -1236,15 +1237,20 @@
     precheckAck: false,
     precheckOverrides: {},
     precheckSig: '',
-    precheckGen: 0
+    precheckGen: 0,
+    captureInflight: false
   };
+
+  function maxPagesForPreset(preset) {
+    return preset === 'stack' ? 20 : 8;
+  }
 
   function defaultEnhanceForPreset(preset) {
     return (preset === 'card' || preset === 'vin') ? 'color' : 'clean';
   }
 
   function defaultAutoSnapForPreset(preset) {
-    return preset === 'document';
+    return preset === 'document' || preset === 'stack';
   }
 
   function resolveDefaultPreset() {
@@ -1263,23 +1269,28 @@
   }
 
   function presetGuideLabel(preset, locked, awaitingTurn) {
-    if (awaitingTurn) return 'Page captured! Turn to next page or click Attach.';
+    if (awaitingTurn) {
+      return preset === 'stack'
+        ? 'Slip captured! Place next slip or click Queue Slips.'
+        : 'Page captured! Turn to next page or click Attach.';
+    }
     if (locked) {
-      return preset === 'vin'
-        ? 'VIN strip locked. Hold steady or click Capture.'
-        : 'Document locked in hand. Hold steady or click Capture.';
+      if (preset === 'vin') return 'VIN strip locked. Hold steady or click Capture.';
+      if (preset === 'stack') return 'Slip locked. Hold steady or click Capture Slip.';
+      return 'Document locked in hand. Hold steady or click Capture.';
     }
     if (preset === 'vin') return 'Align 17-character VIN or chassis plate inside narrow strip';
     if (preset === 'card') return 'Hold ID, VIN plate, or business card inside window (face stays excluded)';
     if (preset === 'document') return 'Hold or place A4 document inside window (surroundings cropped out)';
+    if (preset === 'stack') return 'Rapid-snap separate slips or invoices (each becomes 1 queue item)';
     return 'Hold receipt, delivery ticket, or slip inside window (document only)';
   }
 
   function getGuideNormRectForStage(stageEl, guideEl) {
     if (!stageEl || !guideEl) {
-      return S.preset === 'vin'
-        ? { x: 0.08, y: 0.35, w: 0.84, h: 0.30, preset: 'vin' }
-        : { x: 0.18, y: 0.08, w: 0.64, h: 0.84, preset: S.preset };
+      if (S.preset === 'vin') return { x: 0.08, y: 0.35, w: 0.84, h: 0.30, preset: 'vin' };
+      if (S.preset === 'stack') return { x: 0.15, y: 0.05, w: 0.70, h: 0.90, preset: 'stack' };
+      return { x: 0.18, y: 0.08, w: 0.64, h: 0.84, preset: S.preset };
     }
     const sr = stageEl.getBoundingClientRect();
     const gr = guideEl.getBoundingClientRect();
@@ -1287,6 +1298,7 @@
       if (S.preset === 'vin') return { x: 0.08, y: 0.35, w: 0.84, h: 0.30, preset: 'vin' };
       if (S.preset === 'card') return { x: 0.16, y: 0.17, w: 0.68, h: 0.66, preset: 'card' };
       if (S.preset === 'document') return { x: 0.11, y: 0.05, w: 0.78, h: 0.90, preset: 'document' };
+      if (S.preset === 'stack') return { x: 0.15, y: 0.05, w: 0.70, h: 0.90, preset: 'stack' };
       return { x: 0.21, y: 0.05, w: 0.58, h: 0.90, preset: 'receipt' };
     }
     return {
@@ -1515,14 +1527,23 @@
       try { URL.revokeObjectURL(pageObj.previewUrl); } catch (_) {}
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const prefix = S.preset === 'vin' ? 'Vin_Scan' : (S.preset === 'card' ? 'Card_Scan' : (S.preset === 'document' ? 'Doc_Scan' : 'Receipt_Scan'));
-    const fileName = `${prefix}_${stamp}_p${(S.pages.indexOf(pageObj) + 1) || 1}.jpg`;
+    const existingIdx = S.pages.indexOf(pageObj);
+    const seqIdx = existingIdx >= 0 ? existingIdx : (S.replaceOnSnap && S.activeIdx >= 0 ? S.activeIdx : S.pages.length);
+    const isStack = S.preset === 'stack';
+    const prefix = isStack ? 'Slip_Stack' : (S.preset === 'vin' ? 'Vin_Scan' : (S.preset === 'card' ? 'Card_Scan' : (S.preset === 'document' ? 'Doc_Scan' : 'Receipt_Scan')));
+    const fileName = isStack
+      ? `${prefix}_${stamp}_s${seqIdx + 1}.jpg`
+      : `${prefix}_${stamp}_p${seqIdx + 1}.jpg`;
     let fileObj;
     try {
       fileObj = new File([blob], fileName, { type: 'image/jpeg', lastModified: Date.now() });
     } catch (_) {
       blob.name = fileName;
       fileObj = blob;
+    }
+    if (isStack && fileObj && typeof fileObj === 'object') {
+      fileObj._ssBatchMode = 'queue';
+      fileObj._stackSlip = true;
     }
     pageObj.file = fileObj;
     pageObj.previewUrl = URL.createObjectURL(blob);
@@ -1580,6 +1601,7 @@
               <button type="button" class="doc-cam-pill-btn active" data-doc-preset="receipt">Receipt / Slip</button>
               <button type="button" class="doc-cam-pill-btn" data-doc-preset="document">Document / A4</button>
               <button type="button" class="doc-cam-pill-btn" data-doc-preset="card">ID / VIN / Card</button>
+              <button type="button" class="doc-cam-pill-btn" id="docCamStackPresetBtn" data-doc-preset="stack" data-ui-tip="Rapid-snap separate slips or invoices into a 1-of-N entry queue">Multi-Slip Stack</button>
             </div>
             <div class="doc-cam-tools-bar" id="docCamLiveToolsBar">
               <div class="doc-cam-zoom-group" id="docCamZoomBar" role="group" aria-label="Camera zoom">
@@ -1794,6 +1816,7 @@
   }
 
   async function runCameraPreviewPrecheck(force = false, keepOverrides = false, opts = {}) {
+    if (S.preset === 'stack') return null;
     if (!S.enablePrecheck && !(opts && opts.explicit)) return null;
     if (!S.pages.length) return S.precheckResult;
     const api = window.MFG_SMART_SCAN;
@@ -1851,6 +1874,8 @@
     const badge = $('docCamLiveBadge');
 
     const pageCnt = S.pages.length;
+    const isStack = S.preset === 'stack';
+    const maxPg = maxPagesForPreset(S.preset);
     const activePage = S.pages[S.activeIdx] || null;
     const isQr = S.mode === 'qr';
     const isPrev = S.mode === 'preview' && Boolean(activePage);
@@ -1867,6 +1892,8 @@
       stg.setAttribute('data-doc-preset', S.preset);
     }
     if (topDeck) topDeck.hidden = !isCam;
+    const stackBtn = $('docCamStackPresetBtn');
+    if (stackBtn) stackBtn.hidden = !S.allowSlipStack;
     const cardSubBar = $('docCamCardSubBar');
     if (cardSubBar) cardSubBar.hidden = !(isCam && (S.preset === 'card' || S.preset === 'vin'));
     if (liveTools) liveTools.hidden = !isCam;
@@ -1958,16 +1985,26 @@
     if (adjBtn) adjBtn.hidden = !(isPrev && hasEditableCanvas);
     if (applyCropBtn) applyCropBtn.hidden = !isAdj;
 
-    if (snapBtn) snapBtn.hidden = !isCam || Boolean(fb && !fb.hidden);
+    if (snapBtn) {
+      snapBtn.hidden = !isCam || Boolean(fb && !fb.hidden);
+      snapBtn.innerHTML = isStack ? `${ic('scan_doc')} Capture Slip` : `${ic('scan_doc')} Capture Document`;
+    }
     if (retakeBtn) retakeBtn.hidden = !(isPrev || isAdj);
-    if (addMoreBtn) addMoreBtn.hidden = !(isPrev && pageCnt >= 1 && pageCnt < 8);
+    if (addMoreBtn) {
+      addMoreBtn.hidden = !(isPrev && pageCnt >= 1 && pageCnt < maxPg);
+      addMoreBtn.textContent = isStack ? '+ Add Slip' : '+ Add Page';
+    }
     const hasUnackedPrecheck = Boolean(isPrev && S.precheckResult && S.precheckResult.hasWarning && !S.precheckAck);
     if (confirmBtn) {
       confirmBtn.hidden = !(pageCnt >= 1 && (isPrev || isQr || isCam));
       confirmBtn.disabled = Boolean(isPrev && S.precheckBusy);
-      confirmBtn.innerHTML = hasUnackedPrecheck
-        ? (pageCnt > 1 ? `${ic('warn')} Attach ${pageCnt} Scans Anyway` : `${ic('warn')} Attach Anyway`)
-        : (pageCnt > 1 ? `${ic('check')} Attach ${pageCnt} Scans` : `${ic('check')} Attach Scan`);
+      if (isStack) {
+        confirmBtn.innerHTML = `${ic('layers')} ${pageCnt > 1 ? `Queue ${pageCnt} Slips` : 'Queue 1 Slip'}`;
+      } else {
+        confirmBtn.innerHTML = hasUnackedPrecheck
+          ? (pageCnt > 1 ? `${ic('warn')} Attach ${pageCnt} Scans Anyway` : `${ic('warn')} Attach Anyway`)
+          : (pageCnt > 1 ? `${ic('check')} Attach ${pageCnt} Scans` : `${ic('check')} Attach Scan`);
+      }
     }
     if (switchBtn) {
       const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
@@ -1980,14 +2017,18 @@
         badge.className = 'badge badge-ok doc-cam-live-pill';
       } else if (isCam && S.camLive) {
         badge.textContent = pageCnt > 0
-          ? (pageCnt === 1 ? '1 Cropped Scan Ready' : `${pageCnt} Cropped Scans Ready`)
+          ? (isStack
+            ? (pageCnt === 1 ? '1 Slip Ready' : `${pageCnt} Slips Ready`)
+            : (pageCnt === 1 ? '1 Cropped Scan Ready' : `${pageCnt} Cropped Scans Ready`))
           : `Document Crop · ${S.zoom}x`;
         badge.className = 'badge badge-ok doc-cam-live-pill';
       } else if (S.camStarting) {
         badge.textContent = 'Starting Scanner...';
         badge.className = 'badge doc-cam-live-pill';
       } else if (pageCnt > 0) {
-        badge.textContent = pageCnt === 1 ? '1 Cropped Scan Ready' : `${pageCnt} Cropped Scans Ready`;
+        badge.textContent = isStack
+          ? (pageCnt === 1 ? '1 Slip Ready' : `${pageCnt} Slips Ready`)
+          : (pageCnt === 1 ? '1 Cropped Scan Ready' : `${pageCnt} Cropped Scans Ready`);
         badge.className = 'badge badge-ok doc-cam-live-pill';
       } else {
         badge.textContent = 'Scanner Ready';
@@ -2008,7 +2049,7 @@
           return `
           <div class="doc-cam-batch-chip ${idx === S.activeIdx ? 'active' : ''}" data-doc-pick-idx="${idx}">
             ${pPdf ? '<span style="font-size:11px;font-weight:800;letter-spacing:.04em">PDF</span>' : (p.previewUrl ? `<img src="${esc(p.previewUrl)}" alt="Page ${idx + 1}">` : '')}
-            <span>Page ${idx + 1}</span>
+            <span>${isStack ? 'Slip' : 'Page'}</span> <b data-no-i18n="1">${idx + 1}</b>
             <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" data-ui-tip="Remove page" aria-label="Remove page">${ic('trash')}</button>
           </div>`;
         }).join('');
@@ -2165,6 +2206,15 @@
 
   async function processCapturedStageCanvas(rawCanvas, gNorm, snapOpts = {}) {
     const autoTriggered = Boolean(snapOpts && snapOpts.autoTriggered);
+    const maxPgLimit = maxPagesForPreset(S.preset);
+    if (!S.replaceOnSnap && S.pages.length >= maxPgLimit) {
+      S.awaitingPageTurn = false;
+      S.lastAutoSnapSig = null;
+      stopCameraTracks();
+      S.mode = 'preview';
+      syncModalUi();
+      return { skippedLimit: true, keepLiveBatch: false, pageCount: S.pages.length };
+    }
     const detectedQuad = S.liveQuad || detectDocumentQuadFromCanvas(rawCanvas, gNorm);
     const quadNorm = detectedQuad || [
       { x: gNorm.x, y: gNorm.y },
@@ -2173,7 +2223,7 @@
       { x: gNorm.x, y: gNorm.y + gNorm.h }
     ];
 
-    if (autoTriggered && S.preset === 'document' && S.awaitingPageTurn) {
+    if (autoTriggered && (S.preset === 'document' || S.preset === 'stack') && S.awaitingPageTurn) {
       const candSig = computeCanvasSignature64(rawCanvas, quadNorm);
       if (S.lastAutoSnapSig && signatureDiff(candSig, S.lastAutoSnapSig) < 6.5) {
         return { skippedDuplicate: true, keepLiveBatch: true, pageCount: S.pages.length };
@@ -2206,17 +2256,34 @@
       if (old.rawPreviewUrl) { try { URL.revokeObjectURL(old.rawPreviewUrl); } catch (_) {} }
       S.pages[S.activeIdx] = pageObj;
     } else {
+      if (S.pages.length >= maxPagesForPreset(S.preset)) {
+        if (pageObj.previewUrl) { try { URL.revokeObjectURL(pageObj.previewUrl); } catch (_) {} }
+        if (pageObj.rawPreviewUrl) { try { URL.revokeObjectURL(pageObj.rawPreviewUrl); } catch (_) {} }
+        S.replaceOnSnap = false;
+        S.awaitingPageTurn = false;
+        S.lastAutoSnapSig = null;
+        stopCameraTracks();
+        S.mode = 'preview';
+        syncModalUi();
+        return { skippedDuplicate: false, capReached: true, keepLiveBatch: false, pageCount: S.pages.length, page: null };
+      }
       S.pages.push(pageObj);
       S.activeIdx = S.pages.length - 1;
     }
 
-    const keepLiveBatch = Boolean(autoTriggered && S.preset === 'document' && !S.replaceOnSnap && S.pages.length < 8);
+    const keepLiveBatch = Boolean(
+      !S.replaceOnSnap
+      && (
+        (S.preset === 'stack' && S.pages.length < maxPagesForPreset('stack'))
+        || (autoTriggered && S.preset === 'document' && S.pages.length < maxPagesForPreset('document'))
+      )
+    );
     S.replaceOnSnap = false;
     if (keepLiveBatch) {
       S.lastAutoSnapSig = computeCanvasSignature64(rawCanvas, quadNorm);
       S.awaitingPageTurn = true;
       S.missingTicksSinceSnap = 0;
-      S.nextAutoSnapAllowedAt = Date.now() + 1400;
+      S.nextAutoSnapAllowedAt = Date.now() + (S.preset === 'stack' ? 950 : 1400);
       S.steadyTicks = 0;
       S.mode = 'camera';
       syncModalUi();
@@ -2231,53 +2298,97 @@
   }
 
   async function snapDocumentFromStage(snapOpts = {}) {
-    const vid = $('docCamVideo');
-    const stg = $('docCamStage');
-    const guide = $('docCamGuide');
-    if (vid && (!vid.videoWidth || !vid.videoHeight)) {
-      for (let i = 0; i < 12 && (!vid.videoWidth || !vid.videoHeight); i++) {
-        await new Promise(r => setTimeout(r, 60));
-      }
-    }
-    if (!vid || !vid.videoWidth || !vid.videoHeight) {
-      showToast('Scanner stream is warming up. Wait a moment or use Phone Camera.', 'err');
+    if (S.captureInflight) return null;
+    if (!S.replaceOnSnap && S.pages.length >= maxPagesForPreset(S.preset)) {
+      stopCameraTracks();
+      S.mode = 'preview';
+      syncModalUi();
       return null;
     }
+    S.captureInflight = true;
+    try {
+      const vid = $('docCamVideo');
+      const stg = $('docCamStage');
+      const guide = $('docCamGuide');
+      if (vid && (!vid.videoWidth || !vid.videoHeight)) {
+        for (let i = 0; i < 12 && (!vid.videoWidth || !vid.videoHeight); i++) {
+          await new Promise(r => setTimeout(r, 60));
+        }
+      }
+      if (!vid || !vid.videoWidth || !vid.videoHeight) {
+        showToast('Scanner stream is warming up. Wait a moment or use Phone Camera.', 'err');
+        return null;
+      }
 
-    const flash = $('docCamShutterFlash');
-    if (flash) {
-      flash.classList.add('active');
-      setTimeout(() => flash.classList.remove('active'), 170);
+      const flash = $('docCamShutterFlash');
+      if (flash) {
+        flash.classList.add('active');
+        setTimeout(() => flash.classList.remove('active'), 170);
+      }
+
+      const rawCanvas = captureZoomedStageCanvas(vid, stg, 2000);
+      const gNorm = getGuideNormRectForStage(stg, guide);
+      return await processCapturedStageCanvas(rawCanvas, gNorm, snapOpts);
+    } finally {
+      S.captureInflight = false;
     }
-
-    const rawCanvas = captureZoomedStageCanvas(vid, stg, 2000);
-    const gNorm = getGuideNormRectForStage(stg, guide);
-    return processCapturedStageCanvas(rawCanvas, gNorm, snapOpts);
   }
 
   async function snapCanvasForBatchTest(srcCanvas, snapOpts = {}) {
-    if (!srcCanvas) return null;
-    const rawCanvas = document.createElement('canvas');
-    rawCanvas.width = srcCanvas.width;
-    rawCanvas.height = srcCanvas.height;
-    rawCanvas.getContext('2d').drawImage(srcCanvas, 0, 0);
-    const stg = $('docCamStage');
-    const guide = $('docCamGuide');
-    const gNorm = (snapOpts && snapOpts.guideNorm) || getGuideNormRectForStage(stg, guide);
-    return processCapturedStageCanvas(rawCanvas, gNorm, snapOpts);
+    if (!srcCanvas || S.captureInflight) return null;
+    if (!S.replaceOnSnap && S.pages.length >= maxPagesForPreset(S.preset)) {
+      stopCameraTracks();
+      S.mode = 'preview';
+      syncModalUi();
+      return null;
+    }
+    S.captureInflight = true;
+    try {
+      const rawCanvas = document.createElement('canvas');
+      rawCanvas.width = srcCanvas.width;
+      rawCanvas.height = srcCanvas.height;
+      rawCanvas.getContext('2d').drawImage(srcCanvas, 0, 0);
+      const stg = $('docCamStage');
+      const guide = $('docCamGuide');
+      const gNorm = (snapOpts && snapOpts.guideNorm) || getGuideNormRectForStage(stg, guide);
+      return await processCapturedStageCanvas(rawCanvas, gNorm, snapOpts);
+    } finally {
+      S.captureInflight = false;
+    }
   }
 
-  async function ingestReceivedPhonePages(pagesList) {
+  async function ingestReceivedPhonePages(pagesList, remoteMeta = null) {
     if (!Array.isArray(pagesList) || !pagesList.length) return;
+    const isStackPayload = Boolean(
+      S.allowSlipStack
+      && (
+        (remoteMeta && remoteMeta.preset === 'stack')
+        || pagesList.some(pg => pg && (pg.stackSlip || /^Phone_Slip_/i.test(pg.fileName || '')))
+      )
+    );
+    if (isStackPayload && S.preset !== 'stack') {
+      S.preset = 'stack';
+      S.enhanceMode = defaultEnhanceForPreset('stack');
+    }
+    const maxAllowed = maxPagesForPreset(isStackPayload ? 'stack' : S.preset);
     let added = 0;
-    for (let i = 0; i < pagesList.length; i++) {
+    for (let i = 0; i < pagesList.length && S.pages.length < maxAllowed; i++) {
       const pg = pagesList[i];
       if (!pg || !pg.dataUrl) continue;
       const pid = String(pg.id || pg.fileName || ('pg_' + i));
       if (S.receivedPageIds.has(pid)) continue;
       S.receivedPageIds.add(pid);
-      const fileObj = dataUrlToFile(pg.dataUrl, pg.fileName || `Phone_Scan_p${S.pages.length + 1}.jpg`);
+      const nextNum = S.pages.length + 1;
+      const defName = isStackPayload ? `Phone_Slip_${nextNum}.jpg` : `Phone_Scan_p${nextNum}.jpg`;
+      const useName = (isStackPayload && pg.fileName && /_p\d+/i.test(pg.fileName))
+        ? defName
+        : (pg.fileName || defName);
+      const fileObj = dataUrlToFile(pg.dataUrl, useName);
       if (!fileObj) continue;
+      if (isStackPayload && typeof fileObj === 'object') {
+        fileObj._ssBatchMode = 'queue';
+        fileObj._stackSlip = true;
+      }
       const previewUrl = URL.createObjectURL(fileObj);
       // Hydrate rawCanvas from dataUrl so desktop user can still rotate or filter if desired
       const img = new Image();
@@ -2305,9 +2416,16 @@
       stopQrPolling();
       pushPhoneRelayState(S.qrSid, S.qrTok, { op: 'clear' }).catch(() => {});
       S.mode = 'preview';
-      showToast(added === 1 ? 'Received cropped scan from phone!' : `Received ${added} cropped scans from phone!`, 'ok');
+      showToast(
+        added === 1
+          ? 'Received cropped scan from phone!'
+          : (isStackPayload ? `Received ${added} slips from phone!` : `Received ${added} cropped scans from phone!`),
+        'ok'
+      );
       syncModalUi({ skipAutoPrecheck: true });
-      await runCameraPreviewPrecheck(true);
+      if (!isStackPayload) {
+        await runCameraPreviewPrecheck(true);
+      }
     }
   }
 
@@ -2350,7 +2468,7 @@
             syncModalUi();
           }
           if (Array.isArray(msg.pages) && msg.pages.length) {
-            ingestReceivedPhonePages(msg.pages);
+            ingestReceivedPhonePages(msg.pages, msg);
           }
         };
       }
@@ -2372,7 +2490,7 @@
       syncModalUi();
     }
     if (Array.isArray(remote.pages) && remote.pages.length) {
-      await ingestReceivedPhonePages(remote.pages);
+      await ingestReceivedPhonePages(remote.pages, remote);
       return true;
     }
     return false;
@@ -2406,6 +2524,7 @@
             qrBox.innerHTML = encodeQrSvg(S.qrUrl);
             qrBox.setAttribute('data-handoff-url', S.qrUrl);
           }
+          pushPhoneRelayState(S.qrSid, S.qrTok, { status: S.qrStatus || 'waiting', preset: S.preset }).catch(() => {});
         }
         syncModalUi();
       });
@@ -2554,9 +2673,14 @@
       if (!picked.length) return;
       stopCameraTracks();
       stopQrPolling();
-      for (let i = 0; i < picked.length && S.pages.length < 8; i++) {
+      const maxPick = maxPagesForPreset(S.preset);
+      for (let i = 0; i < picked.length && S.pages.length < maxPick; i++) {
         const pf = picked[i];
         if (!pf) continue;
+        if (S.preset === 'stack' && typeof pf === 'object') {
+          pf._ssBatchMode = 'queue';
+          pf._stackSlip = true;
+        }
         const pUrl = URL.createObjectURL(pf);
         S.pages.push({
           rawCanvas: null,
@@ -2605,9 +2729,19 @@
           f._ssPrecheckAckSig = ackSig;
         }
       });
+      const isStackConfirm = Boolean(S.preset === 'stack' && S.allowSlipStack);
+      if (isStackConfirm) {
+        outFiles.forEach(f => {
+          if (!f || typeof f !== 'object') return;
+          f._ssBatchMode = 'queue';
+          f._stackSlip = true;
+        });
+      }
       const cb = S.onCapture;
       closeDocumentScanner();
-      if (typeof cb === 'function') await cb(outFiles, 'Camera Scan');
+      if (typeof cb === 'function') {
+        await cb(outFiles, isStackConfirm ? 'Multi-Slip Camera Stack' : 'Camera Scan', isStackConfirm ? { batchMode: 'queue' } : undefined);
+      }
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -2649,6 +2783,7 @@
     revokeAllPageUrls();
     resetCameraPrecheck();
     S.open = true;
+    S.allowSlipStack = !(opts && opts.attachmentOnly);
     S.enablePrecheck = Boolean(opts && opts.enablePrecheck);
     S.mode = 'camera';
     S.pages = [];
@@ -2656,6 +2791,7 @@
     S.replaceOnSnap = false;
     S._userPickedZoom = false;
     S.preset = (opts && opts.preset) || resolveDefaultPreset();
+    if (!S.allowSlipStack && S.preset === 'stack') S.preset = 'receipt';
     S.lastCardSubPreset = S.preset === 'vin'
       ? 'vin'
       : (/trd_/i.test(String((window.STATE && window.STATE.view) || '')) ? 'vin' : 'card');
@@ -2687,7 +2823,7 @@
     const psCompact = sp.get('ps');
     if (psCompact && psCompact.includes('.')) {
       const parts = psCompact.split('.');
-      const pMap = { r: 'receipt', d: 'document', c: 'card', v: 'vin', i: 'id_card' };
+      const pMap = { r: 'receipt', d: 'document', c: 'card', v: 'vin', i: 'id_card', s: 'stack' };
       return {
         sid: parts[0] || '',
         tok: parts[1] || '',
@@ -3457,6 +3593,7 @@
         <button type="button" class="doc-cam-pill-btn ${S.preset === 'receipt' ? 'active' : ''}" data-psc-preset="receipt">Receipt / Slip</button>
         <button type="button" class="doc-cam-pill-btn ${S.preset === 'document' ? 'active' : ''}" data-psc-preset="document">Document / A4</button>
         <button type="button" class="doc-cam-pill-btn ${(S.preset === 'card' || S.preset === 'vin') ? 'active' : ''}" data-psc-preset="card">ID / VIN / Card</button>
+        <button type="button" class="doc-cam-pill-btn ${S.preset === 'stack' ? 'active' : ''}" id="pscStackPresetBtn" data-psc-preset="stack">Multi-Slip Stack</button>
       </div>
       <div class="doc-cam-card-subbar" id="pscCardSubBar" role="group" aria-label="Card or VIN format" ${(S.preset === 'card' || S.preset === 'vin') ? '' : 'hidden'}>
         <span class="doc-cam-subbar-lbl">Format:</span>
@@ -3506,8 +3643,11 @@
 
     const pscPages = [];
     let pscIdx = -1;
+    const pscMaxPages = () => (S.preset === 'stack' ? 20 : 6);
 
     const syncPscUi = () => {
+      const isStack = S.preset === 'stack';
+      const maxP = pscMaxPages();
       const hasPrev = pscIdx >= 0 && Boolean(pscPages[pscIdx]) && !S.camLive;
       $('pscStage').setAttribute('data-doc-preset', S.preset);
       const pscSub = $('pscCardSubBar');
@@ -3530,16 +3670,62 @@
       if (hasPrev) $('pscPreviewImg').src = pscPages[pscIdx].previewUrl;
       $('pscEnhanceBar').hidden = !hasPrev;
       $('pscSnapBtn').hidden = !S.camLive;
+      $('pscSnapBtn').innerHTML = isStack ? `${ic('scan_doc')} Capture Slip` : `${ic('scan_doc')} Capture Document`;
       $('pscRetakeBtn').hidden = !hasPrev;
-      $('pscMoreBtn').hidden = !(hasPrev && pscPages.length < 6);
+      $('pscMoreBtn').hidden = !(hasPrev && pscPages.length < maxP);
+      $('pscMoreBtn').textContent = isStack ? '+ Slip' : '+ Page';
       $('pscSendBtn').hidden = !pscPages.length;
       $('pscSendBtn').innerHTML = pscPages.length > 1
-        ? `${ic('check')} Send ${pscPages.length} Pages`
-        : `${ic('check')} Send to Computer`;
+        ? (isStack ? `${ic('check')} Send ${pscPages.length} Slips` : `${ic('check')} Send ${pscPages.length} Pages`)
+        : (isStack ? `${ic('check')} Send 1 Slip` : `${ic('check')} Send to Computer`);
+      const pscTray = $('pscTray');
+      if (pscTray) {
+        if (!pscPages.length) {
+          pscTray.hidden = true;
+          pscTray.innerHTML = '';
+        } else {
+          pscTray.hidden = false;
+          pscTray.innerHTML = pscPages.map((p, idx) => `
+            <div class="doc-cam-batch-chip ${idx === pscIdx ? 'active' : ''}" data-psc-pick-idx="${idx}">
+              ${p.previewUrl ? `<img src="${esc(p.previewUrl)}" alt="Page ${idx + 1}">` : ''}
+              <span>${isStack ? 'Slip' : 'Page'}</span> <b data-no-i18n="1">${idx + 1}</b>
+              <button type="button" class="doc-cam-batch-del" data-psc-remove-idx="${idx}" data-ui-tip="Remove page" aria-label="Remove page">${ic('trash')}</button>
+            </div>`).join('');
+          pscTray.querySelectorAll('[data-psc-pick-idx]').forEach(chip => {
+            chip.addEventListener('click', ev => {
+              if (ev.target && ev.target.closest('[data-psc-remove-idx]')) return;
+              const idx = Number(chip.getAttribute('data-psc-pick-idx'));
+              if (!pscPages[idx]) return;
+              stopCameraTracks();
+              pscIdx = idx;
+              syncPscUi();
+            });
+          });
+          pscTray.querySelectorAll('[data-psc-remove-idx]').forEach(del => {
+            del.addEventListener('click', ev => {
+              ev.stopPropagation();
+              const idx = Number(del.getAttribute('data-psc-remove-idx'));
+              const rm = pscPages.splice(idx, 1)[0];
+              if (rm && rm.previewUrl) { try { URL.revokeObjectURL(rm.previewUrl); } catch (_) {} }
+              if (!pscPages.length) {
+                pscIdx = -1;
+                startRearCam();
+                return;
+              }
+              pscIdx = Math.min(idx, pscPages.length - 1);
+              syncPscUi();
+            });
+          });
+        }
+      }
       if (hasPrev) {
         shell.querySelectorAll('[data-psc-enhance]').forEach(b => {
           b.classList.toggle('active', b.getAttribute('data-psc-enhance') === pscPages[pscIdx].enhanceMode);
         });
+      }
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang() !== 'en') {
+        registerScannerI18n();
+        window.MFG_I18N.translateDom(shell);
       }
     };
 
@@ -3612,52 +3798,80 @@
       $('pscAutoSnapBtn').classList.toggle('active', S.autoSnap);
     });
 
+    let pscInflight = false;
     const pscSnap = async (snapOpts = {}) => {
-      const autoTriggered = Boolean(snapOpts && snapOpts.autoTriggered);
-      const vid = $('pscVideo');
-      if (!vid || !vid.videoWidth) return;
-      const stg = $('pscStage');
-      const rawCanvas = captureZoomedStageCanvas(vid, stg, 1600);
-      const gNorm = getGuideNormRectForStage(stg, $('pscGuide'));
-      const quadNorm = S.liveQuad || detectDocumentQuadFromCanvas(rawCanvas, gNorm) || [
-        { x: gNorm.x, y: gNorm.y },
-        { x: gNorm.x + gNorm.w, y: gNorm.y },
-        { x: gNorm.x + gNorm.w, y: gNorm.y + gNorm.h },
-        { x: gNorm.x, y: gNorm.y + gNorm.h }
-      ];
-      if (autoTriggered && S.preset === 'document' && S.awaitingPageTurn) {
-        const candSig = computeCanvasSignature64(rawCanvas, quadNorm);
-        if (S.lastAutoSnapSig && signatureDiff(candSig, S.lastAutoSnapSig) < 6.5) return;
-        S.awaitingPageTurn = false;
-      }
-      const pg = {
-        id: 'mp_' + randomHex(6),
-        rawCanvas,
-        quadNorm,
-        rotation: 0,
-        enhanceMode: defaultEnhanceForPreset(S.preset),
-        previewUrl: '',
-        dataUrl: ''
-      };
-      await rebuildPageOutput(pg);
-      if (pg.outCanvas) pg.dataUrl = pg.outCanvas.toDataURL('image/jpeg', 0.78);
-      if (S.replaceOnSnap && pscIdx >= 0) pscPages[pscIdx] = pg;
-      else { pscPages.push(pg); pscIdx = pscPages.length - 1; }
-      const keepLivePsc = Boolean(autoTriggered && S.preset === 'document' && !S.replaceOnSnap && pscPages.length < 6);
-      S.replaceOnSnap = false;
-      if (keepLivePsc) {
-        S.lastAutoSnapSig = computeCanvasSignature64(rawCanvas, quadNorm);
-        S.awaitingPageTurn = true;
-        S.missingTicksSinceSnap = 0;
-        S.nextAutoSnapAllowedAt = Date.now() + 1400;
-        S.steadyTicks = 0;
-      } else {
-        S.awaitingPageTurn = false;
-        S.lastAutoSnapSig = null;
+      if (pscInflight) return;
+      if (!S.replaceOnSnap && pscPages.length >= pscMaxPages()) {
         stopCameraTracks();
+        syncPscUi();
+        return;
       }
-      $('pscSentBanner').hidden = true;
-      syncPscUi();
+      pscInflight = true;
+      try {
+        const autoTriggered = Boolean(snapOpts && snapOpts.autoTriggered);
+        const vid = $('pscVideo');
+        if (!vid || !vid.videoWidth) return;
+        const stg = $('pscStage');
+        const rawCanvas = captureZoomedStageCanvas(vid, stg, 1600);
+        const gNorm = getGuideNormRectForStage(stg, $('pscGuide'));
+        const quadNorm = S.liveQuad || detectDocumentQuadFromCanvas(rawCanvas, gNorm) || [
+          { x: gNorm.x, y: gNorm.y },
+          { x: gNorm.x + gNorm.w, y: gNorm.y },
+          { x: gNorm.x + gNorm.w, y: gNorm.y + gNorm.h },
+          { x: gNorm.x, y: gNorm.y + gNorm.h }
+        ];
+        if (autoTriggered && (S.preset === 'document' || S.preset === 'stack') && S.awaitingPageTurn) {
+          const candSig = computeCanvasSignature64(rawCanvas, quadNorm);
+          if (S.lastAutoSnapSig && signatureDiff(candSig, S.lastAutoSnapSig) < 6.5) return;
+          S.awaitingPageTurn = false;
+        }
+        const pg = {
+          id: 'mp_' + randomHex(6),
+          rawCanvas,
+          quadNorm,
+          rotation: 0,
+          enhanceMode: defaultEnhanceForPreset(S.preset),
+          previewUrl: '',
+          dataUrl: ''
+        };
+        await rebuildPageOutput(pg);
+        if (pg.outCanvas) pg.dataUrl = pg.outCanvas.toDataURL('image/jpeg', 0.78);
+        if (S.replaceOnSnap && pscIdx >= 0) {
+          pscPages[pscIdx] = pg;
+        } else {
+          if (pscPages.length >= pscMaxPages()) {
+            if (pg.previewUrl) { try { URL.revokeObjectURL(pg.previewUrl); } catch (_) {} }
+            stopCameraTracks();
+            syncPscUi();
+            return;
+          }
+          pscPages.push(pg);
+          pscIdx = pscPages.length - 1;
+        }
+        const keepLivePsc = Boolean(
+          !S.replaceOnSnap
+          && (
+            (S.preset === 'stack' && pscPages.length < 20)
+            || (autoTriggered && S.preset === 'document' && pscPages.length < 6)
+          )
+        );
+        S.replaceOnSnap = false;
+        if (keepLivePsc) {
+          S.lastAutoSnapSig = computeCanvasSignature64(rawCanvas, quadNorm);
+          S.awaitingPageTurn = true;
+          S.missingTicksSinceSnap = 0;
+          S.nextAutoSnapAllowedAt = Date.now() + (S.preset === 'stack' ? 950 : 1400);
+          S.steadyTicks = 0;
+        } else {
+          S.awaitingPageTurn = false;
+          S.lastAutoSnapSig = null;
+          stopCameraTracks();
+        }
+        $('pscSentBanner').hidden = true;
+        syncPscUi();
+      } finally {
+        pscInflight = false;
+      }
     };
     S._pscSnapFn = pscSnap;
     $('pscSnapBtn').addEventListener('click', () => pscSnap({ autoTriggered: false }));
@@ -3689,7 +3903,8 @@
     $('pscFileInput').addEventListener('change', async () => {
       const files = $('pscFileInput').files ? Array.from($('pscFileInput').files) : [];
       $('pscFileInput').value = '';
-      for (let i = 0; i < files.length && pscPages.length < 6; i++) {
+      const maxP = pscMaxPages();
+      for (let i = 0; i < files.length && pscPages.length < maxP; i++) {
         const u = URL.createObjectURL(files[i]);
         const img = new Image();
         await new Promise(res => { img.onload = res; img.onerror = res; img.src = u; });
@@ -3727,12 +3942,14 @@
       const btn = $('pscSendBtn');
       btn.disabled = true;
       btn.textContent = 'Sending...';
+      const isStackSend = S.preset === 'stack';
       const payloadPages = pscPages.map((p, idx) => ({
         id: p.id,
-        fileName: `Phone_Scan_p${idx + 1}.jpg`,
+        fileName: isStackSend ? `Phone_Slip_${idx + 1}.jpg` : `Phone_Scan_p${idx + 1}.jpg`,
+        stackSlip: isStackSend,
         dataUrl: p.dataUrl
       }));
-      await pushPhoneRelayState(cfg.sid, cfg.tok, { status: 'pages_ready', pages: payloadPages });
+      await pushPhoneRelayState(cfg.sid, cfg.tok, { status: 'pages_ready', preset: S.preset, pages: payloadPages });
       btn.disabled = false;
       $('pscSentBanner').hidden = false;
       $('pscStatusBadge').textContent = 'Sent!';
@@ -3910,6 +4127,18 @@
     'Attach 6 Scans Anyway': 'إرفاق 6 مسوحات على أي حال',
     'Attach 7 Scans Anyway': 'إرفاق 7 مسوحات على أي حال',
     'Attach 8 Scans Anyway': 'إرفاق 8 مسوحات على أي حال',
+    'Multi-Slip Stack': 'كومة إيصالات متعددة',
+    'Rapid-snap separate slips or invoices (each becomes 1 queue item)': 'التقط إيصالات أو فواتير منفصلة بسرعة (كل لقطة تدخل كبند مستقل)',
+    'Rapid-snap separate slips or invoices into a 1-of-N entry queue': 'التقط إيصالات أو فواتير منفصلة بسرعة إلى قائمة إدخال 1 من N',
+    'Slip locked. Hold steady or click Capture Slip.': 'تم تثبيت الإيصال. اثبت أو اضغط التقاط الإيصال.',
+    'Slip captured! Place next slip or click Queue Slips.': 'تم التقاط الإيصال! ضع الإيصال التالي أو اضغط إضافة للقائمة.',
+    'Capture Slip': 'التقاط الإيصال',
+    '+ Add Slip': '+ إضافة إيصال',
+    '+ Slip': '+ إيصال',
+    'Slip': 'إيصال',
+    'Queue 1 Slip': 'إضافة إيصال واحد للقائمة',
+    '1 Slip Ready': 'إيصال واحد جاهز',
+    'Send 1 Slip': 'إرسال إيصال واحد',
     'Acknowledged': 'تمت المراجعة'
   };
 
@@ -4071,6 +4300,18 @@
     'Attach 6 Scans Anyway': 'Joindre 6 scans quand même',
     'Attach 7 Scans Anyway': 'Joindre 7 scans quand même',
     'Attach 8 Scans Anyway': 'Joindre 8 scans quand même',
+    'Multi-Slip Stack': 'Pile multi-pièces',
+    'Rapid-snap separate slips or invoices (each becomes 1 queue item)': 'Capturez rapidement plusieurs justificatifs séparés (chacun devient 1 élément de file)',
+    'Rapid-snap separate slips or invoices into a 1-of-N entry queue': 'Capturez rapidement des justificatifs séparés dans une file de saisie 1 sur N',
+    'Slip locked. Hold steady or click Capture Slip.': 'Justificatif cadré. Restez stable ou cliquez sur Capturer la pièce.',
+    'Slip captured! Place next slip or click Queue Slips.': 'Pièce capturée ! Placez la suivante ou cliquez sur Mettre en file.',
+    'Capture Slip': 'Capturer la pièce',
+    '+ Add Slip': '+ Ajouter pièce',
+    '+ Slip': '+ Pièce',
+    'Slip': 'Pièce',
+    'Queue 1 Slip': 'Mettre 1 pièce en file',
+    '1 Slip Ready': '1 pièce prête',
+    'Send 1 Slip': 'Envoyer 1 pièce',
     'Acknowledged': 'Vérifié'
   };
 
