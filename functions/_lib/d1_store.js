@@ -6293,7 +6293,31 @@ export async function handleCashflowBehind(request, env, session, body, rawBytes
 //     The answer says how many reports for the device are still open (`open`), so the device knows to ask again.
 //   * GET is Owner-only. /api/sync neither serves nor patches these rows (isDeviceUnsentDoc).
 const DEVICE_UNSENT_PREFIX = 'device_unsent:';
-const DEVICE_UNSENT_REASONS = Object.freeze(['offline', 'sign_in', 'update', 'blocked', 'retrying']);
+//   * Why the cloud refused (owner 2026-11-25, after a hold the Owner could only read as "refused by the cloud"): a
+//     `blocked` report carries `refusal` { status, code, error } = the HTTP status and the server's own text of the last
+//     refused push. Reason `set_aside` = the device sent everything else and keeps only the voids the cloud refused
+//     (count = how many), with the refusal of the first. Both are shown on the Owner's Held on Device bar.
+const DEVICE_UNSENT_REASONS = Object.freeze(['offline', 'sign_in', 'update', 'blocked', 'retrying', 'set_aside']);
+const DEVICE_UNSENT_REFUSAL_REASONS = Object.freeze(['blocked', 'set_aside']);
+
+// The server's error text as the Owner reads it: one line, no markup characters (">=" and "<=" kept as signs).
+function cleanDeviceUnsentRefusalText(v) {
+  return String(v == null ? '' : v)
+    .replace(/>=/g, '≥').replace(/<=/g, '≤')
+    .replace(/[\u0000-\u001f\u007f<>"'`&]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
+export function cleanDeviceUnsentRefusal(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const status = Number(raw.status);
+  if (!Number.isInteger(status) || status < 400 || status > 599) return null;
+  const code = String(raw.code == null ? '' : raw.code);
+  return {
+    status,
+    code: /^[a-z0-9_]{1,40}$/.test(code) ? code : '',
+    error: cleanDeviceUnsentRefusalText(raw.error)
+  };
+}
 export const DEVICE_UNSENT_HOLD_DAYS = 7;
 export const DEVICE_UNSENT_LATE_HOURS = 48;
 export const DEVICE_UNSENT_LATE_MIN_MS = 3600000;
@@ -6361,6 +6385,7 @@ export function validateDeviceUnsentReport(body, nowMs) {
   val.reason = sentLate ? '' : reason;
   val.sent_late = sentLate;
   val.since = new Date(Math.min(sinceMs, nowMs)).toISOString();
+  val.refusal = (!sentLate && DEVICE_UNSENT_REFUSAL_REASONS.includes(reason)) ? cleanDeviceUnsentRefusal(body.refusal) : null;
   return { ok: true, val };
 }
 
@@ -6390,6 +6415,9 @@ export function listDeviceUnsentRows(rows, nowMs) {
       sent_count: state === 'sent_late' ? n : 0,
       since: String(p.since || ''),
       reason: state === 'sent_late' ? '' : String(p.reason || ''),
+      refusal_status: state === 'sent_late' ? 0 : (Number.isInteger(p.refusal_status) ? p.refusal_status : 0),
+      refusal_code: state === 'sent_late' ? '' : String(p.refusal_code || ''),
+      refusal_text: state === 'sent_late' ? '' : String(p.refusal_text || ''),
       shell: String(p.shell || ''),
       reported_at: String(p.reported_at || ''),
       sent_at: state === 'sent_late' ? String(p.sent_at || '') : ''
@@ -6562,6 +6590,11 @@ export async function handleDeviceUnsent(request, env, session, body, bodyMeta =
     shell: val.shell,
     reported_at: nowIso
   };
+  if (val.refusal) {
+    stored.refusal_status = val.refusal.status;
+    stored.refusal_code = val.refusal.code;
+    stored.refusal_text = val.refusal.error;
+  }
   if (
     prevHolding &&
     String(prev.dismissed_at || '').trim() &&
@@ -10102,11 +10135,34 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
   }
 }
 
+// Every void the rule refuses is named (owner 2026-11-25, after a seat's device held a day of entries behind one void
+// with no reason): the answer lists each refused row (`refused`: kind, table, id, error; at most
+// SYNC_VOID_REFUSED_MAX), so a device sets those voids aside and sends everything else. `table` / `id` / `error` stay
+// the first refusal for older devices, which still hold the whole push.
+export const SYNC_VOID_REFUSED_MAX = 50;
+export function packSyncVoidRefusals(refused) {
+  if (!Array.isArray(refused) || !refused.length) return null;
+  const first = refused[0];
+  return {
+    ok: false,
+    code: 'void_reason_required',
+    error: first.error,
+    table: first.table,
+    id: first.id,
+    refused: refused.slice(0, SYNC_VOID_REFUSED_MAX),
+    refusedTotal: refused.length
+  };
+}
+
 async function enforceSyncVoidReasonAndTwinGuards(db, incomingDoc, prevDoc, session) {
   if (!incomingDoc || typeof incomingDoc !== 'object' || !session || session.build_ticket) return null;
   const perms = getSessionWritePerms(session);
   const trustedTwin = Boolean(session.build_ticket || (perms && perms.roleKey === 'Full Access (Owner)'));
   const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
+  const refused = [];
+  const refuse = (kind, table, id, vrErr) => {
+    refused.push({ kind, table: String(table || ''), id: String(id || ''), error: String((vrErr && vrErr.error) || 'Void reason required (min 3 chars).') });
+  };
   let voidRuleCfg = null;
   const getRuleCfg = async () => {
     if (!voidRuleCfg) voidRuleCfg = await loadVoidReasonRuleCfgEdge(db);
@@ -10153,7 +10209,7 @@ async function enforceSyncVoidReasonAndTwinGuards(db, incomingDoc, prevDoc, sess
           const cfg = await getRuleCfg();
           const checkObj = existing ? Object.assign({}, existing, ir) : ir;
           const vrErr = checkMandatoryVoidReasonEdge(k, checkObj, session, cfg, existing);
-          if (vrErr) return vrErr;
+          if (vrErr) refuse('customRecords', k, rid, vrErr);
         }
       }
     }
@@ -10201,7 +10257,7 @@ async function enforceSyncVoidReasonAndTwinGuards(db, incomingDoc, prevDoc, sess
           const cfg = await getRuleCfg();
           const checkObj = existing ? Object.assign({}, existing, ir) : ir;
           const vrErr = checkMandatoryVoidReasonEdge(bk, checkObj, session, cfg, existing);
-          if (vrErr) return vrErr;
+          if (vrErr) refuse('industryCustomRows', bk, rid, vrErr);
         }
       }
     }
@@ -10242,11 +10298,11 @@ async function enforceSyncVoidReasonAndTwinGuards(db, incomingDoc, prevDoc, sess
         const cfg = await getRuleCfg();
         const checkObj = existing ? Object.assign({}, existing, iv) : iv;
         const vrErr = checkMandatoryVoidReasonEdge((checkObj && checkObj.domainTblKey) || ek, checkObj, session, cfg, existing);
-        if (vrErr) return vrErr;
+        if (vrErr) refuse('industryRowEdits', (checkObj && checkObj.domainTblKey) || '', ek, vrErr);
       }
     }
   }
-  return null;
+  return packSyncVoidRefusals(refused);
 }
 
 export function isPushOwnedDoc(docKey) {
