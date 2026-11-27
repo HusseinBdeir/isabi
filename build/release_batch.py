@@ -146,6 +146,9 @@ SITE_GENERATED_FILE = "functions/_lib/deployed_shell.js"
 STATES = ("waiting", "left_out", "shipped")
 STALE_AFTER_MIN = 180   # a waiting entry whose session gave no sign of life for this long is skipped, not shipped
 HEARTBEAT_S = 600       # a session waiting in line refreshes its entry this often
+KEEPALIVE_MAX_S = 48 * 3600  # background ship/wait keepalive hard lifetime cap so nothing runs forever
+KEEPALIVE_PREFIX = "isabi-release-keepalive-"
+NO_KEEPALIVE_ENV = "ISABI_NO_KEEPALIVE"
 SHIPPED_KEEP_H = 24     # a shipped entry its session never collected is cleared after this long
 DEAD_KEEP_DAYS = 7      # left-out, unreadable and abandoned waiting entries are cleared after this long
 HEAD_START_S = 60       # a waiter that is Nth in line leads only after the lock has been free N * this long
@@ -1117,6 +1120,182 @@ def _wait(cwd: Path, entry_id: str, *, wait_s: int, poll_s: int | None, known: d
         if _mono() >= deadline:
             return "WAITING", msg
         _sleep(max(0, eff_poll))
+
+
+def _keepalive_pid_file(cwd: Path, entry_id: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(entry_id or "").strip()) or "entry"
+    return RL.git_dir(cwd) / f"{KEEPALIVE_PREFIX}{safe}.json"
+
+
+def _read_keepalive_pid(cwd: Path, entry_id: str) -> int:
+    data = _local_json(cwd, _keepalive_pid_file(cwd, entry_id).name)
+    if not isinstance(data, dict):
+        return 0
+    try:
+        return int(data.get("pid") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _joined_entry_id_for_ship(cwd: Path, holder: str, app_branch: str, site_branch: str) -> str:
+    app_b = app_branch.removeprefix("origin/").removeprefix("refs/heads/")
+    site_b = site_branch.removeprefix("origin/").removeprefix("refs/heads/")
+    best_id, best_ts = "", ""
+    for eid, rec in _local_json(cwd, JOINED_FILE).items():
+        if not isinstance(rec, dict):
+            continue
+        if rec.get("holder") != holder:
+            continue
+        if ((rec.get("app") or {}).get("branch") or "") != app_b:
+            continue
+        if ((rec.get("site") or {}).get("branch") or "") != site_b:
+            continue
+        ts = max(str(rec.get("seenAt") or ""), str(rec.get("queuedAt") or ""))
+        if ts >= best_ts:
+            best_id, best_ts = eid, ts
+    return best_id
+
+
+_CANON_ENTRY_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6,}$")
+
+
+def _resolve_keepalive_entry_id(cwd: Path, entry_id: str, *, allow_network: bool = True) -> str:
+    """Resolve an entry ID (fast-path canonical ID, then local JOINED_FILE, then remote line if allowed)."""
+    raw = str(entry_id or "").strip()
+    if not raw:
+        return ""
+    if _CANON_ENTRY_ID_RE.match(raw):
+        return raw
+    joined = _local_json(cwd, JOINED_FILE)
+    if isinstance(joined, dict):
+        if raw in joined:
+            return raw
+        suffix = f"-{raw}"
+        local_matches = [str(k) for k in joined.keys() if isinstance(k, str) and k.endswith(suffix)]
+        if len(local_matches) == 1:
+            return local_matches[0]
+    if allow_network:
+        try:
+            e = _find(read_line(cwd), raw)
+            if e and e.get("id"):
+                return str(e["id"])
+        except RL.LockError:
+            pass
+    return raw
+
+
+def _claim_keepalive_pid(pid_path: Path, entry_id: str, my_pid: int) -> bool:
+    """Atomically claim pid_path via O_EXCL unless a live PID already owns it."""
+    payload = json.dumps({
+        "pid": my_pid,
+        "entry_id": entry_id,
+        "startedAt": RL._iso(RL._now()),
+    }, ensure_ascii=False, indent=1) + "\n"
+    for _ in range(2):
+        try:
+            with open(pid_path, "x", encoding="utf-8") as fh:
+                fh.write(payload)
+            return True
+        except FileExistsError:
+            try:
+                old = json.loads(pid_path.read_text(encoding="utf-8"))
+                old_pid = int(old.get("pid") or 0) if isinstance(old, dict) else 0
+            except (OSError, ValueError, TypeError, AttributeError):
+                old_pid = 0
+            if old_pid and old_pid != my_pid and _pid_alive(old_pid):
+                return False
+            try:
+                pid_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return False
+    return False
+
+
+_LAST_SHIP_ENTRY_ID: list[str] = [""]
+
+
+def run_keepalive(cwd: Path, entry_id: str, *, interval_s: int = HEARTBEAT_S,
+                  max_s: int = KEEPALIVE_MAX_S, max_ticks: int | None = None) -> int:
+    """Keep a waiting entry's heartbeat alive in the background until it is no longer waiting or max_s expires."""
+    canon_id = _resolve_keepalive_entry_id(cwd, entry_id)
+    if not canon_id:
+        return 0
+    pid_path = _keepalive_pid_file(cwd, canon_id)
+    my_pid = os.getpid()
+    if not _claim_keepalive_pid(pid_path, canon_id, my_pid):
+        return 0
+    deadline = _mono() + max(0, max_s)
+    ticks = 0
+    try:
+        while True:
+            if _mono() >= deadline or (max_ticks is not None and ticks >= max_ticks):
+                break
+            wait_chunk = min(max(0, interval_s), max(0.0, deadline - _mono()))
+            if wait_chunk > 0:
+                _sleep(wait_chunk)
+            if _mono() >= deadline or (max_ticks is not None and ticks >= max_ticks):
+                break
+            if _read_keepalive_pid(cwd, canon_id) != my_pid:
+                break
+            ticks += 1
+            try:
+                line = read_line(cwd)
+                e = _find(line, canon_id)
+                if e is None or e.get("state") != "waiting":
+                    break
+                _touch(cwd, e["id"])
+            except RL.LockError as exc:
+                if not _is_net_error(str(exc)):
+                    break
+        return 0
+    finally:
+        cur_pid = _read_keepalive_pid(cwd, canon_id)
+        if cur_pid == my_pid:
+            _write_local_json(cwd, pid_path.name, None)
+
+
+def _spawn_keepalive(cwd: Path, entry_id: str) -> bool:
+    """Launch a detached keepalive worker outside the caller's process tree/Job Object."""
+    if not entry_id or os.environ.get(NO_KEEPALIVE_ENV) == "1":
+        return False
+    existing = _read_keepalive_pid(cwd, entry_id)
+    if existing and _pid_alive(existing):
+        return True
+    py = sys.executable
+    if os.name == "nt" and py.lower().endswith("python.exe"):
+        pyw = Path(py).with_name("pythonw.exe")
+        if pyw.exists():
+            py = str(pyw)
+    cmd = [py, str(Path(__file__).resolve()), "keepalive", "--id", entry_id]
+    if os.name == "nt":
+        flags = (
+            getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
+        )
+        try:
+            subprocess.Popen(cmd, cwd=str(cwd), creationflags=flags, close_fds=True,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except OSError:
+            env = dict(os.environ, ISABI_KA_CMD=subprocess.list2cmdline(cmd), ISABI_KA_CWD=str(cwd))
+            ps = "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $env:ISABI_KA_CMD; CurrentDirectory = $env:ISABI_KA_CWD }; if ($r.ReturnValue -ne 0) { exit 1 }"
+            try:
+                res = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+                                     cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, timeout=15, check=False)
+                return res.returncode == 0
+            except (OSError, subprocess.SubprocessError):
+                return False
+    try:
+        subprocess.Popen(cmd, cwd=str(cwd), start_new_session=True, close_fds=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
 
 
 # ------------------------------------------------------------------------------------------------- building a batch
@@ -2136,6 +2315,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
     app = app_root(cwd)
     # First of all: is the release already this worktree's own? (Its tree is then on the batch branch, maybe with
     # sync_app.py output in it, and must not be asked to be clean.)
+    _LAST_SHIP_ENTRY_ID[0] = ""
     own = _own_batch(cwd, *RL.read_remote_lock(cwd))
     if own:
         return own[0], own[1], (_local_json(cwd, BATCH_FILE) or None) if own[0] == "LEADER" else None
@@ -2143,6 +2323,7 @@ def ship(cwd: Path = ISABI_ROOT, *, holder: str, summary: str, app_branch: str =
     _require_clean(app, "isabi-app")
     entry = join(cwd, holder=holder, summary=summary, app_branch=app_branch, site_branch=site_branch, gates=gates, quiet=quiet,
                  force=force)
+    _LAST_SHIP_ENTRY_ID[0] = entry["id"]
     started = _mono()
     deadline = started + max(0, wait_s)
     while True:
@@ -2851,11 +3032,18 @@ def main(argv: list[str] | None = None) -> int:
     sh.add_argument("--wait", type=int, default=DEFAULT_WAIT_S, help="seconds to wait before returning WAITING (default 540)")
     sh.add_argument("--max", type=int, default=None, dest="max_changes", metavar="N",
                     help=f"if you lead: at most N changes in the batch (default {MAX_BATCH}, or {MAX_BATCH_ENV}; 0 = no limit)")
+    sh.add_argument("--no-keepalive", action="store_true",
+                    help="do not spawn a background heartbeat worker when --wait expires in WAITING")
     j = sub.add_parser("join", help="join the line without waiting")
     _add_ship_args(j)
     w = sub.add_parser("wait", help="wait for an entry: shipped, left out, or its turn to lead")
     w.add_argument("--id", required=True)
     w.add_argument("--wait", type=int, default=DEFAULT_WAIT_S)
+    w.add_argument("--no-keepalive", action="store_true",
+                   help="do not spawn a background heartbeat worker when --wait expires in WAITING")
+    ka = sub.add_parser("keepalive", help="internal: refresh an entry's heartbeat until it leaves waiting state")
+    ka.add_argument("--id", required=True)
+    ka.add_argument("--interval", type=int, default=HEARTBEAT_S)
     t = sub.add_parser("take", help="lead a batch now: take the lock and merge the first changes waiting")
     t.add_argument("--holder", required=True)
     t.add_argument("--version", default="")
@@ -2909,8 +3097,13 @@ def main(argv: list[str] | None = None) -> int:
                                       site_branch=args.site_branch, gates=args.gate, version=args.version, wait_s=args.wait,
                                       force=args.force, max_changes=args.max_changes)
             print(f"RESULT: {state}: {msg}")
-            if state == "WAITING" and "wait --id" not in msg:  # offline: the message names the wait command instead
-                print("Run the same ship command again to keep waiting (a place in line is kept).")
+            if state == "WAITING":
+                if not args.no_keepalive:
+                    eid = _LAST_SHIP_ENTRY_ID[0] or _joined_entry_id_for_ship(cwd, args.holder.strip(), args.app_branch, args.site_branch)
+                    if eid and _spawn_keepalive(cwd, eid):
+                        print(f"Background heartbeat active for {eid} (stays fresh past 3 h).")
+                if "wait --id" not in msg:  # offline: the message names the wait command instead
+                    print("Run the same ship command again to keep waiting (a place in line is kept).")
             elif state == "TURN":
                 print(f'Lead the batch now, in the background or with a long timeout (it can take minutes):\n'
                       f'  python build/release_batch.py take --holder "{args.holder}"')
@@ -2921,9 +3114,15 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "wait":
             state, msg = wait(cwd, args.id, wait_s=args.wait)
             print(f"RESULT: {state}: {msg}")
+            if state == "WAITING" and not args.no_keepalive:
+                canon_wait_id = _resolve_keepalive_entry_id(cwd, args.id, allow_network=("wait --id" not in msg))
+                if canon_wait_id and _spawn_keepalive(cwd, canon_wait_id):
+                    print(f"Background heartbeat active for {canon_wait_id} (stays fresh past 3 h).")
             if state == "TURN":
                 print('Lead the batch: python build/release_batch.py take --holder "<session>"')
             return 3 if state in ("LEFT_OUT", "GONE", "HALF_FORMED") else 0
+        elif args.cmd == "keepalive":
+            return run_keepalive(cwd, args.id, interval_s=max(1, args.interval))
         elif args.cmd == "take":
             batch = take(cwd, holder=args.holder, version=args.version, max_changes=args.max_changes)
             if batch["entries"]:
