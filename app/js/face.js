@@ -138,6 +138,7 @@ const Face = (() => {
 
   let earlyStreamObj = null;
   let earlyStreamPromise = null;
+  let earlyStreamGen = 0;
   let earlyCancelled = false;
   let earlyConsumed = false;
   let earlyPreviewTimer = null;
@@ -170,6 +171,7 @@ const Face = (() => {
 
   function stopAllStreams() {
     earlyCancelled = true;
+    earlyStreamGen++;
     earlyConsumed = false;
     clearEarlyPreviewTimer();
     if (earlyStreamObj) {
@@ -233,14 +235,16 @@ const Face = (() => {
     earlyPreviewTimer = setTimeout(tick, 16);
   }
 
-  // ---- Face ID on demand ---------------------------------------------------------------------------
-  // The engine (1.3 MB script) and its weights (6.4 MB to 12 MB) are fetched only on a device that uses
-  // Face ID: a kiosk station, a device where Face ID has been started before, or a browser that has
-  // already granted this site the camera. Everyone else gets the "Tap for Face ID" overlay and pays
-  // nothing until they tap it.
+  // ---- Face ID on demand & default auto-start --------------------------------------------------------
+  // The sign-in screen opens the camera by default unless paused ("0"), denied, pin_only, or Demo/scan.
+  // The engine (1.3 MB script) and its weights (6.4 MB to 12 MB) preload immediately on devices that already
+  // use Face ID (kiosk, prior Face ID use, or granted camera permission); on first-time browsers they stay
+  // deferred until getUserMedia resolves with a live stream so camera-less or ungranted visits pay 0 B.
   const FACE_DEVICE_KEY = "isabi_mfg_face_device_v1";
   let gateAutoNow = false;
   let gateAutoPromise = null;
+  let lastPermState = "unknown";
+  let earlyAttemptFailed = false;
 
   function isKioskBoot() {
     try {
@@ -249,6 +253,36 @@ const Face = (() => {
     } catch (_) {
       return false;
     }
+  }
+
+  function isNonFaceSpecialBoot() {
+    try {
+      if (typeof window !== "undefined" && typeof window.__ISABI_IS_DEMO === "function" && window.__ISABI_IS_DEMO()) return true;
+      const sp = new URLSearchParams(window.location.search || "");
+      return sp.get("demo") === "1" || sp.get("autologin") === "1" || Boolean(sp.get("phone_scan") || sp.get("ps") || sp.get("gate_pin"));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isPinOnlyWorkspaceBoot() {
+    try {
+      if (typeof window !== "undefined" && window.STATE && window.STATE.faceSettings && typeof window.STATE.faceSettings === "object") {
+        const fs = window.STATE.faceSettings;
+        const m = String(fs.authMode || (fs.enforce2FA === true ? "both" : "either")).trim().toLowerCase();
+        if (m === "pin_only") return true;
+        if (m === "either" || m === "both" || m === "face_only") return false;
+      }
+      const raw = localStorage.getItem("isabi_mfg_face_settings_v2");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          const m = String(parsed.authMode || (parsed.enforce2FA === true ? "both" : "either")).trim().toLowerCase();
+          if (m === "pin_only") return true;
+        }
+      }
+    } catch (_) {}
+    return false;
   }
 
   // Device setting: "1" = Face ID is used here, "0" = paused here by a person, absent = never asked for.
@@ -262,8 +296,9 @@ const Face = (() => {
 
   // Called once the engine has really loaded (never on a mere attempt), and again whenever it is asked for.
   function markDeviceUsesFaceId() {
-    gateAutoNow = true;
-    gateAutoPromise = Promise.resolve(true);
+    gateAutoNow = lastPermState !== "denied";
+    earlyAttemptFailed = false;
+    gateAutoPromise = null;
     try { localStorage.setItem(FACE_DEVICE_KEY, "1"); } catch (_) {}
   }
 
@@ -276,40 +311,90 @@ const Face = (() => {
     try { localStorage.setItem(FACE_DEVICE_KEY, "0"); } catch (_) {}
   }
 
+  // Called when auto-start camera access fails/is dismissed on a first-time browser: hold behind "Tap for Face ID"
+  // for this page load without writing "0" to localStorage.
+  function noteAutoStartDeclined() {
+    gateAutoNow = false;
+    earlyAttemptFailed = true;
+    gateAutoPromise = Promise.resolve(false);
+  }
+
   // "Tap for Face ID" after a pause: lift the pause; the device is marked again once the engine has loaded.
   function resumeDeviceFaceId() {
-    if (readDeviceFaceSetting() !== "0") return;
-    try { localStorage.removeItem(FACE_DEVICE_KEY); } catch (_) {}
+    earlyAttemptFailed = false;
+    if (readDeviceFaceSetting() === "0") {
+      try { localStorage.removeItem(FACE_DEVICE_KEY); } catch (_) {}
+    }
     gateAutoPromise = null;
   }
 
-  function cameraAlreadyGranted() {
+  function cameraPermissionState() {
     try {
-      if (!navigator.permissions || typeof navigator.permissions.query !== "function") return Promise.resolve(false);
-      return navigator.permissions.query({ name: "camera" }).then(st => Boolean(st && st.state === "granted")).catch(() => false);
+      if (!navigator.permissions || typeof navigator.permissions.query !== "function") return Promise.resolve("prompt");
+      return navigator.permissions.query({ name: "camera" }).then(st => {
+        const state = st && st.state ? String(st.state) : "prompt";
+        lastPermState = state;
+        return state;
+      }).catch(() => "prompt");
     } catch (_) {
-      return Promise.resolve(false);
+      return Promise.resolve("prompt");
     }
   }
 
-  // Resolves true when the sign-in screen should start the camera and the engine by itself.
+  function refreshCameraPermissionState() {
+    return cameraPermissionState();
+  }
+
+  function canPreloadModelsBeforeCamera() {
+    return Boolean(
+      (isKioskBoot() || !isPinOnlyWorkspaceBoot()) &&
+      lastPermState !== "denied" &&
+      !earlyAttemptFailed &&
+      (ready || detectorReady || isKioskBoot() || deviceUsesFaceId() || lastPermState === "granted")
+    );
+  }
+
+  function shouldWarmOfflineAssets() {
+    return Boolean(
+      (isKioskBoot() || !isPinOnlyWorkspaceBoot()) &&
+      lastPermState !== "denied" &&
+      !earlyAttemptFailed &&
+      (ready || isKioskBoot() || deviceUsesFaceId() || lastPermState === "granted")
+    );
+  }
+
+  // Resolves true when the sign-in screen should start the camera by itself.
   function gateAutoStart() {
-    if (gateAutoPromise) return gateAutoPromise;
-    if (typeof window === "undefined") return Promise.resolve(false);
-    const setting = readDeviceFaceSetting();
-    if (isKioskBoot() || setting === "1") {
+    if (typeof window === "undefined" || isNonFaceSpecialBoot()) {
+      gateAutoNow = false;
+      gateAutoPromise = Promise.resolve(false);
+      return gateAutoPromise;
+    }
+    if (isKioskBoot()) {
       gateAutoNow = true;
       gateAutoPromise = Promise.resolve(true);
       return gateAutoPromise;
     }
-    gateAutoNow = false;
+    if (isPinOnlyWorkspaceBoot()) {
+      gateAutoNow = false;
+      return Promise.resolve(false);
+    }
+    const setting = readDeviceFaceSetting();
     if (setting === "0") {
+      gateAutoNow = false;
       gateAutoPromise = Promise.resolve(false);
       return gateAutoPromise;
     }
-    const pending = cameraAlreadyGranted().then(ok => {
-      // A tap or a pause that happened while the browser was answering wins over this answer
+    if (earlyAttemptFailed || lastPermState === "denied" || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+      gateAutoNow = false;
+      return Promise.resolve(false);
+    }
+    if (gateAutoPromise) return gateAutoPromise;
+    gateAutoNow = true;
+    const pending = cameraPermissionState().then(st => {
+      // A tap, pause, or mode switch that happened while the browser was answering wins over this answer
       if (gateAutoPromise !== pending) return gateAutoNow;
+      const ok = st !== "denied" && !earlyAttemptFailed && !isPinOnlyWorkspaceBoot() && readDeviceFaceSetting() !== "0";
       gateAutoNow = ok;
       return ok;
     });
@@ -319,6 +404,7 @@ const Face = (() => {
 
   function prewarm() {
     if (typeof window === "undefined" || navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
+    if (isNonFaceSpecialBoot()) return;
     // If booting into a Kiosk station (?kiosk=attendance|sales|raw|fuel or Android Kiosk wrapper),
     // warm up the neural models & WebGL shaders immediately without opening #authFaceVideo first
     // (prevents dual-<video> SurfaceTexture black-screen on Android and back-to-back camera HAL churn).
@@ -331,34 +417,40 @@ const Face = (() => {
         return;
       }
     } catch (_) {}
+    if (isPinOnlyWorkspaceBoot()) return;
     gateAutoStart().then(ok => { if (ok) prewarmGate(); });
   }
 
   function prewarmGate() {
-    // Request webcam stream AND start neural model loading in parallel immediately when #authGate is visible
-    // so both camera hardware and WebGL shaders are hot at the same time (zero sequential wait).
+    // Request webcam stream immediately when #authGate is visible; preload models in parallel only
+    // when camera use is already established (otherwise wait until getUserMedia resolves with a live stream).
+    if (isNonFaceSpecialBoot() || (!isKioskBoot() && isPinOnlyWorkspaceBoot()) || lastPermState === "denied") return;
     const gate = document.getElementById("authGate");
     const videoEl = document.getElementById("authFaceVideo");
     if (!gate || gate.hidden || !videoEl) return;
-    load().catch(() => {});
+    if (canPreloadModelsBeforeCamera()) load().catch(() => {});
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     if (!earlyStreamPromise) {
       earlyCancelled = false;
       earlyConsumed = false;
-      earlyStreamPromise = navigator.mediaDevices.getUserMedia({
+      const myGen = ++earlyStreamGen;
+      const streamReq = navigator.mediaDevices.getUserMedia({
         video: preferredVideoConstraints(),
         audio: false
       }).catch(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })).then(s => {
         trackStream(s);
         const gNow = document.getElementById("authGate");
         const vNow = document.getElementById("authFaceVideo");
-        if (!earlyCancelled && gNow && !gNow.hidden && vNow) {
+        if (!earlyCancelled && myGen === earlyStreamGen && !isPinOnlyWorkspaceBoot() && gNow && !gNow.hidden && vNow) {
+          lastPermState = "granted";
+          earlyAttemptFailed = false;
+          load().catch(() => {});
           earlyStreamObj = s;
           if (vNow.srcObject !== s) vNow.srcObject = s;
           const offEl = document.getElementById("authCamOffOverlay");
           if (offEl) offEl.hidden = true;
           const revealLiveVideo = () => {
-            if (earlyCancelled || vNow.srcObject !== s || !vNow.videoWidth) return;
+            if (earlyCancelled || myGen !== earlyStreamGen || vNow.srcObject !== s || !vNow.videoWidth) return;
             const vp = document.getElementById("authCamViewport");
             if (vp) vp.classList.add("is-video-ready");
             const dot = document.getElementById("authFacePulse");
@@ -387,15 +479,22 @@ const Face = (() => {
         } else {
           stopStreamTracks(s);
           trackedStreams.delete(s);
-          earlyStreamObj = null;
+          if (myGen === earlyStreamGen) earlyStreamObj = null;
         }
-        return earlyStreamObj;
-      }).catch(() => null);
+        return myGen === earlyStreamGen ? earlyStreamObj : null;
+      }).catch(() => {
+        if (myGen === earlyStreamGen) {
+          if (earlyStreamPromise === streamReq) earlyStreamPromise = null;
+          earlyAttemptFailed = true;
+          gateAutoNow = false;
+        }
+        return null;
+      });
+      earlyStreamPromise = streamReq;
     }
   }
 
   async function consumeEarlyStream(opts) {
-    earlyCancelled = false;
     earlyConsumed = true;
     clearEarlyPreviewTimer();
     const keepOnAuth = (opts && typeof opts === "object" && "keepOnAuthVideo" in opts)
@@ -2042,6 +2141,11 @@ const Face = (() => {
     prewarm,
     gateAutoStart,
     gateAutoStartNow: () => gateAutoNow,
+    canPreloadModelsBeforeCamera,
+    shouldWarmOfflineAssets,
+    refreshCameraPermissionState,
+    noteAutoStartDeclined,
+    didEarlyAttemptFail: () => earlyAttemptFailed,
     deviceUsesFaceId,
     forgetDeviceFaceId,
     resumeDeviceFaceId,
