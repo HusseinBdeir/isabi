@@ -1132,6 +1132,7 @@
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit &amp; Rate' : '2. Pricing &amp; Volume Tiers'}</span></div>
           ${fld(isCommForm ? 'Commission Unit *' : 'Material Pricing Unit *', sel('f_uom', prUomOpts, 'm³'), { id: 'wrap_pr_uom', hintId: 'hint_pr_uom', hint: '' })}
           ${fld(isCommForm ? 'Commission Rate ($ / m³) *' : 'Material Unit Price ($ / m³) *', inp('f_unitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_matprice', hintId: 'hint_pr_matprice', hint: '' })}
+          <div class="form-field check-field" id="wrap_pr_nomatcharge" ${isCommForm || isRawForm ? 'hidden' : ''}><input type="checkbox" id="f_pr_nomatcharge"><label for="f_pr_nomatcharge">No material charge</label></div>
           ${fld('Transportation Pricing Unit', sel('f_rateper', prUomOpts, 'm³'), { id: 'wrap_pr_transrate', hidden: isCommForm || isRawForm, hintId: 'hint_pr_transrate', hint: '' })}
           ${fld('Transportation Unit Price ($ / m³)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_transprice', hidden: isCommForm || isRawForm, hintId: 'hint_pr_transprice', hint: '' })}
           ${fld('Target Truck Plate (Optional)', inp('f_pr_truck', 'text', '', 'list="dl_equip" placeholder="Select specific truck to adjust its m³..."') + dl('dl_equip', equipNames), { id: 'wrap_pr_truck', hidden: isCommForm, hintId: 'hint_pr_truck', hint: 'Select a specific truck first to override its m³ capacity for this client or site.' })}

@@ -11092,21 +11092,57 @@
     return `No ${what} in the register yet.`;
   }
 
+  // An entry keyed in the app: it sits on top of the workbook figures. A row is judged by its id before its
+  // `source`: a workbook row someone saved in the app keeps its workbook id, and the entry form used to mark it
+  // `source: 'app'` (stopped 2026-11-27; rows saved before that, and by an app not yet updated, still carry the
+  // mark). That row replaces its own workbook figure and is never added to it (owner incident 2026-11-27: six WTC
+  // cash expenses saved unchanged were counted twice and the till read $2,430 short).
   function isAppRecord(r) {
+    if (!r) return false;
     // app ids = uid(form.slice(0, 2)) → "sa-<ts36>-<rnd6>" (or split "-i1" child expense_items); Dataverse ids are GUIDs
-    return !!(r && (r.source === 'app' || /^[a-z]{2}-[0-9a-z]+-[0-9a-z]{6}(?:-i\d+)?$/.test(String(r.id || ''))));
+    if (r.source === 'app') return !isWorkbookOwnRowId(r.id);
+    return /^[a-z]{2}-[0-9a-z]+-[0-9a-z]{6}(?:-i\d+)?$/.test(String(r.id || ''));
   }
 
-  // A workbook row keeps its workbook id (build/stable_seed_ids.py SEED_TX_ID_RE) when someone saves it in the app,
-  // and gains `source: 'app'` on the way. Pairing an app entry with its workbook copy judges a row by that id, never
-  // by `source`: the saved workbook row is still the workbook row (owner incident 2026-11-18, WTC ticket #11485).
-  const _SEED_TX_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$/;
+  // A workbook row keeps its workbook id (build/stable_seed_ids.py SEED_TX_ID_RE) when someone saves it in the app:
+  // the saved workbook row is still the workbook row (owner incident 2026-11-18, WTC ticket #11485). The pattern is
+  // built on first use, so a call made while the page is still starting up can never find it missing.
   function isWorkbookRowId(id) {
-    return _SEED_TX_ID_RE.test(String(id == null ? '' : id));
+    const re = isWorkbookRowId._re || (isWorkbookRowId._re = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$/);
+    return re.test(String(id == null ? '' : id));
+  }
+  // A workbook row's own id: the pattern without a line suffix. A line id under a workbook expense ("ex_<hex>-i1") is
+  // left out on purpose: the app adds such lines itself (bulk edit, the line sanitizer) and no workbook row stands
+  // behind them, so their mark is the only thing that says where they came from.
+  function isWorkbookOwnRowId(id) {
+    const s = String(id == null ? '' : id);
+    return isWorkbookRowId(s) && !/-i\d+$/.test(s);
   }
   // Keyed in the app as a new entry (so it may be a second copy of a workbook row), not a workbook row saved in it.
   function isAppKeyedEntry(r) {
     return isAppRecord(r) && !isWorkbookRowId(r.id);
+  }
+  // Takes the new-entry mark off a workbook row that was saved in the app, so every reader of `source` sees the
+  // workbook row it is.
+  function clearSavedWorkbookRowMark(r) {
+    if (r && r.source === 'app' && isWorkbookOwnRowId(r.id)) r.source = '';
+  }
+  // A save that makes a new entry out of the row it opened (a paired return, a row moved to another table) has
+  // just given it an app id: it is an entry keyed in the app, so it carries the mark again when the save path
+  // took it off for the workbook row it started from. A source of its own (an oil log's oil source) stays.
+  function markNewAppEntryFromSavedRow(record) {
+    if (record && !record.source) record.source = 'app';
+  }
+  // Tables of dated money and stock entries, where an app entry is counted on top of the workbook figures and a
+  // workbook row replaces its own. Loans, JV distributions and other older workbook rows carry ids the pattern above
+  // does not know (GUIDs), so on these tables the entry form leaves a row that was not an app entry when it was
+  // opened without the mark (the save path, the one place that knows what the row was). A row of that kind an app
+  // not yet updated still marks is not healed on read: see applyCustomRecordsToSeed.
+  // The registries (suppliers, sites, equipment, contracts) are left out: there the mark says "edited in the app"
+  // and the VAT and site rules read it. Built on first use, like the pattern.
+  function isMoneyEntryTable(key) {
+    const set = isMoneyEntryTable._set || (isMoneyEntryTable._set = new Set(['sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'receipts', 'settlements', 'salaries', 'attendance', 'external_movements', 'loans', 'loan_settlements', 'conversions', 'jv_distributions']));
+    return set.has(String(key || ''));
   }
   // An entry keyed in the app that a top-up kept over its workbook copy (owner rule 2026-11-23): the facts agreed, so
   // the entry stays as keyed and the workbook copy is voided under its workbook id (build/reconcile_cloud_store.py
@@ -11824,8 +11860,8 @@
   }
 
   // When an entry was keyed in the app, read from its own id (`se-<time in base 36>-<6 chars>`). A workbook row
-  // edited in the app keeps its workbook id (and carries `source: 'app'` plus the edit time), so it has no keyed
-  // time here and is never listed: it is a workbook figure, not an entry on top of them. (`_seed_orig` is no
+  // edited in the app keeps its workbook id (with the edit time, and no app mark since 2026-11-27), so it has no
+  // keyed time here and is never listed: it is a workbook figure, not an entry on top of them. (`_seed_orig` is no
   // test for that: an app entry that was voided and reopened carries one too.)
   function appRecordCreatedMs(r) {
     const mId = /^[a-z]{2}-([0-9a-z]+)-[0-9a-z]{6}$/.exec(String((r && r.id) || ''));
@@ -13839,7 +13875,7 @@
     return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
-  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|gross_usd|discount_usd|deposit_gl4196_usd|allocated_inv_usd|unallocated_adv_usd|paid_usd|total_usd|gross_prem_usd|policy_fee_usd|net_usd|ttc_usd|vat_usd|contract_usd|fob_usd|actual_usd|budget_usd|open_ar_usd|usd|lbp|diff|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|standing_discount_pct|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|no_material_charge|includes_transport|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|gross_usd|discount_usd|deposit_gl4196_usd|allocated_inv_usd|unallocated_adv_usd|paid_usd|total_usd|gross_prem_usd|policy_fee_usd|net_usd|ttc_usd|vat_usd|contract_usd|fob_usd|actual_usd|budget_usd|open_ar_usd|usd|lbp|diff|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|standing_discount_pct|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
   const WORD_LOCK_MODAL_ID_SET = new Set([
     'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip', 'f_standing_disc',
     'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_gross_amount', 'f_amount', 'f_vat', 'f_net', 'f_total',
@@ -13847,6 +13883,7 @@
     'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours', 'f_ot_hours', 'f_late_hours', 'f_leave_days',
     'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
     'f_floorprice', 'f_fuelbase', 'f_fuelstep', 'f_fuelsur',
+    'f_pr_nomatcharge', 'f_pr_incltrans',
     'f_trucksize', 'f_capacity', 'f_tonfactor', 'f_minstock', 'f_listprice', 'f_defaultcost',
     'f_wh_cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor', 'f_new_cost',
     'f_salary', 'f_dailyrate', 'f_reimb', 'f_deduction', 'f_workdays', 'f_workhours', 'f_vacdays', 'f_otmult',
@@ -13899,7 +13936,13 @@
     host.querySelectorAll('input, select, textarea').forEach(el => {
       if (allowInitialSitePin && (el.id === 'f_lat' || el.id === 'f_lng' || el.id === 'f_site_coord_paste')) return;
       if (!isModalControlNumericLocked(el)) return;
-      if (el.dataset && el.dataset.initVal !== undefined && String(el.value ?? '') !== String(el.dataset.initVal)) {
+      if (el.type === 'checkbox') {
+        const initChecked = el.dataset && el.dataset.initVal !== undefined ? el.dataset.initVal === '1' : false;
+        if (el.checked !== initChecked) {
+          el.checked = initChecked;
+          restoredAny = true;
+        }
+      } else if (el.dataset && el.dataset.initVal !== undefined && String(el.value ?? '') !== String(el.dataset.initVal)) {
         el.value = el.dataset.initVal;
         restoredAny = true;
       }
@@ -20880,8 +20923,11 @@
     }
     return null;
   }
+  function isNoMatChargeRule(r) {
+    return Boolean(r && /^Sales \((Delivery|Pickup)\)$/i.test(String(r.rule_type || '').trim()) && String(r.product || '').trim() !== '' && (r.no_material_charge === true || r.no_material_charge === 1 || r.no_material_charge === '1'));
+  }
   function isMatIndiffRule(r) {
-    if (!r) return false;
+    if (!r || isNoMatChargeRule(r)) return false;
     const isTransOnly = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim());
     if (isTransOnly) return false;
     if (/^truck$/i.test(String(r.unit || '').trim()) && ruleIndiffPrice(r) != null) return true;
@@ -20917,6 +20963,11 @@
   function ruleAnyIndiffPrice(r) {
     if (!r) return null;
     return ruleIndiffPrice(r) ?? ruleTransIndiffPrice(r) ?? (r.delivered_indiff_price != null && Number(r.delivered_indiff_price) !== 0 ? Number(r.delivered_indiff_price) : null);
+  }
+  // A sales agreement prices the material when it carries a material price or explicitly checks "No material charge".
+  // Otherwise an agreement that leaves the price blank / $0 leaves the material on the List Price.
+  function salesRuleHasMatPrice(r) {
+    return Boolean(r && (isNoMatChargeRule(r) || Number(r.unit_price || r.price || 0) > 0 || ruleIndiffPrice(r) != null));
   }
 
   // Price Agreement lookup (mirrors fillPrices on the Dataverse ticket form): customer × product × site × date,
@@ -22861,6 +22912,7 @@
     if (origRow && ruleRow && !ruleRow.voided) {
       const rateOrScopeChanged = ruleMatVal(ruleRow) !== ruleMatVal(origRow)
         || ruleTransVal(ruleRow) !== ruleTransVal(origRow)
+        || Boolean(isNoMatChargeRule(ruleRow)) !== Boolean(isNoMatChargeRule(origRow))
         || Boolean(isMatIndiffRule(ruleRow)) !== Boolean(isMatIndiffRule(origRow))
         || Boolean(isTransIndiffRule(ruleRow)) !== Boolean(isTransIndiffRule(origRow))
         || Boolean(isBundledRawPriceRule(ruleRow)) !== Boolean(isBundledRawPriceRule(origRow))
@@ -22978,9 +23030,11 @@
           : null;
         if (!activeSalesRule && s.customer && s.product) {
           const anyRule = findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] });
-          if (anyRule && (Number(anyRule.unit_price || anyRule.price || 0) > 0 || ruleIndiffPrice(anyRule) != null)) activeSalesRule = anyRule;
+          if (salesRuleHasMatPrice(anyRule)) activeSalesRule = anyRule;
         }
-        if (isListRule && activeSalesRule) continue;
+        // The agreement that prices the material: one with no material price leaves it on the List Price
+        const activeMatRule = salesRuleHasMatPrice(activeSalesRule) ? activeSalesRule : null;
+        if (isListRule && activeMatRule) continue;
 
         const isCoFleet = /^company/i.test(String(s.transport_by || 'Company fleet'));
         const truckOwner = isCoFleet ? (s.company || 'WTC') : String(s.truck_owner || '');
@@ -23052,24 +23106,27 @@
 
         // 2) Material Sales Price (`Sales (Delivery)`, `Sales (Pickup)`, `List Price` fallback, or `$0.00` unpriced gap)
         if (checkMatLeg && !ovSet.has('f_unitprice') && nextPriceRule !== 'Manual') {
-          if (activeSalesRule) {
-            const ruleIndiff = isMatIndiffRule(activeSalesRule);
-            const matFlat = Boolean(isTruckUom || ruleIndiff);
+          if (activeMatRule) {
+            const noMatCharge = isNoMatChargeRule(activeSalesRule);
+            const ruleIndiff = !noMatCharge && isMatIndiffRule(activeSalesRule);
+            const matFlat = Boolean(!noMatCharge && (isTruckUom || ruleIndiff));
             const ruleMatUnit = effectiveRuleMatUnit(activeSalesRule, prod, s.company, s.customer, d);
-            const rawRate = ruleIndiff
-              ? Number(ruleIndiffPrice(activeSalesRule) || 0)
-              : Number(activeSalesRule.unit_price ?? activeSalesRule.price ?? activeSalesRule.rate ?? 0);
-            const matConv = !ruleIndiff ? convertRateForTicketUom(rawRate, ruleMatUnit, uom, tonFactor) : { rate: round2(rawRate) };
-            const targetUp = Number(matConv.rate || 0);
+            const rawRate = noMatCharge
+              ? 0
+              : (ruleIndiff
+                  ? Number(ruleIndiffPrice(activeSalesRule) || 0)
+                  : Number(activeSalesRule.unit_price ?? activeSalesRule.price ?? activeSalesRule.rate ?? 0));
+            const matConv = noMatCharge ? { rate: 0 } : (!ruleIndiff ? convertRateForTicketUom(rawRate, ruleMatUnit, uom, tonFactor) : { rate: round2(rawRate) });
+            const targetUp = noMatCharge ? 0 : Number(matConv.rate || 0);
             let tierObj = { tier: 0, adj: 0 };
-            if (!matFlat && window.MFG_FORMS) {
+            if (!matFlat && !noMatCharge && window.MFG_FORMS) {
               if (capForTier > 0) tierObj = window.MFG_FORMS.matchTier(activeSalesRule, Number(capForTier));
               else if (activeSalesRule.qty1 != null && !isPickup) tierObj = window.MFG_FORMS.matchTier(activeSalesRule, null);
             }
-            const targetTier = matFlat ? 0 : Number(tierObj.tier || 0);
-            const targetTierAdj = matFlat ? 0 : Number(tierObj.adj || 0);
+            const targetTier = (matFlat || noMatCharge) ? 0 : Number(tierObj.tier || 0);
+            const targetTierAdj = (matFlat || noMatCharge) ? 0 : Number(tierObj.adj || 0);
             const targetRuleName = activeSalesRule.name || nextPriceRule;
-            if (targetUp > 0 && (
+            if ((targetUp > 0 || noMatCharge) && (
               Math.abs(nextUp - targetUp) > 1e-4
               || nextMatFlat !== matFlat
               || Math.abs(nextTierAdj - targetTierAdj) > 1e-4
@@ -23525,10 +23582,15 @@
       const isDelivery = saleType === 'Delivery';
       const wantType = isPickup ? 'Sales (Pickup)' : 'Sales (Delivery)';
       const d = String(s.rep_date || s.date || '').slice(0, 10);
-      const activeSalesRule = (s.customer && s.product)
-        ? findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] })
+      let activeSalesRule = (s.customer && s.product)
+        ? findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType], requireProduct: true })
         : null;
-      if (!activeSalesRule && Math.abs(Number(s.unit_price || 0) - newLp) > 1e-4) {
+      if (!activeSalesRule && s.customer && s.product) {
+        const anyRule = findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] });
+        if (salesRuleHasMatPrice(anyRule)) activeSalesRule = anyRule;
+      }
+      const activeMatRule = salesRuleHasMatPrice(activeSalesRule) ? activeSalesRule : null;
+      if (!activeMatRule && Math.abs(Number(s.unit_price || 0) - newLp) > 1e-4) {
         // A typed price stays, as with a price agreement change; so does a ticket on a statement marked as sent
         if (String(s.price_rule || '') === 'Manual' || (Array.isArray(s.admin_overrides) && s.admin_overrides.includes('f_unitprice'))) continue;
         if (statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date])) { heldOnSentLp++; continue; }
@@ -23536,7 +23598,10 @@
         s.unit_price = newLp;
         const qty = Number(s.qty || 0);
         const disc = Math.abs(Number(s.discount || 0));
-        s.price = s.mat_indiff ? round2(newLp - disc) : round2(qty * newLp + Number(s.tier_adj || 0) - disc);
+        s.tier = 0;
+        s.tier_adj = 0;
+        s.mat_indiff = /^truck$/i.test(String(s.uom || ''));
+        s.price = s.mat_indiff ? round2(newLp - disc) : round2(qty * newLp - disc);
         s.total = round2(Number(s.price || 0) + Number(s.trans_price || 0));
         const custObj = s.customer ? customerInfo(s.customer) : null;
         const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
@@ -23989,6 +24054,25 @@
     previewPriceRule: (record, editOrig, hint) => previewMfgPriceRuleImpact(record, editOrig, hint),
     // One record through the re-pricing step (sent statements, typed figures); for the headless gate only
     repriceStepForCheck: (ctx, table, rec, o) => (window.__MFG_HEADLESS_TEST ? siblingRepriceStep(ctx, table, rec, o) : undefined),
+    computeSiteNetBackForCheck: (site, origSite, rules, opts) => (window.__MFG_HEADLESS_TEST ? computeSiteNetBack(site, origSite, rules, opts) : null),
+    computePriceRuleFloorForCheck: draft => (window.__MFG_HEADLESS_TEST ? computePriceRuleFloor(draft) : null),
+    withWordOnlySeatForCheck: async fn => {
+      if (!window.__MFG_HEADLESS_TEST) return null;
+      const u = activeUser();
+      const prevRole = u.role, prevPerms = u.permissions, prevRights = u.rights, prevCustom = u.custom_permissions;
+      try {
+        u.role = 'Entry';
+        delete u.permissions;
+        delete u.rights;
+        delete u.custom_permissions;
+        return await fn();
+      } finally {
+        u.role = prevRole;
+        if (prevPerms !== undefined) u.permissions = prevPerms;
+        if (prevRights !== undefined) u.rights = prevRights;
+        if (prevCustom !== undefined) u.custom_permissions = prevCustom;
+      }
+    },
     summarizeImpact: impact => summarizeSiblingRepriceImpact(impact),
     seedOrigKeysForCheck: tk => (window.__MFG_HEADLESS_TEST ? JSON.stringify((SEED_ORIG_ARCHIVE[tk] instanceof Map) ? Array.from(SEED_ORIG_ARCHIVE[tk].keys()).sort() : null) : ''),
     rateChangeEvents: () => collectRateChangeEvents(),
@@ -45475,20 +45559,25 @@
             </thead>
             <tbody>
               ${shown.map(pr => {
-                const matInd = isMatIndiffRule(pr);
+                const noMatChg = isNoMatChargeRule(pr);
+                const matInd = !noMatChg && isMatIndiffRule(pr);
                 const trInd = isTransIndiffRule(pr);
                 const commRow = isCommRule(pr);
-                const hasRowMat = !/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(pr.rule_type || '') && (matInd || Number(pr.unit_price ?? pr.price ?? 0) !== 0 || Boolean(pr.product));
+                const hasRowMat = !/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(pr.rule_type || '') && (noMatChg || matInd || Number(pr.unit_price ?? pr.price ?? 0) !== 0 || Boolean(pr.product));
                 const hasRowTrans = /^(Sales \(Delivery\)|Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(pr.rule_type || '') && (trInd || Number(pr.trans_unit_price ?? pr.trans_price ?? 0) !== 0);
-                const upVal = matInd
-                  ? ruleIndiffPrice(pr)
-                  : (Number(pr.unit_price ?? pr.price ?? 0) !== 0 ? Number(pr.unit_price ?? pr.price) : null);
+                const upVal = noMatChg
+                  ? 0
+                  : (matInd
+                      ? ruleIndiffPrice(pr)
+                      : (Number(pr.unit_price ?? pr.price ?? 0) !== 0 ? Number(pr.unit_price ?? pr.price) : null));
                 const tpVal = trInd
                   ? ruleTransIndiffPrice(pr)
                   : (Number(pr.trans_unit_price ?? pr.trans_price ?? 0) !== 0 ? Number(pr.trans_unit_price ?? pr.trans_price) : null);
                 const matUnitTxt = !hasRowMat
                   ? '—'
-                  : ((matInd || /^truck$/i.test(pr.unit || '')) ? 'Per Truck Load' : `Per ${pr.unit || 'm³'}`);
+                  : (noMatChg
+                      ? `Per ${/^truck$/i.test(pr.unit || '') ? 'm³' : (pr.unit || 'm³')}`
+                      : ((matInd || /^truck$/i.test(pr.unit || '')) ? 'Per Truck Load' : `Per ${pr.unit || 'm³'}`));
                 const trUnitTxt = !hasRowTrans
                   ? '—'
                   : ((trInd || /^truck$/i.test(pr.rate_per || '')) ? 'Per Truck Load' : `Per ${pr.rate_per || pr.unit || 'm³'}`);
@@ -45514,7 +45603,7 @@
                   <td>${pr.product ? relLink('products', pr.product) : '(All Grades)'}</td>
                   <td>${pr.site ? relLink('sites', pr.site) : '—'}</td>
                   <td class="mono">${esc(matUnitTxt)}${pr.truck_size ? ` <span class="badge badge-brass" title="Client/Site Truck Size Override (${pr.truck || 'All trucks'})">${fmtNum(pr.truck_size, 1)} m³</span>` : (pr.qty1 ? ` <span class="badge badge-neutral" title="Tier 1${pr.qty2 ? ' / Tier 2' : ''} Truck Size">${fmtNum(pr.qty1, 1)}${pr.qty2 ? '/' + fmtNum(pr.qty2, 1) : ''} m³</span>` : '')}</td>
-                  <td class="r">${upVal != null ? `<strong>${fmtUSD(upVal, 2)}</strong>` : '—'}</td>
+                  <td class="r">${upVal != null ? `<strong>${fmtUSD(upVal, 2)}</strong>${noMatChg ? ' <span class="badge badge-neutral" style="font-size:9.5px">No charge</span>' : ''}` : '—'}</td>
                   <td class="mono">${esc(trUnitTxt)}</td>
                   <td class="r">${tpVal != null ? `<strong>${fmtUSD(tpVal, 2)}</strong>` : '—'}</td>
                   <td class="mono">${esc(fmtDateDMY(pr.start_date))}</td>
@@ -114929,8 +115018,11 @@
     let rule = (!isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [wantType], requireProduct: true }) : null;
     if (!rule && !isUnreg && customer && product) {
       const anyRule = findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [wantType] });
-      if (anyRule && (Number(anyRule.unit_price || anyRule.price || 0) > 0 || ruleIndiffPrice(anyRule) != null)) rule = anyRule;
+      if (salesRuleHasMatPrice(anyRule)) rule = anyRule;
     }
+    // `rule` = the customer's agreement for this product (transport, truck size and fuel terms come from it);
+    // `matRule` = that agreement only when it carries a material price (or explicit "No material charge"). Without one the material is on the List Price.
+    const matRule = salesRuleHasMatPrice(rule) ? rule : null;
     const ruleHasTrans = Boolean(rule && (Number(rule.trans_unit_price || rule.trans_price || 0) > 0 || ruleTransIndiffPrice(rule) != null));
     const transRule = (isDelivery && !isUnreg && customer && !ruleHasTrans)
       ? findRule({ company, customer, product: '', site, date: effDate, types: ['Sales (Delivery)'] })
@@ -114938,9 +115030,10 @@
     const haulCustRule = (isDelivery && !isUnreg && (customer || site || truckOwner))
       ? findRule({ company, customer, supplier: truckOwner, product, site, date: effDate, types: ['Haulage (Customer Site)'] })
       : null;
-    const crossType = (!rule && !isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [isPickup ? 'Sales (Delivery)' : 'Sales (Pickup)'] }) : null;
+    const crossType = (!matRule && !isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [isPickup ? 'Sales (Delivery)' : 'Sales (Pickup)'] }) : null;
 
-    const matIsIndiff = !isUnreg && isMatIndiffRule(rule);
+    const matNoCharge = !isUnreg && isNoMatChargeRule(matRule);
+    const matIsIndiff = !isUnreg && !matNoCharge && isMatIndiffRule(matRule);
     if (companyChanged || customerChanged || productChanged || siteChanged || saleTypeChanged) {
       if (!isFieldAdminUnlocked('f_uom') || isAutoEditUnlockedField('f_uom')) FORM_UI.uomManual = false;
       if (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice')) FORM_UI.priceManual = false;
@@ -114953,7 +115046,7 @@
     const tonMode = resolveCustomerProductTonMode(company, customer, product, effDate, rule || crossType, prod);
     const targetUom = tonMode.isTon
       ? 'Ton'
-      : ((rule && rule.unit && !matIsIndiff) ? rule.unit : (product ? baseUom : (company === 'BBConstruction' ? 'Ton' : 'm³')));
+      : ((!matNoCharge && matRule && matRule.unit && !matIsIndiff) ? matRule.unit : (product ? baseUom : (company === 'BBConstruction' ? 'Ton' : 'm³')));
     applyFieldLockState('f_uom', false, 'Select m³, Ton, or Truck');
     if (uomEl && !FORM_UI.uomManual) {
       uomEl.value = targetUom;
@@ -115030,9 +115123,9 @@
     setText('lbl_unitprice', (isTruckUom || matIsIndiff) ? 'Material Price ($) *' : `Material Unit Price ($ / ${uom}) *`);
     setText('lbl_transunitprice', (isTruckUom || transIsIndiff) ? 'Transportation Price ($)' : `Transportation Unit Price ($ / ${uom})`);
 
-    const ruleMatUnit = effectiveRuleMatUnit(rule, prod, company, customer, effDate);
-    const rawMatRate = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
-    const matConv = (rule && !matIsIndiff) ? convertRateForTicketUom(rawMatRate, ruleMatUnit, uom, tonFactor) : { rate: rawMatRate, converted: false, note: '' };
+    const ruleMatUnit = effectiveRuleMatUnit(matRule, prod, company, customer, effDate);
+    const rawMatRate = (matRule && !matNoCharge) ? (matIsIndiff ? Number(ruleIndiffPrice(matRule) || 0) : Number(matRule.unit_price ?? matRule.price ?? 0)) : 0;
+    const matConv = (matRule && !matNoCharge && !matIsIndiff) ? convertRateForTicketUom(rawMatRate, ruleMatUnit, uom, tonFactor) : { rate: rawMatRate, converted: false, note: '' };
     const agreedMatRate = matConv.rate;
     const baseTransRate = activeTransRule
       ? (transIsIndiff
@@ -115047,11 +115140,11 @@
     const fuelSurTicketUnit = !fuelSurOn ? 0 : (transIsIndiff ? fuelSur.perUnit : Number(convertRateForTicketUom(fuelSur.perUnit, transRuleUnit, uom, tonFactor).rate || 0));
 
     if ((priceLocked || isAutoEditUnlockedField('f_unitprice')) && !FORM_UI.priceManual && upEl) {
-      if (rule) {
+      if (matRule) {
         upEl.value = agreedMatRate.toFixed(2);
         if (tpEl && isDelivery && (transLocked || isAutoEditUnlockedField('f_transunitprice')) && !FORM_UI.transManual) tpEl.value = agreedTransRate.toFixed(2);
         setText('lbl_pricelock', 'AGREEMENT');
-        setHint('hint_price', `${rule.rule_type || 'Agreement'}${matIsIndiff ? ' · Per Truck Load' : ''}${rule.site ? ' · ' + rule.site : ''}${rule.end_date ? ' · to ' + rule.end_date : ''}${matConv.converted ? ' · ' + matConv.note : (!matIsIndiff && ruleMatUnit && ruleMatUnit !== baseUom ? ' · priced per ' + ruleMatUnit : '')}`, 'ok');
+        setHint('hint_price', `${rule.rule_type || 'Agreement'}${matNoCharge ? ' · No material charge ($0.00)' : (matIsIndiff ? ' · Per Truck Load' : '')}${rule.site ? ' · ' + rule.site : ''}${rule.end_date ? ' · to ' + rule.end_date : ''}${!matNoCharge && matConv.converted ? ' · ' + matConv.note : (!matNoCharge && !matIsIndiff && ruleMatUnit && ruleMatUnit !== baseUom ? ' · priced per ' + ruleMatUnit : '')}`, 'ok');
       } else {
         if (tpEl && isDelivery && (transLocked || isAutoEditUnlockedField('f_transunitprice')) && !FORM_UI.transManual) tpEl.value = agreedTransRate.toFixed(2);
         const lpRule = product ? listPriceRule(company, product, effDate) : null;
@@ -115062,10 +115155,12 @@
         if (lp != null) {
           upEl.value = lp.toFixed(2);
           setText('lbl_pricelock', 'LIST PRICE');
-          let gapHintPrefix = crossType
-            ? `No ${wantType} agreement (customer has ${crossType.rule_type} at ${fmtUSD(crossType.unit_price ?? ruleAnyIndiffPrice(crossType), 2)}) — `
-            : 'No customer agreement — ';
-          if (!crossType && customer && product && effDate) {
+          let gapHintPrefix = rule
+            ? 'Agreement has no material price - '
+            : (crossType
+                ? `No ${wantType} agreement (customer has ${crossType.rule_type} at ${fmtUSD(crossType.unit_price ?? ruleAnyIndiffPrice(crossType), 2)}) — `
+                : 'No customer agreement — ');
+          if (!rule && !crossType && customer && product && effDate) {
             const cN = norm(customer), pN = norm(product), sN = isDelivery ? norm(site) : '';
             const custRules = ((SEED.records && SEED.records.price_rules) || []).filter(r =>
               r && !r.voided && norm(r.customer) === cN && (!r.company || r.company === company)
@@ -115094,7 +115189,7 @@
         tpEl.value = agreedTransRate.toFixed(2);
       }
       setText('lbl_pricelock', isFieldAdminUnlocked('f_unitprice') ? 'ADMIN OVERRIDE' : 'MANUAL');
-      setHint('hint_price', rule ? `Overrides ${rule.rule_type || 'agreement'} (${fmtUSD(agreedMatRate, 2)})` : 'Manual / Admin-unlocked unit price', rule ? 'warn' : '');
+      setHint('hint_price', matRule ? `Overrides ${matRule.rule_type || 'agreement'} (${fmtUSD(agreedMatRate, 2)})` : 'Manual / Admin-unlocked unit price', matRule ? 'warn' : '');
     }
     if (isDelivery && !isUnreg && customer && site && !FORM_UI.hydrating) {
       const editOrigS = STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets' ? STATE.editingRecord.orig : null;
@@ -115138,6 +115233,9 @@
     let tier = { tier: 0, adj: 0, transAdj: 0 };
     if (rule && effCap && window.MFG_FORMS) tier = window.MFG_FORMS.matchTier(rule, Number(effCap));
     else if (rule && !effCap && window.MFG_FORMS && rule.qty1 != null && !isPickup) tier = window.MFG_FORMS.matchTier(rule, null);
+    // On the List Price or an explicit No material charge agreement, material carries no tier adjustment;
+    // the agreement's transport tier still applies.
+    if (rule && (!matRule || matNoCharge)) tier = Object.assign({}, tier, { tier: 0, adj: 0 });
     if (!tier.transAdj && transRule && effCap && window.MFG_FORMS) {
       const trTier = window.MFG_FORMS.matchTier(transRule, Number(effCap));
       if (trTier && (trTier.transAdj || trTier.adj)) tier = Object.assign({}, tier, { transAdj: trTier.transAdj || trTier.adj });
@@ -115341,7 +115439,7 @@
       disp
     });
     renderAdminLockBar();
-    return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
+    return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule: matRule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
       // Recorded on the ticket only while the transport price is the agreed one (a typed price carries no surcharge).
       // The diesel price is noted even when it adds no surcharge yet (0 steps), so the ticket keeps the price of its day.
       fuelSur: (fuelSur && !fuelSur.noPrice && isDelivery && Math.abs(tp - agreedTransRate) < 0.006)
@@ -118496,7 +118594,7 @@
 
       // A product-less Sales (Delivery) line with no material price is a transport-only agreement (the material is
       // priced on the customer's product lines), the way the Sales form reads it.
-      const isTransOnlyLine = isSalesDel && !r.product && !isMatIndiffRule(r)
+      const isTransOnlyLine = isSalesDel && !r.product && !isNoMatChargeRule(r) && !isMatIndiffRule(r)
         && !(Number(r.unit_price != null && r.unit_price !== '' ? r.unit_price : (r.price || 0)) > 0);
       let matPerLoad = null;
       let trPerLoad = null;
@@ -118504,10 +118602,17 @@
       let sepTrId = '';
       let sepTrUncosted = false;
       if (isSalesDel && !isTransOnlyLine) {
-        if (isMatIndiffRule(r)) matPerLoad = ruleIndiffPrice(r);
-        else {
+        if (isNoMatChargeRule(r)) matPerLoad = 0;
+        else if (isMatIndiffRule(r)) matPerLoad = ruleIndiffPrice(r);
+        else if (salesRuleHasMatPrice(r)) {
           const p = _siteNbNum(r.unit_price != null && r.unit_price !== '' ? r.unit_price : r.price);
           if (p != null) matPerLoad = p * L.qty;
+        } else if (r.product) {
+          const ruleCo = r.company || co;
+          const lpR = listPriceRule(ruleCo, r.product, today);
+          const rawLp = lpR ? _siteNbNum(lpR.unit_price ?? lpR.price) : _siteNbNum(listPrice(r.product));
+          const lpUom = _siteNbUomKey((lpR && lpR.unit) || (productInfo(r.product)?.uom) || 'm³');
+          if (rawLp != null && rawLp > 0) matPerLoad = unitToLoad(rawLp, lpUom);
         }
       }
       trPerLoad = transPerLoad(r, isSalesDel);
@@ -118551,6 +118656,7 @@
       if (isSalesDel && r.product) {
         const ruleCo = r.company || co;
         let pr = (r.customer && findRule({ company: ruleCo, customer: r.customer, product: r.product, date: today, types: ['Sales (Pickup)'], requireProduct: true })) || null;
+        if (pr && !salesRuleHasMatPrice(pr)) pr = null;
         let exw = null;
         if (!pr) {
           exw = resolveExWorksReference(ruleCo, r.product, matUom, today);
@@ -118562,6 +118668,9 @@
         if (exw) {
           pickupUnit = exw.unit;
           pickupSrc = exw.src; // 'exworks' | 'lowpickup'
+        } else if (pr && isNoMatChargeRule(pr)) {
+          pickupUnit = 0;
+          pickupSrc = 'pickup';
         } else if (pr && _siteNbUomKey(pr.unit || 'm³') === matUom) {
           if (isMatIndiffRule(pr)) {
             const flat = ruleIndiffPrice(pr);
@@ -120130,9 +120239,9 @@
     const nightPayUnit = (inp.showTripPay && nightRate > 0 && q) ? nightRate / q : 0;
     const needsPickup = /^Sales \(Delivery\)$/i.test(rt) && !row.isTransOnlyLine;
     const floorUnit = fuelUnit == null || (needsPickup && row.pickupUnit == null) ? null : (needsPickup ? row.pickupUnit : 0) + fuelUnit;
-    // A product line is compared only once its material price is typed (a transport rate alone is not a delivered price).
+    // A product line is compared once its material price is typed or No material charge is explicitly checked (a transport rate alone is not a delivered price).
     const entered = needsPickup
-      ? Number(draft._enteredMat || 0) > 0
+      ? (Number(draft._enteredMat || 0) > 0 || isNoMatChargeRule(draft))
       : (Number(draft._enteredMat || 0) > 0 || Number(draft._enteredTrans || 0) > 0);
     // What the floor is compared with: the delivered price, or the haulage rate on transport-only agreements.
     const rateUnit = row.deliveredUnit != null ? row.deliveredUnit : null;
@@ -120210,10 +120319,11 @@
       product: ctx.product || '',
       unit: ctx.hasMat ? ctx.uomVal : ctx.ratePer,
       rate_per: ctx.hasTrans ? ctx.ratePer : ctx.uomVal,
-      unit_price: (!ctx.hasMat || matIsTruck) ? 0 : up,
-      price: (!ctx.hasMat || matIsTruck) ? null : (up || null),
+      no_material_charge: Boolean(ctx.noMatCharge),
+      unit_price: (!ctx.hasMat || matIsTruck || ctx.noMatCharge) ? 0 : up,
+      price: (!ctx.hasMat || matIsTruck || ctx.noMatCharge) ? null : (up || null),
       trans_unit_price: (!ctx.hasTrans || transIsTruck) ? 0 : tp,
-      indiff_price: matIsTruck ? (up || null) : ((!ctx.hasMat && transIsTruck) ? (tp || null) : null),
+      indiff_price: (matIsTruck && !ctx.noMatCharge) ? (up || null) : ((!ctx.hasMat && transIsTruck) ? (tp || null) : null),
       trans_indiff_price: (ctx.hasMat && transIsTruck) ? (tp || null) : null,
       start_date: ctx.startDate || '',
       end_date: ctx.endDate || '',
@@ -122302,9 +122412,17 @@
         if (!hasMat && hasTrans && $('f_uom') && $('f_uom').value !== ratePer) {
           $('f_uom').value = ratePer;
         }
+        const allowNoMatCharge = isSalesDel || isSalesPick;
+        if (!allowNoMatCharge && $('f_pr_nomatcharge') && $('f_pr_nomatcharge').checked) $('f_pr_nomatcharge').checked = false;
+        const noMatCharge = allowNoMatCharge && Boolean($('f_pr_nomatcharge') && $('f_pr_nomatcharge').checked);
+        const prProductNow = val('f_product');
+        if (noMatCharge && $('f_uom') && $('f_uom').value === 'Truck') {
+          const pNomU = (prProductNow && productInfo(prProductNow)?.uom) || 'm³';
+          $('f_uom').value = normPrUnit(pNomU);
+        }
         const uomVal = hasMat ? normPrUnit(val('f_uom') || 'm³') : ratePer;
         if (hasMat && $('f_uom') && $('f_uom').value !== uomVal) $('f_uom').value = uomVal;
-        const isTruckMat = hasMat && uomVal === 'Truck';
+        const isTruckMat = hasMat && !noMatCharge && uomVal === 'Truck';
         const prSiteObj = prSite ? siteInfo(prSite, isRawDomain ? 'raw' : 'sales') : null;
         const prAutoBundled = Boolean(isPurch && prSite && isSupplierDeliveredSite(prSiteObj || prSite));
         if ($('f_pr_incl_transport')) $('f_pr_incl_transport').checked = prAutoBundled;
@@ -122329,8 +122447,14 @@
         setFieldVisible('wrap_pr_site', showSite);
         setFieldVisible('wrap_pr_site_region', prNeedSiteReg);
         setFieldVisible('wrap_pr_incl_transport', prAutoBundled);
-        setFieldVisible('wrap_pr_uom', hasMat);
+        setFieldVisible('wrap_pr_uom', hasMat && !noMatCharge);
         setFieldVisible('wrap_pr_matprice', hasMat);
+        setFieldVisible('wrap_pr_nomatcharge', allowNoMatCharge);
+        if ($('f_unitprice')) {
+          $('f_unitprice').readOnly = noMatCharge;
+          $('f_unitprice').classList.toggle('is-locked', noMatCharge);
+          if (noMatCharge && $('f_unitprice').value !== '0.00') $('f_unitprice').value = '0.00';
+        }
         setFieldVisible('wrap_pr_transrate', hasTrans);
         setFieldVisible('wrap_pr_transprice', hasTrans);
         setFieldVisible('wrap_pr_truck', anyLegIsM3);
@@ -122350,7 +122474,7 @@
           if ($('f_adj1') && $('f_adj1').value !== '0.00') $('f_adj1').value = '0.00';
           if ($('f_adj2') && $('f_adj2').value !== '0.00') $('f_adj2').value = '0.00';
         }
-        if (!matIsM3) {
+        if (!matIsM3 || noMatCharge) {
           if ($('f_adj1') && $('f_adj1').value !== '0.00') $('f_adj1').value = '0.00';
           if ($('f_adj2') && $('f_adj2').value !== '0.00') $('f_adj2').value = '0.00';
         }
@@ -122393,14 +122517,14 @@
         }
 
         setFieldVisible('wrap_pr_tier1', anyLegIsM3);
-        setFieldVisible('wrap_pr_adj1', anyLegIsM3 && matIsM3);
+        setFieldVisible('wrap_pr_adj1', anyLegIsM3 && matIsM3 && !noMatCharge);
         setFieldVisible('wrap_pr_transadj1', anyLegIsM3 && transIsM3);
 
         const q1 = num('f_qty1');
         const tSize = num('f_trucksize');
         const showTier2 = anyLegIsM3 && q1 > 0;
         setFieldVisible('wrap_pr_tier2', showTier2);
-        setFieldVisible('wrap_pr_adj2', showTier2 && matIsM3);
+        setFieldVisible('wrap_pr_adj2', showTier2 && matIsM3 && !noMatCharge);
         setFieldVisible('wrap_pr_transadj2', showTier2 && transIsM3);
         if (!showTier2) {
           if ($('f_qty2') && $('f_qty2').value) $('f_qty2').value = '';
@@ -122408,7 +122532,7 @@
           if ($('f_transadj2') && $('f_transadj2').value !== '0.00') $('f_transadj2').value = '0.00';
         }
 
-        const up = hasMat ? num('f_unitprice') : 0;
+        const up = (hasMat && !noMatCharge) ? num('f_unitprice') : 0;
         const tp = hasTrans ? num('f_transunitprice') : 0;
 
         // Ex-Works Floor (List Price agreements) and the fuel surcharge clause (delivery agreements).
@@ -122466,20 +122590,22 @@
             setHint('hint_pr_fuelsur', 'Added to the transport rate for each full step the diesel price stands above the price at signing.', '');
           }
         }
-        const a1 = matIsM3 ? num('f_adj1') : 0;
+        const a1 = (matIsM3 && !noMatCharge) ? num('f_adj1') : 0;
         const ta1 = transIsM3 ? num('f_transadj1') : 0;
         const q2 = num('f_qty2');
-        const a2 = matIsM3 ? num('f_adj2') : 0;
+        const a2 = (matIsM3 && !noMatCharge) ? num('f_adj2') : 0;
         const ta2 = transIsM3 ? num('f_transadj2') : 0;
         const prProdInfo = prProduct ? productInfo(prProduct) : null;
         const prTf = resolveProductTonFactor(prProdInfo, prProduct);
-        if (hasMat && prProduct && prTf > 0 && prTf !== 1 && !isTruckMat) {
+        if (hasMat && prProduct && prTf > 0 && prTf !== 1 && !isTruckMat && !noMatCharge) {
           setHint('hint_pr_uom', `1 m³ = ${prTf} Tons (${prProduct})`, '');
         } else {
           setHint('hint_pr_uom', '', '');
         }
         if (hasMat && !isComm) {
-          if (isTruckMat) {
+          if (noMatCharge) {
+            setHint('hint_pr_matprice', 'Explicit $0.00 material charge (does not fall back to List Price)', 'ok');
+          } else if (isTruckMat) {
             setHint('hint_pr_matprice', up > 0 ? 'Billed per truck load (not multiplied by m³)' : '', up > 0 ? 'ok' : '');
           } else if (up > 0 && prTf > 0 && prTf !== 1) {
             if (/^m/i.test(uomVal)) {
@@ -122563,7 +122689,7 @@
         }
         // Live price floor (pickup + fuel at the latest diesel price + night trip pay) for delivery agreements.
         renderPriceRuleFloorStrip({
-          rt, isSalesDel, isHaulCust, hasMat, hasTrans, uomVal, ratePer, up, tp,
+          rt, isSalesDel, isHaulCust, hasMat, hasTrans, noMatCharge, uomVal, ratePer, up, tp,
           co: prCo, customer: showCustomer ? prCust : '', supplier: showSupplier ? prSup : '',
           site: showSite ? prSite : '', product: prProduct,
           startDate: val('f_date') || '', endDate: val('f_enddate') || '',
@@ -131264,7 +131390,7 @@
           }
           if (c.up < 0) addErr('f_unitprice', 'Unit price cannot be negative.');
           else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
-          else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
+          else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(isNoMatChargeRule(c.rule) && !FORM_UI.priceManual && !isFieldAdminUnlocked('f_unitprice')) && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
           if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet') {
             const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site, owner: val('f_truckowner'), subTruck: _editSubTruckForForm(val('f_truck'), company, editCtx) }) : null;
             if (!preview && !val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
@@ -131974,7 +132100,10 @@
       const hasTrans = rt === 'Sales (Delivery)' || isTransOnly;
       const hasMat = !isTransOnly;
       const normPrUnit = u => /^tons?$/i.test(String(u || '').trim()) ? 'Ton' : (/^truck$/i.test(String(u || '').trim()) ? 'Truck' : 'm³');
-      const effUnit = hasMat ? normPrUnit(val('f_uom') || 'm³') : normPrUnit(val('f_rateper') || 'm³');
+      const prNoMatCharge = (rt === 'Sales (Delivery)' || rt === 'Sales (Pickup)') && Boolean($('f_pr_nomatcharge') && $('f_pr_nomatcharge').checked);
+      const effUnit = (prNoMatCharge && hasMat && normPrUnit(val('f_uom') || 'm³') === 'Truck')
+        ? normPrUnit((prod && productInfo(prod)?.uom) || 'm³')
+        : (hasMat ? normPrUnit(val('f_uom') || 'm³') : normPrUnit(val('f_rateper') || 'm³'));
       const effRatePer = hasTrans ? normPrUnit(val('f_rateper') || 'm³') : effUnit;
       const matIsM3 = hasMat && /^m/i.test(effUnit);
       const transIsM3 = hasTrans && /^m/i.test(effRatePer);
@@ -131982,9 +132111,11 @@
       const prTruck = anyLegIsM3 ? (val('f_pr_truck') || '') : '';
       const tSizeV = (prTruck && val('f_trucksize')) ? num('f_trucksize') : null;
       const roundPrRate = v => { const n = Number(v || 0); return Number.isFinite(n) ? Number(n.toFixed(4)) : 0; };
-      const up0 = roundPrRate(num('f_unitprice')), tp0 = roundPrRate(num('f_transunitprice'));
+      const up0 = prNoMatCharge ? 0 : roundPrRate(num('f_unitprice')), tp0 = roundPrRate(num('f_transunitprice'));
       const isSiteDelTransOrSize = rt === 'Sales (Delivery)' && Boolean(val('f_site')) && (tp0 !== 0 || (tSizeV != null && tSizeV > 0));
-      if (!prod && !isTransOnly && !isSiteDelTransOrSize && !(tSizeV != null && tSizeV > 0)) {
+      if (prNoMatCharge && !prod) {
+        addErr('f_product', 'Product / Grade is required for a No material charge agreement.');
+      } else if (!prod && !isTransOnly && !isSiteDelTransOrSize && !(tSizeV != null && tSizeV > 0)) {
         addErr('f_product', 'Product / Grade is required.');
       }
       if (isTransOnly && tp0 === 0 && !(tSizeV != null && tSizeV > 0)) {
@@ -131992,15 +132123,15 @@
       }
       const matIsTruck = hasMat && effUnit === 'Truck';
       const transIsTruck = hasTrans && effRatePer === 'Truck';
-      const effUp = (!hasMat || matIsTruck) ? 0 : up0;
+      const effUp = (!hasMat || matIsTruck || prNoMatCharge) ? 0 : up0;
       const effTp = (!hasTrans || transIsTruck) ? 0 : tp0;
-      const effIndiff = matIsTruck ? (up0 || null) : ((isTransOnly && transIsTruck) ? (tp0 || null) : null);
+      const effIndiff = (matIsTruck && !prNoMatCharge) ? (up0 || null) : ((isTransOnly && transIsTruck) ? (tp0 || null) : null);
       const effTransIndiff = (hasMat && transIsTruck) ? (tp0 || null) : null;
       const q1v = (anyLegIsM3 && val('f_qty1')) ? num('f_qty1') : null;
       const q2v = (anyLegIsM3 && q1v > 0 && val('f_qty2')) ? num('f_qty2') : null;
-      const adj1v = (anyLegIsM3 && matIsM3) ? round2(num('f_adj1')) : 0;
+      const adj1v = (anyLegIsM3 && matIsM3 && !prNoMatCharge) ? round2(num('f_adj1')) : 0;
       const tAdj1v = (anyLegIsM3 && transIsM3) ? round2(num('f_transadj1')) : 0;
-      const adj2v = (q2v != null && matIsM3) ? round2(num('f_adj2')) : 0;
+      const adj2v = (q2v != null && matIsM3 && !prNoMatCharge) ? round2(num('f_adj2')) : 0;
       const tAdj2v = (q2v != null && transIsM3) ? round2(num('f_transadj2')) : 0;
       if (val('f_enddate') && val('f_enddate') < date) addErr('f_enddate', 'End Date cannot be before the Start Date.');
       if (/Sales/.test(rt) && !val('f_customer') && !(rt === 'Sales (Delivery)' && val('f_site') && tSizeV > 0)) addErr('f_customer', 'A Sales rule needs the Customer it is agreed with.');
@@ -132065,6 +132196,7 @@
         indiff_price: effIndiff,
         trans_indiff_price: effTransIndiff,
         includes_transport: prInclTrans,
+        no_material_charge: prNoMatCharge,
         truck_size: tSizeV,
         truck: prTruck,
         qty1: q1v,
@@ -133878,6 +134010,13 @@
       if (adminOverrides.length) record.admin_overrides = adminOverrides;
       else delete record.admin_overrides;
       if (f !== 'oillog' && orig.source) record.source = orig.source;
+      // A workbook row saved here stays a workbook row: the new-entry mark never lands on it (isAppRecord). By its
+      // id, and on the money tables also when the row opened was not an app entry (workbook loans, JV distributions
+      // and other rows with older ids).
+      if (f !== 'oillog') {
+        clearSavedWorkbookRowMark(record);
+        if (record.source === 'app' && isMoneyEntryTable(crKey) && !isAppRecord(orig)) record.source = '';
+      }
       if (orig.entered_by) record.entered_by = orig.entered_by;
       if (orig.entered_by_email) record.entered_by_email = orig.entered_by_email;
       if (orig.entered_at) record.entered_at = orig.entered_at;
@@ -133912,13 +134051,14 @@
       if (modalForm) {
         const changedModalIds = new Set();
         modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
-          if (el.dataset && el.dataset.initVal !== undefined && String(el.value ?? '') !== String(el.dataset.initVal ?? '')) {
+          const curCtrlVal = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value ?? '');
+          if (el.dataset && el.dataset.initVal !== undefined && curCtrlVal !== String(el.dataset.initVal ?? '')) {
             changedModalIds.add(el.id);
           }
         });
         const priceDriverIds = [
           'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
-          'f_saletype', 'f_transportby', 'f_raw_bundled', 'f_pr_incl_transport', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
+          'f_saletype', 'f_transportby', 'f_raw_bundled', 'f_pr_incl_transport', 'f_pr_nomatcharge', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
           'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_direction', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
           'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
           'f_floorprice', 'f_fuelbase', 'f_fuelstep', 'f_fuelsur',
@@ -133995,7 +134135,8 @@
         modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
           // The note is the person's to change; a file being attached is not a figure.
           if (el.id === 'f_notes' || el.type === 'file' || !/^f_/.test(el.id)) return;
-          if (!el.dataset || el.dataset.initVal === undefined || String(el.value ?? '') !== String(el.dataset.initVal ?? '')) controlChanged = true;
+          const curAttVal = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value ?? '');
+          if (!el.dataset || el.dataset.initVal === undefined || curAttVal !== String(el.dataset.initVal ?? '')) controlChanged = true;
         });
         if (!controlChanged) {
           // Put back from the row as it is now, not as it was when the form opened: a punch may have
@@ -135056,6 +135197,7 @@
         if (updatedOrig) preExtraApiPosts.push([crKey, updatedOrig]);
         Object.keys(record).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete record[k]; });
         record.id = uid(STATE.modalForm.slice(0, 2));
+        markNewAppEntryFromSavedRow(record);
         record.paired_from_id = String(editCtx.id);
         STATE.customRecords[crKey].unshift(record);
       } else if (isEditingExisting) {
@@ -135092,6 +135234,7 @@
           if (voidedOld) preExtraApiPosts.push([origCrKey, voidedOld]);
           Object.keys(record).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete record[k]; });
           record.id = uid(STATE.modalForm.slice(0, 2));
+          markNewAppEntryFromSavedRow(record);
           if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
           STATE.customRecords[crKey].unshift(record);
         } else {
@@ -141998,6 +142141,7 @@
       setModalControlVal('f_site', row.site || '');
       setModalControlVal('f_product', row.product || '');
       if ($('f_pr_incl_transport')) setModalControlVal('f_pr_incl_transport', isBundledRawPriceRule(row));
+      if ($('f_pr_nomatcharge')) setModalControlVal('f_pr_nomatcharge', isNoMatChargeRule(row));
       const normPrU = u => /^tons?$/i.test(String(u || '').trim()) ? 'Ton' : (/^truck$/i.test(String(u || '').trim()) ? 'Truck' : 'm³');
       const matUnit = isMatIndiffRule(row) ? 'Truck' : normPrU(row.unit || 'm³');
       const trUnit = isTransIndiffRule(row) ? 'Truck' : normPrU(row.rate_per || row.unit || 'm³');
@@ -142543,7 +142687,7 @@
     const modalForm = $('modalBody') || $('entryModal');
     if (modalForm) {
       modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
-        el.dataset.initVal = String(el.value ?? '');
+        el.dataset.initVal = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value ?? '');
       });
     }
     try {
@@ -142577,7 +142721,7 @@
     }
     if (modalForm) {
       modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
-        el.dataset.initVal = String(el.value ?? '');
+        el.dataset.initVal = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value ?? '');
       });
     }
     FORM_UI.attPresetAtOpen = FORM_UI.attPreset;   // read at Save, beside the controls' data-init-val
@@ -145120,7 +145264,8 @@
     const inspRange = getActiveInspectorDateRange();
     const inspScopeTag = inspRange ? ` (${formatInspectorRangeShort(inspRange)})` : '';
     if (key === 'sales_tickets') {
-      const pr = findRule({ company: row.company, customer: row.customer, product: row.product, site: row.site, date: row.date, types: [row.sale_type === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)', 'Sales (Delivery)', 'Sales (Pickup)'] });
+      const prRaw = findRule({ company: row.company, customer: row.customer, product: row.product, site: row.site, date: row.date, types: [row.sale_type === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)', 'Sales (Delivery)', 'Sales (Pickup)'] });
+      const pr = salesRuleHasMatPrice(prRaw) ? prRaw : null;
       const eq = equipInfo(row.truck);
       const ct = creditTermsForCustomer(row.customer);
       const lp = listPrice(row.product);
@@ -145134,10 +145279,13 @@
         return { tone: 'info', text: `Sale Type: ${row.sale_type || 'Delivery'}  |  ${trkTxt}  |  ${totTxt}  |  ${crTxt}` };
       }
       const ruleTxt = pr
-        ? `${pr.rule_type || 'Sales Agreement'}: ${fmtUSD(pr.unit_price, 2)}/${row.uom || pr.unit || 'm³'}`
+        ? (isNoMatChargeRule(pr)
+            ? `${pr.rule_type || 'Sales Agreement'}: No material charge ($0.00)`
+            : `${pr.rule_type || 'Sales Agreement'}: ${fmtUSD(pr.unit_price, 2)}/${row.uom || pr.unit || 'm³'}`)
         : (lp != null ? `List Price Benchmark: ${fmtUSD(lp, 2)}/${row.uom || 'm³'} (no active customer rule)` : `Spot Ticket Price: ${fmtUSD(row.unit_price, 2)}/${row.uom || 'm³'}`);
+      const trSrc = prRaw || pr;
       const trTxt = row.sale_type === 'Delivery'
-        ? `Transport: ${fmtUSD(row.trans_unit_price || (pr && pr.trans_unit_price) || 0, 2)}/${row.uom || 'm³'} (${fmtUSD(row.trans_price, 2)})`
+        ? `Transport: ${fmtUSD(row.trans_unit_price || (trSrc && trSrc.trans_unit_price) || 0, 2)}/${row.uom || 'm³'} (${fmtUSD(row.trans_price, 2)})`
         : 'Pick-up (Material Only · $0.00 Transport)';
       return { tone: pr ? 'info' : 'warn', text: `Pricing: ${ruleTxt}  |  ${trTxt}  |  ${trkTxt}  |  ${totTxt}  |  ${crTxt}` };
     }
@@ -145185,10 +145333,18 @@
       const matVal = isFlatMat ? Number(ruleIndiffPrice(row) || 0) : Number(row.unit_price ?? row.price ?? 0);
       const trVal = isFlatTrans ? Number(ruleTransIndiffPrice(row) || 0) : Number(row.trans_unit_price ?? row.trans_price ?? (isTransOnly ? (row.unit_price ?? row.price) : 0) ?? 0);
       const priceParts = [];
+      const noMatChargePr = isNoMatChargeRule(row);
+      const isBlankSalesMat = !isTransOnly && /^Sales \((Delivery|Pickup)\)$/i.test(String(row.rule_type || '').trim()) && !noMatChargePr && !isFlatMat && !(matVal > 0);
       if (!isTransOnly) {
-        priceParts.push(isFlatMat
-          ? `${isBundledPr ? 'Delivered Price (Incl. Transport)' : 'Material Price'}: ${fmtUSD(matVal, 2)} / Truck Load`
-          : `${isBundledPr ? 'Delivered Unit Price (Incl. Transport)' : 'Material Unit Price'}: ${fmtUSD(matVal, 2)} / ${row.unit || 'm³'}`);
+        if (noMatChargePr) {
+          priceParts.push('Material Price: No material charge ($0.00)');
+        } else if (isBlankSalesMat) {
+          priceParts.push('Material Price: List Price benchmark');
+        } else {
+          priceParts.push(isFlatMat
+            ? `${isBundledPr ? 'Delivered Price (Incl. Transport)' : 'Material Price'}: ${fmtUSD(matVal, 2)} / Truck Load`
+            : `${isBundledPr ? 'Delivered Unit Price (Incl. Transport)' : 'Material Unit Price'}: ${fmtUSD(matVal, 2)} / ${row.unit || 'm³'}`);
+        }
       }
       if (isBundledPr) {
         priceParts.push('Delivery Included by Supplier ($0 separate transport)');
@@ -145581,9 +145737,10 @@
 
     const inspRange = getActiveInspectorDateRange();
     if (key === 'sales_tickets') {
-      const pr = findRule({ company: row.company, customer: row.customer, product: row.product, site: row.site, date: row.date, types: [row.sale_type === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)', 'Sales (Delivery)', 'Sales (Pickup)'] });
+      const prRaw = findRule({ company: row.company, customer: row.customer, product: row.product, site: row.site, date: row.date, types: [row.sale_type === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)', 'Sales (Delivery)', 'Sales (Pickup)'] });
+      const pr = salesRuleHasMatPrice(prRaw) ? prRaw : null;
       const lp = listPrice(row.product);
-      const bench = pr ? Number(pr.unit_price || 0) : (lp != null ? Number(lp) : Number(row.unit_price || 0));
+      const bench = pr ? (isNoMatChargeRule(pr) ? 0 : Number(pr.unit_price || 0)) : (lp != null ? Number(lp) : Number(row.unit_price || 0));
       const actual = Number(row.unit_price || 0);
       const diff = round2(actual - bench);
       const ci = getInspectorScopedCustomerInfo(row.customer, resolveInspectorMfgModelOverride(row)) || {};
@@ -145617,7 +145774,7 @@
               tag: diff < -0.01 ? 'BELOW RULE' : (pr ? 'ON RULE' : 'LIST / SPOT'),
               tone: diff < -0.01 ? 'warn' : 'good',
               val: `${fmtUSD(actual, 2)} / ${row.uom || 'm³'}`,
-              sub1: pr ? `Agreed: ${fmtUSD(pr.unit_price, 2)} · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}` : `List Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'} · Transport: ${fmtUSD(row.trans_price, 2)}`,
+              sub1: pr ? (isNoMatChargeRule(pr) ? `Agreed: No charge ($0.00) · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}` : `Agreed: ${fmtUSD(pr.unit_price, 2)} · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}`) : `List Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'} · Transport: ${fmtUSD(row.trans_price, 2)}`,
               sub2: stLens.tax ? `Material: ${fmtUSD(row.price, 2)} · VAT 11%: ${fmtUSD(row.vat, 2)}` : `Material: ${fmtUSD(row.price, 2)} · ${row.method || 'Credit'}`,
               pct: Math.min(100, Math.max(20, bench > 0 ? Math.round((actual / bench) * 85) : 80))
             },
@@ -146081,7 +146238,7 @@
     const maskTaxTblCockpit = ['vat_invoices', 'vat_rates'].includes(key) && !genLens.tax;
     const maskNonPayrollCockpit = maskSupPrCockpit || maskCommPrCockpit || maskExpTblCockpit || maskBooksTblCockpit || maskPartnerTblCockpit || maskTaxTblCockpit;
     const prMoney = (key === 'price_rules' && !maskSupPrCockpit && !maskCommPrCockpit)
-      ? (Number(row.unit_price || 0) > 0 ? row.unit_price : (Number(row.trans_unit_price || 0) > 0 ? row.trans_unit_price : ruleAnyIndiffPrice(row)))
+      ? (Number(row.unit_price || 0) > 0 ? row.unit_price : (Number(row.trans_unit_price || 0) > 0 ? row.trans_unit_price : (ruleAnyIndiffPrice(row) ?? (isNoMatChargeRule(row) ? 0 : null))))
       : ((maskSupPrCockpit || maskCommPrCockpit) ? null : row.unit_price);
     const empMoney = (!maskPayrollCockpit && key === 'employments') ? empContractPackageUsd(row) : null;
     const empReimbMoney = (!maskPayrollCockpit && key === 'employments') ? empContractReimbUsd(row) : 0;
@@ -146913,7 +147070,7 @@
     let rule = (!isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [wantType], requireProduct: true }) : null;
     if (!rule && !isUnreg && customer && product) {
       const anyRule = findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [wantType] });
-      if (anyRule && (Number(anyRule.unit_price || anyRule.price || 0) > 0 || ruleIndiffPrice(anyRule) != null)) rule = anyRule;
+      if (salesRuleHasMatPrice(anyRule)) rule = anyRule;
     }
     const ruleHasTrans = Boolean(rule && (Number(rule.trans_unit_price || rule.trans_price || 0) > 0 || ruleTransIndiffPrice(rule) != null));
     const transRule = (isDelivery && !isUnreg && customer && !ruleHasTrans)
@@ -146943,7 +147100,7 @@
       Math.abs(origTransPrice - round2(origTp)) <= 0.05 &&
       Math.abs(origTransPrice - round2(origBillQty * origTp + Number(base.trans_tier_adj || 0))) > 0.50;
 
-    const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || (!isUnreg && isMatIndiffRule(rule)) || storedMatFlat);
+    const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || (!isUnreg && !isNoMatChargeRule(rule) && isMatIndiffRule(rule)) || storedMatFlat);
     const transIsFlat = Boolean(isDelivery && (isTruckUom || base.trans_indiff === true || (!isUnreg && isTransIndiffRule(activeTransRule)) || storedTransFlat));
 
     const matEdited = wasEdited('qty') || (useExtQty && wasEdited('external_qty')) || wasEdited('uom') || wasEdited('unit_price') || wasEdited('discount');
@@ -147285,6 +147442,7 @@
         { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isMatIndiffRule(r) ? 'Truck' : prNormUnit(r.unit || 'm³') },
         { key: 'rate_per', label: 'Transportation Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isTransIndiffRule(r) ? 'Truck' : prNormUnit(r.rate_per || r.unit || 'm³') },
         { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
+        { key: 'no_material_charge', label: 'No material charge', type: 'bool', sec: 3, getVal: r => isNoMatChargeRule(r) },
         { key: 'trans_unit_price', label: prRowIsTransFlat ? 'Transport Price ($)' : 'Transport Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isTransIndiffRule(r) ? (ruleTransIndiffPrice(r) ?? '') : (r.trans_unit_price ?? r.trans_price ?? (/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(r.rule_type || '') ? (r.unit_price ?? r.price ?? '') : '')) },
         { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'truck_size', label: 'Site Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
@@ -147305,6 +147463,7 @@
         { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isMatIndiffRule(r) ? 'Truck' : prNormUnit(r.unit || 'm³') },
         { key: 'rate_per', label: 'Transportation Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isTransIndiffRule(r) ? 'Truck' : prNormUnit(r.rate_per || 'm³') },
         { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
+        { key: 'no_material_charge', label: 'No material charge', type: 'bool', sec: 3, getVal: r => isNoMatChargeRule(r) },
         { key: 'trans_unit_price', label: prRowIsTransFlat ? 'Transportation Price ($)' : 'Transportation Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isTransIndiffRule(r) ? (ruleTransIndiffPrice(r) ?? '') : (r.trans_unit_price ?? r.trans_price ?? '') },
         { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'truck_size', label: 'Client Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
@@ -147922,7 +148081,7 @@
     const pricingDrivers = new Set([
       'qty', 'external_qty', 'litres', 'liters', 'days', 'days_count', 'hours', 'extra_hours', 'overtime_hours', 'worked_hours', 'late_hours',
       'unit_cost', 'trans_unit_cost', 'unit_price', 'trans_unit_price',
-      'indiff_price', 'trans_indiff_price', 'mat_indiff', 'trans_indiff',
+      'indiff_price', 'trans_indiff_price', 'mat_indiff', 'trans_indiff', 'no_material_charge', 'includes_transport',
       'discount', 'tip', 'rate', 'rate_usd', 'base_salary', 'salary_usd', 'daily_rate', 'daily_usd',
       'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'net_amount', 'vat_amount', 'vat_percent', 'vat_fx_rate',
       'amount', 'cost', 'price', 'trans_cost', 'trans_price', 'total', 'total_ttc', 'line_total', 'total_cost', 'total_cost_usd',
@@ -148103,6 +148262,12 @@
       } else {
         hidden.add('supplier');
         hidden.add('includes_transport');
+      }
+      if (!/^Sales \((Delivery|Pickup)\)$/i.test(rtTrim)) {
+        hidden.add('no_material_charge');
+      } else if (isNoMatChargeRule(row)) {
+        hidden.add('adj1');
+        hidden.add('adj2');
       }
       if (!hasMatPr) {
         hidden.add('unit');
@@ -148317,10 +148482,20 @@
     }
     if (sg.targetKey === 'price_rules') {
       const isTrOnlySg = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim());
-      if (c === 'unit_price') v = isTrOnlySg ? null : (isMatIndiffRule(r) ? ruleIndiffPrice(r) : (r.unit_price ?? r.price ?? null));
+      const isNoMatSg = isNoMatChargeRule(r);
+      const isSalesMatSg = /^Sales \((Delivery|Pickup)\)$/i.test(String(r.rule_type || '').trim());
+      if (c === 'unit_price') {
+        if (isTrOnlySg) v = null;
+        else if (isNoMatSg) v = 0;
+        else if (isMatIndiffRule(r)) v = ruleIndiffPrice(r);
+        else {
+          const rawUp = r.unit_price ?? r.price ?? null;
+          v = (isSalesMatSg && !(Number(rawUp || 0) > 0)) ? null : rawUp;
+        }
+      }
       if (c === 'trans_unit_price') v = isTransIndiffRule(r) ? ruleTransIndiffPrice(r) : (r.trans_unit_price ?? r.trans_price ?? (isTrOnlySg ? (r.unit_price ?? r.price ?? null) : null));
       if (c === 'unit') {
-        const rawU = isTrOnlySg ? (isTransIndiffRule(r) ? 'Truck' : (r.rate_per || r.unit || 'm³')) : (isMatIndiffRule(r) ? 'Truck' : (r.unit || 'm³'));
+        const rawU = isTrOnlySg ? (isTransIndiffRule(r) ? 'Truck' : (r.rate_per || r.unit || 'm³')) : (isNoMatSg ? (/^truck$/i.test(String(r.unit || '').trim()) ? 'm³' : (r.unit || 'm³')) : (isMatIndiffRule(r) ? 'Truck' : (r.unit || 'm³')));
         v = /^truck$/i.test(String(rawU || '').trim()) ? 'Per Truck Load' : `Per ${rawU}`;
       }
     }
@@ -153002,6 +153177,26 @@
             }
           }
         }
+        if (key === 'price_rules' && ('no_material_charge' in pendingUpdates || 'rule_type' in pendingUpdates || 'product' in pendingUpdates || 'unit_price' in pendingUpdates)) {
+          const candPr = Object.assign({}, row, pendingUpdates);
+          const candRt = String(candPr.rule_type || '').trim();
+          const candProd = String(candPr.product || '').trim();
+          const candNmcRaw = candPr.no_material_charge === true || candPr.no_material_charge === 1 || candPr.no_material_charge === '1' || /^yes$/i.test(String(candPr.no_material_charge || '').trim());
+          const explicitNmcTrue = 'no_material_charge' in pendingUpdates && candNmcRaw;
+          const explicitUpPos = 'unit_price' in pendingUpdates && Number(pendingUpdates.unit_price || 0) > 0;
+          if (candNmcRaw && !/^Sales \((Delivery|Pickup)\)$/i.test(candRt)) {
+            if (explicitNmcTrue) {
+              toast('No material charge applies only to Sales (Delivery) and Sales (Pickup) agreements.', 'err');
+              return;
+            }
+          } else if (candNmcRaw && !candProd) {
+            toast('Product / Grade is required for a No material charge agreement.', 'err');
+            return;
+          } else if (explicitNmcTrue && explicitUpPos) {
+            toast('Clear Material Unit Price or uncheck No material charge - both cannot be set together.', 'err');
+            return;
+          }
+        }
         if (key === 'overtime_rates' && ('region' in pendingUpdates || 'site' in pendingUpdates)) {
           const candSite = String(('site' in pendingUpdates ? pendingUpdates.site : row.site) || '').trim();
           const candReg = String(('region' in pendingUpdates ? pendingUpdates.region : row.region) || '').trim();
@@ -153048,14 +153243,41 @@
             toast(inspFxGuard.reason, 'warn');
           }
         }
+        // Build normalized preview candidate for price_rules before pre-save impact/kept-period prompts so
+        // editing unit_price > 0 clears no_material_charge before backfill preview runs.
+        const inspCandRow = Object.assign({}, row, pendingUpdates);
+        if (key === 'price_rules') {
+          if (!/^Sales \((Delivery|Pickup)\)$/i.test(String(inspCandRow.rule_type || '').trim())) {
+            inspCandRow.no_material_charge = false;
+          } else if ('unit_price' in pendingUpdates && !('no_material_charge' in pendingUpdates) && Number(inspCandRow.unit_price || 0) > 0) {
+            inspCandRow.no_material_charge = false;
+          } else {
+            inspCandRow.no_material_charge = isNoMatChargeRule(inspCandRow);
+          }
+          if (isNoMatChargeRule(inspCandRow)) {
+            inspCandRow.unit_price = 0;
+            inspCandRow.price = null;
+            inspCandRow.indiff_price = null;
+            inspCandRow.adj1 = 0;
+            inspCandRow.adj2 = 0;
+            if (/^truck$/i.test(String(inspCandRow.unit || '').trim())) {
+              const pNomU = (inspCandRow.product && productInfo(inspCandRow.product)?.uom) || 'm³';
+              inspCandRow.unit = /^tons?$/i.test(pNomU) ? 'Ton' : 'm³';
+            }
+          } else if ('unit_price' in pendingUpdates && !isMatIndiffRule(inspCandRow)) {
+            const upCand = Number(inspCandRow.unit_price || 0);
+            inspCandRow.price = (Number.isFinite(upCand) && upCand > 0) ? upCand : null;
+          }
+        }
         // A price agreement change shows the exact tickets it re-prices before it is saved (owner 2026-11-20), as
         // the entry form does: a dry run, nothing written; the save runs on the person's yes
         if (key === 'price_rules' && row && !window.__fastInspectorModifyTest) {
           let pvI = null;
           try {
             const inspChangedValRi = Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
-              && !_chronoSameValue(pendingUpdates[fk], row[fk]));
-            pvI = previewMfgPriceRuleImpact(Object.assign({}, row, pendingUpdates), row, { userChangedValue: inspChangedValRi });
+              && (!_chronoSameValue(pendingUpdates[fk], row[fk]) || !_chronoSameValue(inspCandRow[fk], row[fk])))
+              || !_chronoSameValue(inspCandRow.no_material_charge, row.no_material_charge);
+            pvI = previewMfgPriceRuleImpact(inspCandRow, row, { userChangedValue: inspChangedValRi });
           } catch (_) { pvI = null; }
           if (pvI) {
             const pvISum = summarizeSiblingRepriceImpact(pvI.impact);
@@ -153077,8 +153299,9 @@
           let inspKpAsk = null;
           try {
             const inspChangedVal = Object.keys(pendingUpdates).some(fk => fk && fk.charAt(0) !== '_' && !CHRONO_NON_VALUE_KEYS.has(fk)
-              && !_chronoSameValue(pendingUpdates[fk], row[fk]));
-            inspKpAsk = describeChronoKeptPeriod(key, Object.assign({}, row, pendingUpdates), row, { userChangedValue: inspChangedVal });
+              && (!_chronoSameValue(pendingUpdates[fk], row[fk]) || !_chronoSameValue(inspCandRow[fk], row[fk])))
+              || (key === 'price_rules' && !_chronoSameValue(inspCandRow.no_material_charge, row.no_material_charge));
+            inspKpAsk = describeChronoKeptPeriod(key, inspCandRow, row, { userChangedValue: inspChangedVal });
           } catch (_) { inspKpAsk = null; }
           if (inspKpAsk) {
             promptRateChangeImpact({ mode: 'period', kept: inspKpAsk }).then(okKp => {
@@ -153495,21 +153718,40 @@
               row.includes_transport = false;
             }
           }
-          const prRateFields = ['rule_type', 'unit', 'rate_per', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2'];
+          if ('no_material_charge' in pendingUpdates || 'rule_type' in pendingUpdates || 'product' in pendingUpdates || 'unit_price' in pendingUpdates) {
+            if (!/^Sales \((Delivery|Pickup)\)$/i.test(String(row.rule_type || '').trim())) {
+              row.no_material_charge = false;
+            } else if ('unit_price' in pendingUpdates && !('no_material_charge' in pendingUpdates) && Number(row.unit_price || 0) > 0) {
+              row.no_material_charge = false;
+            } else {
+              row.no_material_charge = isNoMatChargeRule(row);
+            }
+          }
+          const prRateFields = ['rule_type', 'product', 'unit', 'rate_per', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'no_material_charge'];
           if (prRateFields.some(k => k in pendingUpdates)) {
             const roundPr4 = v => { const n = Number(v || 0); return Number.isFinite(n) ? Number(n.toFixed(4)) : 0; };
             const rtTrim = String(row.rule_type || '').trim();
             const isTransOnlyPr = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rtTrim);
             const hasTransPr = /^(Sales \(Delivery\)|Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rtTrim);
             const hasMatPr = !isTransOnlyPr;
-            const upRaw = roundPr4(('unit_price' in pendingUpdates) ? row.unit_price : (isMatIndiffRule(origRowSnap) ? ruleIndiffPrice(origRowSnap) : (origRowSnap.unit_price ?? origRowSnap.price ?? 0)));
+            const noMatChargePr = isNoMatChargeRule(row);
+            const upRaw = noMatChargePr ? 0 : roundPr4(('unit_price' in pendingUpdates) ? row.unit_price : (isMatIndiffRule(origRowSnap) ? ruleIndiffPrice(origRowSnap) : (origRowSnap.unit_price ?? origRowSnap.price ?? 0)));
             const tpRaw = roundPr4(('trans_unit_price' in pendingUpdates) ? row.trans_unit_price : (isTransIndiffRule(origRowSnap) ? ruleTransIndiffPrice(origRowSnap) : (origRowSnap.trans_unit_price ?? origRowSnap.trans_price ?? 0)));
           const matIsTruckPr = hasMatPr && /^truck$/i.test(String(row.unit || '').trim());
           const transIsTruckPr = hasTransPr && /^truck$/i.test(String((isTransOnlyPr ? (row.rate_per || row.unit) : row.rate_per) || '').trim());
-          if (!hasMatPr) {
-            row.unit = transIsTruckPr ? 'Truck' : (row.rate_per || row.unit || 'm³');
+          if (!hasMatPr || noMatChargePr) {
+            if (!hasMatPr) row.unit = transIsTruckPr ? 'Truck' : (row.rate_per || row.unit || 'm³');
             row.unit_price = 0;
             row.price = null;
+            if (noMatChargePr) {
+              row.indiff_price = null;
+              row.adj1 = 0;
+              row.adj2 = 0;
+              if (/^truck$/i.test(String(row.unit || '').trim())) {
+                const pNomU = (row.product && productInfo(row.product)?.uom) || 'm³';
+                row.unit = /^tons?$/i.test(pNomU) ? 'Ton' : 'm³';
+              }
+            }
           } else if (matIsTruckPr) {
             row.unit_price = 0;
             row.price = null;
@@ -156221,6 +156463,11 @@
         if (r._absorbedSeedTwin) delete r._absorbedSeedTwin;
         _ABSORBED_TWIN_ID.delete(r);
         const rid = String(r.id == null ? '' : r.id);
+        // A workbook row an earlier save marked as an app entry: the mark comes off as the row is read, so the
+        // screens that read `source` themselves agree with isAppRecord. Oil logs keep `source` (their oil source).
+        // Only by the workbook id pattern: a marked row under any other id may be an entry the app made itself, and
+        // nothing kept on the device (register row, kept originals, `_seed_orig`) tells the two apart for certain.
+        if (k !== 'equipment_oil_logs') clearSavedWorkbookRowMark(r);
         const rNameNorm = norm(r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment);
         if (r.voided) {
           if (rid && releasedCopies.has(rid)) return;

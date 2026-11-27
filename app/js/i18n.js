@@ -16360,7 +16360,20 @@
       "Price All Unpriced Sites": "تسعير كل المواقع غير المسعّرة",
       "Statement Queue:": "قائمة الكشف:",
       "All unpriced statement sites completed": "تم إكمال تسعير جميع مواقع الكشف غير المسعّرة",
-      "suppliers": "موردين"
+      "suppliers": "موردين",
+      "List Price benchmark": "السعر المعلن المرجعي",
+      "Material Price": "سعر المادة",
+      "Material Price: No material charge ($0.00)": "سعر المادة: بلا رسم مواد ($0.00)",
+      "Material Price: List Price benchmark": "سعر المادة: السعر المعلن المرجعي",
+      "No material charge applies only to Sales (Delivery) and Sales (Pickup) agreements.": "خيار بلا رسم مواد ينطبق فقط على اتفاقيات مبيعات (تسليم) ومبيعات (استلام).",
+      "Product / Grade is required for a No material charge agreement.": "الصنف / العيار مطلوب لاتفاقية بلا رسم مواد.",
+      "Clear Material Unit Price or uncheck No material charge - both cannot be set together.": "امسح سعر وحدة المادة أو ألغِ تحديد بلا رسم مواد - لا يمكن جمعهما معاً.",
+      "No material charge": "بدون رسوم مواد",
+      "No charge": "بدون رسوم",
+      "No material charge ($0.00)": "بدون رسوم مواد (0.00$)",
+      "Explicit $0.00 material charge (does not fall back to List Price)": "رسوم مواد صريحة بقيمة 0.00$ (لا يعود إلى السعر المعلن)",
+      "Agreement has no material price - List Price agreement": "الاتفاقية لا تحدد سعراً للمادة - اتفاقية السعر المعلن",
+      "Agreement has no material price - model list price": "الاتفاقية لا تحدد سعراً للمادة - السعر المعلن للمنتج"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -32702,7 +32715,20 @@
       "Price All Unpriced Sites": "Tarifer tous les sites sans prix",
       "Statement Queue:": "File du relevé :",
       "All unpriced statement sites completed": "Tous les sites sans prix du relevé sont complétés",
-      "suppliers": "fournisseurs"
+      "suppliers": "fournisseurs",
+      "List Price benchmark": "Tarif catalogue de référence",
+      "Material Price": "Prix Matière",
+      "Material Price: No material charge ($0.00)": "Prix Matière : Sans frais de matière ($0.00)",
+      "Material Price: List Price benchmark": "Prix Matière : Tarif catalogue de référence",
+      "No material charge applies only to Sales (Delivery) and Sales (Pickup) agreements.": "L'option sans frais de matière s'applique uniquement aux accords Vente (Livraison) et Vente (Enlèvement).",
+      "Product / Grade is required for a No material charge agreement.": "Le produit / calibre est obligatoire pour un accord sans frais de matière.",
+      "Clear Material Unit Price or uncheck No material charge - both cannot be set together.": "Effacez le prix unitaire matière ou décochez Sans frais de matière - les deux ne peuvent pas être actifs ensemble.",
+      "No material charge": "Sans frais de matière",
+      "No charge": "Sans frais",
+      "No material charge ($0.00)": "Sans frais de matière (0,00 $)",
+      "Explicit $0.00 material charge (does not fall back to List Price)": "Frais de matière explicites à 0,00 $ (sans repli sur le prix catalogue)",
+      "Agreement has no material price - List Price agreement": "L'accord ne fixe pas de prix matière - accord Prix Catalogue",
+      "Agreement has no material price - model list price": "L'accord ne fixe pas de prix matière - prix catalogue du produit"
     }
   };
 
