@@ -79,6 +79,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_seat_preview_resume.mjs", "node"),   # a seat preview (Impersonate) is never resumed on reopening; Face ID decides the seat
     ("isabi-app", "build/verify_records_rbac_parity.py", "python"),  # Local server.py vs Edge d1_store.js /api/records RBAC & DDL parity
     ("isabi-app", "build/verify_face_pad_unit.mjs", "node"),        # passive Face ID liveness + PAD + source bypass guards
+    ("isabi-app", "build/verify_desktop_idle_autolock.mjs", "node"), # per-seat desktop idle auto-lock, DOM scrub, draft restore & RBAC parity
     ("isabi", "build/verify_passkeys_edge.mjs", "node"),            # WebAuthn FIDO2 Passkeys Edge + server.py parity, replay/clone/RLS guards
     ("isabi-app", "build/verify_workbook_agreement_rules.py", "python"),  # top-up: price agreements + VAT invoices follow the workbook sheets
     ("isabi-app", "build/verify_staff_contract_sync.py", "python"),  # top-up: staff contracts by rule + back-pay notice
