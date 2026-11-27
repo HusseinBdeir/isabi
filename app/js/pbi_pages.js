@@ -73,6 +73,7 @@
     if (!c) return false;
     if (t === 'items') return /^(?:default_cost|total_spent)$/.test(c);
     if (t === 'expense_categories' || t === 'expense_subcategories') return /^(?:total_spent)$/.test(c);
+    if (t === 'suppliers') return c === 'standing_discount_pct';
     return false;
   }
 
@@ -1763,7 +1764,7 @@
 
     // 6 · Universal (All BUs) — 11 Shared Master Registries (Zero BU Binding)
     { key: 'customers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_customers', label: 'Customers Registry', singularLabel: 'Customer', dvn: 'bhf_customer', form: 'customer', cols: ['name', 'method', 'vat_registered', 'mof_no', 'phone', 'address', 'credit_days', 'credit_limit', 'active_rules', 'sales_loads', 'ar_balance'], relTables: ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'vat_invoices'], views: [{ id: 'all', label: 'All Customers' }, { id: 'open_ar', label: 'Open AR Balance > $0', fn: (r, rel) => ((rel.custByName[norm(r.name)] || {}).ar_balance || 0) > 1 }, { id: 'vat', label: 'VAT Registered (MOF)', fn: r => Boolean(r.vat_registered || r.mof_no) }] },
-    { key: 'suppliers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', singularLabel: 'Supplier', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
+    { key: 'suppliers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', singularLabel: 'Supplier', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance', 'standing_discount_pct'], relTables: ['raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
       { id: 'all', label: 'All Suppliers & Haulers' },
       { id: 'haulers', label: 'Truck Owners & Haulers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); } },
       { id: 'quarries', label: 'Material & Site Suppliers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); } },
@@ -10950,7 +10951,7 @@
                     else if (isSignedLbp && v != null && v !== '') cell = fmtSignedLBP(v);
                     else if (isLbp && v != null && v !== '') cell = fmtNum(v, 0) + ' LL';
                     else if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
-                    else if (c === 'vat_percent' && v != null && v !== '') cell = fmtNum(v, 1) + '%';
+                    else if ((c === 'vat_percent' || c === 'standing_discount_pct') && v != null && v !== '') cell = fmtNum(v, 1) + '%';
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
@@ -11161,6 +11162,7 @@
     start_date: 'Start Date',
     effective_to: 'Effective To',
     vat_percent: 'VAT Rate (%)',
+    standing_discount_pct: 'Standing Disc %',
     vat_fx_rate: 'MoF Rate (LL/$)',
     output_vat_account: 'Output VAT GL',
     input_vat_account: 'Input VAT GL',
@@ -11846,7 +11848,7 @@
                     else if (isSignedLbp && v != null && v !== '') cell = fmtSignedLBP(v);
                     else if (isLbp && v != null && v !== '') cell = fmtNum(v, 0) + ' LL';
                     else if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
-                    else if (c === 'vat_percent' && v != null && v !== '') cell = fmtNum(v, 1) + '%';
+                    else if ((c === 'vat_percent' || c === 'standing_discount_pct') && v != null && v !== '') cell = fmtNum(v, 1) + '%';
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
@@ -12128,7 +12130,7 @@
                     const isNum = !isBool && !nonNum && !isMoney && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
-                    else if (c === 'vat_percent' && v != null && v !== '') cell = fmtNum(v, 1) + '%';
+                    else if ((c === 'vat_percent' || c === 'standing_discount_pct') && v != null && v !== '') cell = fmtNum(v, 1) + '%';
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);

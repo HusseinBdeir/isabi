@@ -2211,7 +2211,7 @@
         group: 'ar_ap', kindCls: 'pay', kindLbl: 'Supplier Payment',
         isAfterHours: false, isRepShifted: hasRepShift(s), repDate: repDateOf(s), txDate: txDateOf(s), time: '',
         ref: compactRef(s.invoice || s.reference || s.name, s.id, 'ST'),
-        party: s.supplier || 'Supplier', detail: `${s.method || 'Cash'} Settlement`,
+        party: s.supplier || 'Supplier', detail: `${s.method || 'Cash'} Settlement${Number(s.discount || 0) > 0 ? ' · Discount ' + ctx.fmtUSD(s.discount, 2) : ''}`,
         qtyTxt: s.method || 'Cash', amount: amt, inflow: false, tier: 3,
         sortKey: String(Math.round(Math.abs(amt))).padStart(9, '0') + '_' + String(s.id || '')
       });

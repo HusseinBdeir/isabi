@@ -10,6 +10,7 @@
   'use strict';
 
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
+  const r2 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 
   const RDL_CATALOG = [
     { id: '01', code: '01', slug: 'daily_ops',     cat: 'Digest',         name: 'Daily Operations',      title: 'Daily Operations',      ar: 'ملخص العمليات اليومية', landscape: true,  params: ['from', 'to'] },
@@ -556,7 +557,9 @@
     { code: '701', name: 'Sales of Aggregates, Sand & Materials / مبيعات البحص والرمل والمواد', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
     { code: '706', name: 'Transport & Hauling Revenue / إيرادات النقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
     { code: '758', name: 'Other Operating Income (Scrap & Sundry Sales) / إيرادات تشغيلية أخرى', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-    { code: '766', name: 'Foreign Exchange Gains / أرباح فروقات الصرف', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+    { code: '766', name: 'Foreign Exchange Gains / أرباح فروقات الصرف', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+    { code: '709', name: 'Discounts Allowed & Settlement Concessions / الحسومات الممنوحة للزبائن', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'D' },
+    { code: '7733', name: 'Discounts Received on Supplier Settlements / الحسومات المكتسبة من الموردين', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
   ];
 
   // ── Statement books: what the printed statements 02 to 07 may show ───────────────────────────────────────
@@ -947,7 +950,9 @@
       { code: '622', name: 'Contracted Services & General Operations / الخدمات الخارجية والمصاريف العامة', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
       { code: '641', name: 'Staff Salaries, Wages & Benefits / الرواتب والأجور', cls: '6 - Expenses', section: 'Payroll & Personnel', normal: 'D' },
       { code: '701', name: rev701Map[ind] || 'Primary Operating Revenue / الإيرادات التشغيلية', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
-      { code: '706', name: 'Ancillary Services, Fees & Recoveries / إيرادات الخدمات والرسوم المساندة', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+      { code: '706', name: 'Ancillary Services, Fees & Recoveries / إيرادات الخدمات والرسوم المساندة', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+      { code: '709', name: 'Discounts Allowed & Settlement Concessions / الحسومات الممنوحة للزبائن', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'D' },
+      { code: '7733', name: 'Discounts Received on Supplier Settlements / الحسومات المكتسبة من الموردين', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
     ];
   }
 
@@ -960,7 +965,6 @@
     const settlementLedgerAll = [];
     const fuelAll = [];
     const extraReceipts = [];
-    const r2 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
 
     const pushSale = s => {
       const tot = r2(s.total_usd);
@@ -998,6 +1002,8 @@
     const pushRcpt = rc => {
       const amt = r2(rc.paid_usd || rc.amount || 0);
       if (Math.abs(amt) < 0.005) return;
+      const cashUsd = rc.cash_usd !== undefined ? r2(rc.cash_usd) : amt;
+      const discUsd = rc.discount_usd !== undefined ? r2(rc.discount_usd) : 0;
       const id = String(rc.id || ('RCPT-' + (receiptLedgerAll.length + 1)));
       const d = String(rc.date || '2026-09-30').slice(0, 10);
       receiptLedgerAll.push({
@@ -1018,6 +1024,8 @@
         vat_usd: 0,
         total_usd: 0,
         paid_usd: amt,
+        cash_usd: cashUsd,
+        discount_usd: discUsd,
         balance_usd: -amt,
         pay_method: rc.pay_method || 'Bank / Fresh USD',
         is_cash: false,
@@ -1235,11 +1243,16 @@
           });
         }
       });
-      (re.receipts || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+      (re.receipts || []).filter(r => coMatch(r.company, co, allowedCos) && !/^Security Deposit$/i.test(String(r.type || '').trim())).forEach(r => {
+        const cashUsd = r2(Math.max(0, Number(r.gross_usd || 0) - Number(r.deposit_gl4196_usd || 0)));
+        const rawDisc = r2(Math.max(0, Number(r.discount_usd || 0)));
+        const discUsd = r.allocated_inv_usd != null ? r2(Math.min(rawDisc, Math.max(0, Number(r.allocated_inv_usd || 0)))) : rawDisc;
+        const effPaid = r2(cashUsd + discUsd);
+        if (!(effPaid > 0.005)) return;
         pushRcpt({
           id: r.id, ref: r.id, date: r.date, co: r.company,
           customer: r.tenant, site: r.property, pay_method: r.method || 'Bank Transfer',
-          paid_usd: r.allocated_inv_usd || r.gross_usd
+          paid_usd: effPaid, cash_usd: cashUsd, discount_usd: discUsd
         });
       });
       (re.workorders || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
@@ -1320,17 +1333,21 @@
     }
 
     (rawReceipts || []).forEach(rc => {
+      const cashUsd = r2(rc.amount != null ? Number(rc.amount || 0) : Number(rc.usd_amount || 0));
+      const discUsd = r2(rc.discount || 0);
       pushRcpt({
         id: rc.id, ref: rc.name || rc.id, date: rc.date, co: rc.company || co,
         customer: rc.customer || 'Client Account', site: rc.notes || 'Receipt',
-        pay_method: rc.method || 'Cash USD', paid_usd: Number(rc.usd_amount || rc.amount || 0)
+        pay_method: rc.method || 'Cash USD', paid_usd: r2(cashUsd + discUsd), cash_usd: cashUsd, discount_usd: discUsd
       });
     });
     (rawSettlements || []).forEach(s => {
       if (!s || s.voided) return;
       const mth = String(s.method || 'Payment').trim();
       if (/^(?:remove|free|jv adjusted|adjusted|cash return|cash discount|commission|rent|rentconfig|vatrent)$/i.test(mth)) return;
-      const amt = r2(Number(s.usd_amount != null ? s.usd_amount : (s.amount || 0)) + Number(s.discount || 0));
+      const cashUsd = r2(s.amount != null ? Number(s.amount || 0) : Number(s.usd_amount || 0));
+      const discUsd = r2(s.discount != null ? Number(s.discount || 0) : Number(s.diff || 0));
+      const amt = r2(cashUsd + discUsd);
       if (Math.abs(amt) > 0.005) {
         settlementLedgerAll.push({
           id: s.id, date: s.date, rep_date: s.rep_date || s.date, co: s.company || co,
@@ -1338,7 +1355,7 @@
           payable_leg: String(s.payable_leg || '').trim().toLowerCase(),
           pay_method: s.method || 'Bank', material: s.notes || 'Supplier Settlement',
           supplier: s.supplier || 'Vendor', driver: '', plate: '', qty: 0, unit: 'USD',
-          unit_price: 0, total_usd: 0, paid_usd: amt, is_settlement_row: true
+          unit_price: 0, total_usd: 0, paid_usd: amt, cash_usd: cashUsd, discount_usd: discUsd, is_settlement_row: true
         });
       }
     });
@@ -1682,7 +1699,9 @@
       rawReceipts.forEach(rc => {
         const m = String(rc.method || '').trim();
         if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return;
-        const amt = Number(rc.usd_amount !== undefined ? rc.usd_amount : (rc.amount || 0)) + Number(rc.discount || 0);
+        const cashPaid = r2(rc.amount != null ? Number(rc.amount || 0) : Number(rc.usd_amount || 0));
+        const discUsd = r2(rc.discount != null ? Number(rc.discount || 0) : 0);
+        const amt = r2(cashPaid + discUsd);
         if (Math.abs(amt) < 0.005) return;
         receiptLedgerAll.push({
           id: rc.id,
@@ -1702,6 +1721,8 @@
           vat_usd: 0,
           total_usd: 0,
           paid_usd: amt,
+          cash_usd: cashPaid,
+          discount_usd: discUsd,
           balance_usd: -amt,
           pay_method: rc.method || 'Cash',
           is_receipt_row: true
@@ -1861,9 +1882,9 @@
       });
       rawSettlements.forEach(s => {
         const m = String(s.method || '').trim();
-        const usd = Number(s.usd_amount !== undefined ? s.usd_amount : (s.amount || 0));
-        const diff = Number(s.diff !== undefined ? s.diff : (s.discount || 0));
-        const amt = usd + diff;
+        const usd = r2(s.amount != null ? Number(s.amount || 0) : Number(s.usd_amount || 0));
+        const diff = r2(s.discount != null ? Number(s.discount || 0) : Number(s.diff || 0));
+        const amt = r2(usd + diff);
         if (m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis' || m.toLowerCase() === 'vat paid') {
           if (Math.abs(amt) >= 0.005) {
             vatPaidAll.push({
@@ -1900,6 +1921,8 @@
           unit_price: 0,
           total_usd: 0,
           paid_usd: amt,
+          cash_usd: usd,
+          discount_usd: diff,
           is_settlement_row: true
         });
       });
@@ -2637,19 +2660,31 @@
     (ctx.receiptLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
-      if (!d || Math.abs(paid) < 0.005) return;
+      const cash = r.cash_usd !== undefined ? Number(r.cash_usd || 0) : paid;
+      const disc = r.cash_usd !== undefined ? Number(r.discount_usd || 0) : 0;
+      const tot = r2(cash + disc);
+      if (!d || (Math.abs(tot) < 0.005 && Math.abs(cash) < 0.005 && Math.abs(disc) < 0.005)) return;
       txOf(r, d);
       const cust = r.customer || 'Customer';
       const ref = String(r.invoice_no || r.ticket_no || 'RCPT');
       // Config and VATConfig are carried balances, not cash (owner 2026-11-18): clearing 467, never Cash 531.
       const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : (r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531');
-      if (paid > 0) {
-        pushJe(d, ref, 'Collection', clearAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, paid, 0);
-        pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, paid);
-      } else {
-        pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, Math.abs(paid), 0);
-        pushJe(d, ref, 'AR Adjustment', clearAcct, cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, 0, Math.abs(paid));
+      if (clearAcct === '467') {
+        if (tot > 0) {
+          pushJe(d, ref, 'Collection', '467', cust, `Customer receipt (${r.pay_method || 'Config'})`, tot, 0);
+          pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Config'})`, 0, tot);
+        } else {
+          pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, Math.abs(tot), 0);
+          pushJe(d, ref, 'AR Adjustment', '467', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, 0, Math.abs(tot));
+        }
+        return;
       }
+      if (cash > 0.004) pushJe(d, ref, 'Collection', clearAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, cash, 0);
+      else if (cash < -0.004) pushJe(d, ref, 'AR Adjustment', clearAcct, cust, `Customer balance adjustment (${r.pay_method || 'Cash'})`, 0, Math.abs(cash));
+      if (disc > 0.004) pushJe(d, ref, 'Settlement Discount', '709', cust, `Customer settlement discount (${r.pay_method || 'Payment'})`, disc, 0);
+      else if (disc < -0.004) pushJe(d, ref, 'Settlement Discount', '709', cust, `Customer discount reversal (${r.pay_method || 'Payment'})`, 0, Math.abs(disc));
+      if (tot > 0.004) pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, tot);
+      else if (tot < -0.004) pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Cash'})`, Math.abs(tot), 0);
     });
 
     (ctx.apRmLegsAll || ctx.rmAll).forEach(r => {
@@ -2682,18 +2717,30 @@
     (ctx.settlementLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
-      if (!d || Math.abs(paid) < 0.005) return;
+      const cash = r.cash_usd !== undefined ? Number(r.cash_usd || 0) : paid;
+      const disc = r.cash_usd !== undefined ? Number(r.discount_usd || 0) : 0;
+      const tot = r2(cash + disc);
+      if (!d || (Math.abs(tot) < 0.005 && Math.abs(cash) < 0.005 && Math.abs(disc) < 0.005)) return;
       txOf(r, d);
       const sup = r.supplier || 'Supplier';
       const ref = String(r.voucher || r.name || 'SETL');
       const clearAcct = /^(VAT)?Config$/.test(String(r.pay_method || '')) ? '467' : '531';
-      if (paid > 0) {
-        pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', paid, 0);
-        pushJe(d, ref, 'Supplier Payment', clearAcct, sup, r.material || 'Supplier Settlement', 0, paid);
-      } else {
-        pushJe(d, ref, 'AP Adjustment', clearAcct, sup, r.material || 'Supplier Balance Adjustment', Math.abs(paid), 0);
-        pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(paid));
+      if (clearAcct === '467') {
+        if (tot > 0) {
+          pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', tot, 0);
+          pushJe(d, ref, 'Supplier Payment', '467', sup, r.material || 'Supplier Settlement', 0, tot);
+        } else {
+          pushJe(d, ref, 'AP Adjustment', '467', sup, r.material || 'Supplier Balance Adjustment', Math.abs(tot), 0);
+          pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(tot));
+        }
+        return;
       }
+      if (tot > 0.004) pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', tot, 0);
+      else if (tot < -0.004) pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(tot));
+      if (cash > 0.004) pushJe(d, ref, 'Supplier Payment', clearAcct, sup, r.material || 'Supplier Settlement', 0, cash);
+      else if (cash < -0.004) pushJe(d, ref, 'AP Adjustment', clearAcct, sup, r.material || 'Supplier Balance Adjustment', Math.abs(cash), 0);
+      if (disc > 0.004) pushJe(d, ref, 'Settlement Discount', '7733', sup, r.material || 'Supplier Settlement Discount', 0, disc);
+      else if (disc < -0.004) pushJe(d, ref, 'Settlement Discount', '7733', sup, r.material || 'Supplier Discount Reversal', Math.abs(disc), 0);
     });
 
     // Diesel drawn from the tank, at the purchase cost of the litres in it (costDieselStock). Only for companies whose
@@ -3285,7 +3332,7 @@
 
     const totM3 = sales.reduce((s, r) => s + Number(r.qty || 0), 0);
     const totRev = sales.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-    const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+    const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.cash_usd !== undefined ? r.cash_usd : (r.paid_usd || 0)), 0);
     const totExp = exps.reduce((s, r) => s + Number(r.total_usd || 0), 0) + rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
     const totLiters = fuels.reduce((s, r) => s + Number(r.liters || 0), 0);
 
@@ -3317,7 +3364,7 @@
     rcpts.forEach(r => {
       const d = rowDate(r, ctx.basis);
       const g = byDay.get(d) || { date: d, loads: 0, m3: 0, sales: 0, collected: 0, exp: 0, rm: 0, fuelL: 0 };
-      g.collected += Number(r.paid_usd || 0);
+      g.collected += Number(r.cash_usd !== undefined ? r.cash_usd : (r.paid_usd || 0));
       byDay.set(d, g);
     });
     exps.forEach(r => {
@@ -3539,7 +3586,7 @@
       e.total += signed;
       e.touched = true;
     });
-    const DEMO_HIDDEN = ['6222', '666', '766']; // not part of the sample chart
+    const DEMO_HIDDEN = ['6222', '666', '766', '709', '7733']; // not part of the sample chart
     const keep = code => { const e = byAcct.get(code); return Boolean(e && (demo ? (!DEMO_HIDDEN.includes(code) || e.touched) : e.touched)); };
     const revCodes = [...byAcct.keys()].filter(c => c.startsWith('7') && keep(c));
     const expCodes = [...byAcct.keys()].filter(c => c.startsWith('6') && keep(c));
@@ -3642,7 +3689,7 @@
       if (j.date < from) { m.openDr += j.debit; m.openCr += j.credit; }
       else if (j.date <= to) { m.perDr += j.debit; m.perCr += j.credit; }
     });
-    const DEMO_HIDDEN = ['181', '428', '4619', '6222', '666', '766'];
+    const DEMO_HIDDEN = ['181', '428', '4619', '6222', '666', '766', '709', '7733'];
     const t = { openDr: 0, openCr: 0, perDr: 0, perCr: 0, closeDr: 0, closeCr: 0 };
     const rows = [];
     coaList.forEach(a => {
@@ -6215,7 +6262,8 @@
     const gl = pred => jes.reduce((s, j) => s + (pred(j) ? (j.debit - j.credit) : 0), 0);
     const RM_SRC = /^(Raw Material|Raw Transport|Direct Supply|Freight \/ Delivery)( Return)?$/;
     const FUEL_SRC = /^(Fuel Log|Diesel Sold|Tank Count|Tank Revaluation)$/;
-    const glSales = -gl(j => j.acct_code.charAt(0) === '7' && j.acct_code !== '766');
+    const glSales = -gl(j => j.acct_code.charAt(0) === '7' && j.acct_code !== '766' && j.acct_code !== '709' && j.acct_code !== '7733');
+    const glSettleDisc = -gl(j => j.acct_code === '709' || j.acct_code === '7733');
     const glRm = gl(j => j.acct_code === '601' && RM_SRC.test(j.source));
     const glFuel = gl(j => j.acct_code === '601' && FUEL_SRC.test(j.source));
     const glPay = gl(j => j.acct_code === '641' && j.source === 'Payroll');
@@ -6223,13 +6271,18 @@
     const glFx = -gl(j => j.acct_code === '766' || j.acct_code === '666');
     const glExp = gl(j => j.acct_code.charAt(0) === '6' && j.acct_code !== '6222' && j.acct_code !== '666') - glRm - glFuel - glPay;
 
+    const rcptsWin = (ctx.receiptLedgerAll || []).filter(r => !/^(VAT)?Config$/.test(String(r.pay_method || '')) && matchYm(rowDate(r, ctx.basis)) && Math.abs(Number(r.discount_usd || 0)) >= 0.005);
+    const stlsWin = (ctx.settlementLedgerAll || []).filter(r => !/^(VAT)?Config$/.test(String(r.pay_method || '')) && matchYm(rowDate(r, ctx.basis)) && Math.abs(Number(r.discount_usd || 0)) >= 0.005);
+    const netSettleDisc = r2(stlsWin.reduce((s, r) => s + Number(r.discount_usd || 0), 0) - rcptsWin.reduce((s, r) => s + Number(r.discount_usd || 0), 0));
+
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const rows = [
       { stream: dt.plSales, acct: '701 / 706', count: sales.length, subTotal: subSales, glTotal: glSales, sign: 1 },
       { stream: dt.plRm, acct: '601-DIR', count: rms.length, subTotal: subRm, glTotal: glRm, sign: -1 },
       { stream: dt.plFuel, acct: '601-FUEL', count: fuels.length, subTotal: subFuel, glTotal: glFuel, sign: -1 },
       { stream: dt.plExp, acct: '615 / 622', count: exps.length, subTotal: subExp, glTotal: glExp, sign: -1 },
-      { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: glPay, sign: -1 }
+      { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: glPay, sign: -1 },
+      ...(rcptsWin.length || stlsWin.length || Math.abs(glSettleDisc) >= 0.005 ? [{ stream: 'Settlement Discounts (Net 7733 Cr / 709 Dr)', acct: '709 / 7733', count: rcptsWin.length + stlsWin.length, subTotal: netSettleDisc, glTotal: glSettleDisc, sign: 1 }] : [])
     ];
     if (commSales.length || Math.abs(glComm) >= 0.005) rows.push({ stream: 'Plant-Owner Commission on Sales', acct: '6222', count: commSales.length, subTotal: subComm, glTotal: glComm, sign: -1 });
     if (convs.length || Math.abs(glFx) >= 0.005) rows.push({ stream: 'Currency Exchange Differences', acct: '766 / 666', count: convs.length, subTotal: subFx, glTotal: glFx, sign: 1 });
@@ -8183,7 +8236,7 @@
       const fuels = ctx.fuelAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
       const totQty = sales.reduce((s, r) => s + Number(r.qty || 0), 0);
       const totRev = sales.reduce((s, r) => s + Number(r.total_usd || 0), 0);
-      const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.cash_usd !== undefined ? r.cash_usd : (r.paid_usd || 0)), 0);
       const totExp = exps.reduce((s, r) => s + Number(r.total_usd || 0), 0) + rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
       const totLiters = fuels.reduce((s, r) => s + Number(r.liters || 0), 0);
       const byProd = new Map();

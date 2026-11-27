@@ -8679,6 +8679,7 @@
     drivers_list: 'Linked Drivers',
     haul_loads: 'Haul Loads',
     expenses_count: 'Expense Bills',
+    standing_discount_pct: 'Standing Disc %',
     iva: 'IVA (VAT)',
     mof_no: 'MOF Tax #',
     gps_status: 'GPS Pin',
@@ -13768,9 +13769,9 @@
     return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
-  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(floor_price|fuel_base_price|fuel_step|fuel_surcharge|fuel_surcharge_unit|fuel_steps|fuel_price_ref|qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|net_unit_cost|trans_unit_cost|cost|trans_cost|amount|gross_amount|usd_amount|lbp_amount|usd_delta|lbp_delta|gross_usd|discount_usd|deposit_gl4196_usd|allocated_inv_usd|unallocated_adv_usd|paid_usd|total_usd|gross_prem_usd|policy_fee_usd|net_usd|ttc_usd|vat_usd|contract_usd|fob_usd|actual_usd|budget_usd|open_ar_usd|usd|lbp|diff|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|line_discount|gross_line_total|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|standing_discount_pct|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|center_lat|center_lng|zone_type|zone_geojson|decimals|price_pending|salary_pending)$/i;
   const WORD_LOCK_MODAL_ID_SET = new Set([
-    'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
+    'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip', 'f_standing_disc',
     'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_gross_amount', 'f_amount', 'f_vat', 'f_net', 'f_total',
     'f_usd', 'f_lbp', 'f_fxrate', 'f_rate', 'f_vatpct', 'f_vatfx',
     'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours', 'f_ot_hours', 'f_late_hours', 'f_leave_days',
@@ -13845,7 +13846,7 @@
         lbl.appendChild(pill);
       }
     });
-    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn, [data-reg-zone-mode], #modalClearSitePinBtn, #modalSiteClearPinBtn, #modalRegClearZoneBtn').forEach(btn => {
+    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #discUnitPills button, #ideDiscUnitPills button, [data-apply-standing-disc], #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn, [data-reg-zone-mode], #modalClearSitePinBtn, #modalSiteClearPinBtn, #modalRegClearZoneBtn').forEach(btn => {
       btn.disabled = true;
     });
     return restoredAny;
@@ -29238,18 +29239,18 @@
     {
       id: 'G_DISCOUNT_WARN',
       code: '#03',
-      name: 'High Material Discount Note Guard',
-      domain: 'Sales & Material',
+      name: 'High Discount & $0-Cash Settlement Note Guard',
+      domain: 'Sales & Payables',
       behavior: 'block',
-      whereLabel: 'Sales Ticket Form',
+      whereLabel: 'Sales Ticket, Expense, Receipt & Settlement Forms',
       jumpForm: 'sales',
-      why: 'Prevents unapproved price giveaways or typing a dollar total into the discount box without leaving an audit explanation in Notes.',
+      why: 'Prevents unapproved price giveaways, $0-cash write-offs, or typing a dollar total into the discount box without leaving an audit explanation in Notes.',
       params: [
         { key: 'max_disc_pct', label: 'Discount Note Threshold', def: 20, min: 1, max: 90, step: 5, unit: '%' }
       ],
-      whatFn: p => `Flags any Sales Ticket discount exceeding <b>${fmtNum(p.max_disc_pct, 0)}%</b> of the material subtotal and requires a written explanation in Notes before saving.`,
-      threshFn: p => `Discount > ${fmtNum(p.max_disc_pct, 0)}% needs Note`,
-      previewFn: p => `Live example ($400.00 material load): Any discount above $${fmtNum(400 * (Number(p.max_disc_pct || 20) / 100), 2)} (${fmtNum(p.max_disc_pct, 0)}%) highlights amber and requires a Note before posting.`
+      whatFn: p => `Flags any Sales Ticket, Customer Receipt, or Supplier Settlement discount exceeding <b>${fmtNum(p.max_disc_pct, 0)}%</b> (and any $0.00-cash settlement discount clearing) and requires a written explanation in Notes before saving.`,
+      threshFn: p => `Discount > ${fmtNum(p.max_disc_pct, 0)}% or $0-cash needs Note`,
+      previewFn: p => `Live example ($400.00 voucher or receipt): Any discount above $${fmtNum(400 * (Number(p.max_disc_pct || 20) / 100), 2)} (${fmtNum(p.max_disc_pct, 0)}%) or $0.00-cash write-off highlights amber and requires a Note before posting.`
     },
     {
       id: 'S5',
@@ -29761,6 +29762,26 @@
       whatFn: p => `Flags any seat or gate till reaching ${fmtNum(p.max_shift_voids, 0)}+ voids in one shift/day, any entry voided after thermal printing, or any void followed within ${fmtNum(p.rekey_window_min, 0)} min by a lower active entry for the same party/cashier.`,
       threshFn: p => `${fmtNum(p.max_shift_voids, 0)}+ shift voids · After-print · Re-key <= ${fmtNum(p.rekey_window_min, 0)}m`,
       previewFn: p => `Live Sentinel: Watches operational Void Log + live gate POS voids across ${fmtNum(p.max_shift_voids, 0)}+ same-day actor voids, printed receipts voided later, and lower-amount re-keys within ${fmtNum(p.rekey_window_min, 0)} min.`
+    },
+    {
+      id: 'S22',
+      code: '#33',
+      name: 'Supplier Standing-Discount Consistency Sentinel',
+      domain: 'Payables & Procurement',
+      behavior: 'audit',
+      whereLabel: 'Expenses & Payables, Suppliers Registry & AI Sentinels',
+      jumpView: 'sentinels',
+      sentinelId: 'S22',
+      lockedActive: false,
+      why: 'Tracks supplier standing discount terms and deterministic median discount habits across expenses and settlements, nudging on form entry and flagging vouchers posted with $0 discount when a standing discount was expected.',
+      params: [
+        { key: 'min_vouchers', label: 'Min Historical Discount Vouchers', def: 3, min: 2, max: 20, step: 1, unit: 'vouchers' },
+        { key: 'min_standing_pct', label: 'Min Standing Discount (%)', def: 2, min: 0.5, max: 50, step: 0.5, unit: '%' },
+        { key: 'min_voucher_usd', label: 'Min Voucher Size ($ USD)', def: 100, min: 10, max: 5000, step: 25, unit: 'USD' }
+      ],
+      whatFn: p => `Learns suppliers with Master Standing Discount (%) or >= ${fmtNum(p.min_vouchers, 0)} historical vouchers at >= ${fmtNum(p.min_standing_pct, 1)}% discount (excluding <= $10 cash rounding and 100% write-offs) and flags >= $${fmtNum(p.min_voucher_usd, 0)} vouchers posted with $0 discount.`,
+      threshFn: p => `>= ${fmtNum(p.min_vouchers, 0)} vouchers · >= ${fmtNum(p.min_standing_pct, 1)}% · >= $${fmtNum(p.min_voucher_usd, 0)}`,
+      previewFn: p => `Live Sentinel: Surfaces 1-tap Apply X% Discount pills on Expense & Settlement and flags >= $${fmtNum(p.min_voucher_usd, 0)} $0-discount vouchers for standing-discount suppliers.`
     },
     {
       id: 'S20',
@@ -32365,7 +32386,7 @@
       : allCustomRules.filter(cr => Boolean(scopedCaMetrics[cr.metric]));
     let indSentByRule = null;
 
-    const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON', 'S20']);
+    const universalRuleIds = new Set(['S22', 'G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH', 'S13', 'G_VOID_REASON', 'S20']);
     const scopedBuiltInCatalog = isMfgScope
       ? ALERT_RULE_CATALOG
       : ALERT_RULE_CATALOG.filter(r => universalRuleIds.has(r.id));
@@ -33490,6 +33511,11 @@
         return `${d.scannedPunches}:${(d.clusters || []).map(c => `${c.id}=${c.count}`).join(',')}`;
       })()
       : 'x';
+    const sdSnOff = !isAlertRuleEnabled('S22');
+    const sdSn = sdSnOff ? null : getStandingDiscountSentinelData();
+    const sdSnSig = sdSnOff
+      ? 'off'
+      : (sdSn ? `${sdSn.restricted ? 'r' : '1'}:${sdSn.missedCount}:${sdSn.missedExpUsd}:${sdSn.qualifiedSupsCount}:${sdSn.minVouchers}:${sdSn.minPct}:${sdSn.minUsd}` : 'x');
     const swGeoSig = isNonMfgSn ? 'x' : _geoWearRevToken();
     const opSnOff = !isAlertRuleEnabled('S20');
     const opSn = opSnOff ? null : getOverpaidPayablesSentinelData();
@@ -33499,8 +33525,9 @@
     const csSnActive = Boolean(STATE.authed && !isDemoSandboxSession() && !isDemoScopeActive() && isOwner(activeUser()) && isAlertRuleEnabled('S21') && _cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
     const csSig = csSnActive ? `${_cloudStoreHealthSnap.bytes}:${_cloudStoreHealthSnap.updatedAt}` : 'ok';
     const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${isDemoScopeActive() ? 'DEMO' : 'LIVE'}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${_TIME24_WS_REV}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}|${nbSnSig}|wd:${wdSig}|pay:${canViewPayrollDollarAmounts() ? 1 : 0}|${qSig}|${s14Sig}|ts:${tsSnSig}|sw:${swGeoSig}|op:${opSnSig}|cs:${csSig}`;
+    const _sdCacheKey = `${rawItemsKey}|sd:${sdSnSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
-    let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
+    let rawItems = _sentinelRawItemsCache.get(_sdCacheKey);
     if (!rawItems) {
       rawItems = [];
       if (isNonMfgSn) {
@@ -33523,6 +33550,8 @@
           navView: 'ledger',
           navLabel: 'Open Ledger'
         });
+        const sdIndItem = buildStandingDiscountSentinelItem(sdSnOff, sdSn, scope, activeIndForSn);
+        if (sdIndItem) rawItems.push(sdIndItem);
         buildIndustrySentinelItems(activeIndForSn).forEach(x => {
           if (x && !x.isCustom) rawItems.push(x);
         });
@@ -33886,6 +33915,8 @@
         navLabel: 'Open Staff Roster'
       });
 
+      const sdMfgItem = buildStandingDiscountSentinelItem(sdSnOff, sdSn, scope, 'Manufacturing');
+      if (sdMfgItem) rawItems.push(sdMfgItem);
       rawItems.push(_buildGeoAuditSentinelItem('Manufacturing', { id: 'S15', ruleId: 'S15', company: scope }));
       rawItems.push(_buildDwellDriftSentinelItem('Manufacturing', { id: 'S16', ruleId: 'S16', company: scope }));
       if ((canViewVoidLog() || isDemoScopeActive()) && window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.buildVoidSentinelItem === 'function') {
@@ -33929,7 +33960,7 @@
         });
       });
       if (_sentinelRawItemsCache.size > 16) _sentinelRawItemsCache.clear();
-      _sentinelRawItemsCache.set(rawItemsKey, rawItems);
+      _sentinelRawItemsCache.set(_sdCacheKey, rawItems);
     }
 
     const revStore = STATE.sentinelReviews || {};
@@ -35028,6 +35059,17 @@
 
       ${renderIndustrySentinelDetailPanel()}
       ${(() => {
+        const sdSnData = (isAlertRuleEnabled('S22') && seatLens().expenses) ? getStandingDiscountSentinelData() : null;
+        const hasSdRows = Boolean(sdSnData && !sdSnData.restricted && sdSnData.rows && sdSnData.rows.length > 0);
+        const sdTableHtml = hasSdRows ? miniTable('MISSED STANDING SUPPLIER DISCOUNTS', sdSnData.rows, [
+          { label: 'Date', key: 'date', mono: true },
+          { label: 'Co.', key: 'company' },
+          { label: 'Type', key: 'kind_label' },
+          { label: 'Supplier', key: 'supplier', fmt: v => `<span data-no-i18n="1">${esc(v || '-')}</span>` },
+          { label: 'Voucher ($)', key: 'gross_usd', r: true, fmt: usd2 },
+          { label: 'Standing (%)', key: 'expected_pct', r: true, fmt: v => `${fmtNum(v || 0, 1)}% (${v >= 0 ? 'Term' : ''})`.replace(' (Term)', '') },
+          { label: 'Missed ($)', key: 'expected_disc_usd', r: true, fmt: usd2 }
+        ], 'snMissedStandingDisc') : '';
         const opSnData = (isAlertRuleEnabled('S20') && seatLens().expenses) ? getOverpaidPayablesSentinelData() : null;
         const hasOpSup = Boolean(opSnData && !opSnData.restricted && opSnData.rows && opSnData.rows.length > 0);
         const hasOpSites = Boolean(opSnData && !opSnData.restricted && !isNonMfgSn && opSnData.siteRows && opSnData.siteRows.length > 0);
@@ -35070,14 +35112,15 @@
             { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
             { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
           ], 'snCustomAlerts') : '';
-          return (opSupTableHtml || customTblHtml)
-            ? `<div class="mini-table-grid">${opSupTableHtml}${customTblHtml}</div>`
+          return (sdTableHtml || opSupTableHtml || customTblHtml)
+            ? `<div class="mini-table-grid">${sdTableHtml}${opSupTableHtml}${customTblHtml}</div>`
             : '';
         }
         return `
       ${renderTicketSerialAuditPanel()}
 
       <div class="mini-table-grid">
+        ${sdTableHtml}
         ${opSupTableHtml}
         ${opSiteTableHtml}
         ${miniTable('CUSTOMER RECEIVABLES OVERDUE &gt; 60 DAYS', overdueArRows || [], [
@@ -69955,6 +69998,7 @@
       }
       _trdSeedAppRcptHits = seedHits;
     }
+    const trdDiscByCo = {};
     const custRcpts = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
     if (custRcpts.length || _trdSeedAppRcptHits.length) {
       const seenTrdRcptIds = new Set();
@@ -69970,13 +70014,20 @@
         const rKind = receiptKind(rr);
         if (rKind === 'Excluded' || rKind === 'Customer invoice' || rKind === 'Rent & Barter') return;
         const custName = String(rr.customer || '').trim();
-        const settleUsd = round2((Number(rr.amount || 0) || 0) + (Number(rr.discount || 0) || 0));
-        if (!custName || !(Math.abs(settleUsd) > 0.005)) return;
+        const cashPart = round2(Number(rr.amount || 0) || 0);
+        const discPart = Math.max(0, round2(Number(rr.discount || 0)));
+        if (!custName || !(Math.abs(cashPart) > 0.005 || discPart > 0.005)) return;
         const hitIdx = rawReceivableRows.findIndex(x => x && canonCompany(x.company) === rCo && norm(x.customer) === norm(custName));
         if (hitIdx >= 0) {
           const curRow = rawReceivableRows[hitIdx];
-          const nextSettled = round2((Number(curRow.settled_usd || 0) || 0) + settleUsd);
+          const prevSettled = Number(curRow.settled_usd || 0) || 0;
           const invTtc = Number(curRow.invoiced_ttc || 0) || 0;
+          const prevGross = Math.max(0, round2(invTtc - prevSettled));
+          const allocDisc = Math.min(discPart, prevGross);
+          const settleUsd = round2(cashPart + allocDisc);
+          if (!(Math.abs(settleUsd) > 0.005)) return;
+          if (allocDisc > 0) trdDiscByCo[rCo] = round2((trdDiscByCo[rCo] || 0) + allocDisc);
+          const nextSettled = round2(prevSettled + settleUsd);
           const nextGross = Math.max(0, round2(invTtc - nextSettled));
           const nextAdv = Math.max(0, round2(nextSettled - invTtc));
           const nextStatus = nextAdv > 0.005 ? 'Customer Advance (Credit)' : (nextGross <= 0.005 ? 'Settled' : (curRow.status || 'Open'));
@@ -69988,16 +70039,16 @@
             dso_days: nextGross <= 0.005 ? 0 : (curRow.dso_days || 0),
             status: nextStatus
           });
-        } else {
+        } else if (Math.abs(cashPart) > 0.005) {
           rawReceivableRows.unshift({
             id: rr.id || ('AR-' + rid),
             company: rCo,
             customer: custName,
             invoiced_ttc: 0,
-            settled_usd: settleUsd,
+            settled_usd: cashPart,
             gross_ar_usd: 0,
-            advance_usd: settleUsd,
-            net_ar_usd: round2(-settleUsd),
+            advance_usd: cashPart,
+            net_ar_usd: round2(-cashPart),
             dso_days: 0,
             promise_date: String(rr.date || ''),
             promise_usd: 0,
@@ -70258,6 +70309,7 @@
     const grossArUsd = round2(scopedAllAr.reduce((a, r) => a + r.gross_ar_usd, 0));
     const customerAdvancesUsd = round2(scopedAllAr.reduce((a, r) => a + r.advance_usd, 0));
     const activePromisesUsd = round2(scopedAllAr.reduce((a, r) => a + r.promise_usd, 0));
+    const totalReceiptDiscountUsd = round2([...scopeSet].reduce((a, c) => a + Number(trdDiscByCo[c] || 0), 0));
     const weightedDsoDays = scopeSet.size === 1
       ? (scopeSet.has('Korri Auto') ? 255.8 : 144.2)
       : 145.6;
@@ -70592,6 +70644,7 @@
         grossArUsd,
         customerAdvancesUsd,
         activePromisesUsd,
+        totalReceiptDiscountUsd,
         weightedDsoDays,
         totalFobUsd,
         totalLandedAddUsd,
@@ -72362,7 +72415,9 @@
           });
           if (rem > 0.005 && !isSeededRct) {
             rc.allocated_inv_usd = round2(Math.max(0, curAlloc - rem));
-            rc.unallocated_adv_usd = round2(Number(rc.unallocated_adv_usd || 0) + rem);
+            rc._overDiscountFlag = Number(rc.discount_usd || 0) > rc.allocated_inv_usd + 0.005;
+            const cashAllocatedPart = Math.max(0, round2(rc.allocated_inv_usd - Number(rc.discount_usd || 0)));
+            rc.unallocated_adv_usd = Math.max(0, round2(Number(rc.gross_usd || 0) - cashAllocatedPart - Number(rc.deposit_gl4196_usd || 0)));
             rc.status = rc.unallocated_adv_usd > 0.005 ? 'Advance Pool' : 'Allocated';
           }
         } else {
@@ -72480,6 +72535,7 @@
       return s + (ttc > 0 ? vat * Math.min(1, coll / ttc) : (coll > 0 ? vat : 0));
     }, 0));
     const totalCollectedRentUsd = round2(fInvoices.reduce((s, r) => s + Number(r.collected_usd || 0), 0));
+    const totalRentDiscountUsd = round2(fReceipts.reduce((s, r) => s + Math.min(Number(r.discount_usd || 0), Math.max(0, Number(r.allocated_inv_usd || 0))), 0));
     const openRentArUsd = round2(fInvoices.reduce((s, r) => s + Number(r.open_ar_usd || 0), 0));
     const unallocatedAdvancesUsd = round2(fReceipts.reduce((s, r) => s + Number(r.unallocated_adv_usd || 0), 0));
     const securityDepositsHeldUsd = round2(fReceipts.reduce((s, r) => s + Number(r.deposit_gl4196_usd || 0), 0));
@@ -72565,6 +72621,7 @@
         totalVat11Usd,
         official4235VatCollectedUsd,
         totalCollectedRentUsd,
+        totalRentDiscountUsd,
         openRentArUsd,
         unallocatedAdvancesUsd,
         securityDepositsHeldUsd,
@@ -72812,7 +72869,7 @@
                     <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
                     <td>${esc(r.property)}</td>
                     <td>${esc(r.method)}</td>
-                    <td class="r mono">${canReLBooks ? `<strong>${fmtUSD(r.gross_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
+                    <td class="r mono">${canReLBooks ? `<strong>${fmtUSD(r.gross_usd, 2)}</strong>${Number(r.discount_usd || 0) > 0 ? `<div class="muted" style="font-size:10.5px">Disc ${fmtUSD(r.discount_usd, 2)}</div>` : ''}` : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.allocated_inv_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.unallocated_adv_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.deposit_gl4196_usd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -82353,6 +82410,8 @@
       const cogs = dFloor(295000, s.totalSalesCost);
       const whVal = dFloor(380000, s.totalStockValUsd);
       const settledAr = round2(Math.max(0, Number(s.totalSalesTtc || 0) - Number(s.grossArUsd || 0)));
+      const trdDiscUsd = Math.min(settledAr, round2(Math.max(0, Number(s.totalReceiptDiscountUsd || 0))));
+      const cashSettledAr = round2(Math.max(0, settledAr - trdDiscUsd));
       rawTb = [
         { code: '101', name: 'Trading Share Capital & Statutory Reserves', cls: '1', debit: 0, credit: dConst(580000), source_module: 'Trading Equity', debit_rule: 'Dividend payouts', credit_rule: 'Korri Auto & Shacman capital & retained reserves' },
         { code: '218', name: 'Showroom, Heavy Workshop & PDI Bays', cls: '2', debit: dConst(265000), credit: 0, source_module: 'Showroom & Workshop Assets', debit_rule: 'Diagnostic bays, cranes & showroom fixtures', credit_rule: 'Accumulated depreciation' },
@@ -82362,8 +82421,9 @@
         { code: '4111', name: 'Customer Trade Receivables — Gross AR', cls: '4', debit: dFloor(442000, s.totalSalesTtc), credit: demoGl ? round2((s.totalSalesTtc || 442000) - (s.grossArUsd || 118000)) : settledAr, source_module: 'Trading AR & Ageing', debit_rule: 'Pre-printed book sales invoices', credit_rule: 'Customer cash, cheque & wire settlements' },
         { code: '4191', name: 'Customer Advances & Unapplied Deposits', cls: '4', debit: 0, credit: dFloor(34500, s.customerAdvancesUsd), source_module: 'Customer Advances', debit_rule: 'Applied against final vehicle delivery invoice', credit_rule: 'Down-payments & truck reservation deposits (never netted into 4111)' },
         { code: '4427', name: '11% Output VAT on Pre-Printed Invoice Books', cls: '4', debit: 0, credit: salesVat, source_module: 'Sales Invoicing', debit_rule: 'VAT returns filed', credit_rule: '11% output VAT on Korri Auto & Shacman tax invoices' },
-        { code: '5121', name: 'Showroom Cash Till & Trade Bank Accounts', cls: '5', debit: dFloor(395000, settledAr + Number(s.customerAdvancesUsd || 0)), credit: dFloor(148000, s.totalLandedAddUsd), source_module: 'Trading Treasury', debit_rule: 'Customer collections & advance deposits', credit_rule: 'Import LC wires, customs duties & showroom payroll' },
+        { code: '5121', name: 'Showroom Cash Till & Trade Bank Accounts', cls: '5', debit: dFloor(395000, cashSettledAr + Number(s.customerAdvancesUsd || 0)), credit: dFloor(148000, s.totalLandedAddUsd), source_module: 'Trading Treasury', debit_rule: 'Customer collections & advance deposits', credit_rule: 'Import LC wires, customs duties & showroom payroll' },
         { code: '607', name: 'Cost of Goods Sold — Landed Vehicles & Parts', cls: '6', debit: cogs, credit: 0, source_module: 'Sales & Landed Cost', debit_rule: 'Landed WAC cost of trucks & spare parts sold', credit_rule: 'Sales return restocking' },
+        ...(trdDiscUsd > 0 ? [{ code: '709', name: 'Discounts Allowed on Commercial Invoices', cls: '7', debit: trdDiscUsd, credit: 0, source_module: 'Trading AR & Ageing', debit_rule: 'Settlement discounts & rebates granted on customer collections', credit_rule: 'Discount reversals' }] : []),
         { code: '707', name: 'Commercial Vehicles & OEM Spare Parts Sales', cls: '7', debit: 0, credit: salesNet, source_module: 'Sales Invoicing', debit_rule: 'Credit notes & returns', credit_rule: 'Net HT sales across Korri Auto & Shacman invoice books' }
       ];
       soaStream = [].concat(
@@ -82371,6 +82431,7 @@
         makeVoucherPair('2026-10-30', coLbl, 'COGS-SH-2401', '607', 'Cost of Goods Sold — Landed Vehicles & Parts', '3701', 'Heavy Truck & Commercial Serial Stock (VINs)', 'Showroom & Warehouses', 'Landed WAC cost of trucks & spare parts sold', demoGl ? 76200 : cogs),
         makeVoucherPair('2026-10-28', coLbl, 'IMP-LC-109', '3702', '5-Warehouse OEM Spare Parts Inventory (WAC)', '4011', 'Foreign OEMs, Letters of Credit & Customs AP', 'OEM Export + Beirut Port', 'Capitalized FOB + customs + freight landed cost allocation', demoGl ? 64500 : round2(s.totalFobUsd + s.totalLandedAddUsd)),
         makeVoucherPair('2026-10-27', coLbl, 'ADV-DEP-18', '5121', 'Showroom Cash Till & Trade Bank Accounts', '4191', 'Customer Advances & Unapplied Deposits', 'Customer Advance Deposits', 'Unapplied customer advances tracked separately in GL 4191', dFloor(34500, s.customerAdvancesUsd)),
+        ...(trdDiscUsd > 0 ? makeVoucherPair('2026-10-27', coLbl, 'DISC-TRD-709', '709', 'Discounts Allowed on Commercial Invoices', '4111', 'Customer Trade Receivables — Gross AR', 'Trading Commercial Invoices', 'Settlement discounts granted on customer trade receipts', trdDiscUsd) : []),
         makeVoucherPair('2026-10-26', coLbl, 'VAT-INV-10', '4111', 'Customer Trade Receivables — Gross AR', '4427', '11% Output VAT on Pre-Printed Invoice Books', '11% Statutory VAT', 'Output VAT posted from pre-printed invoice books', salesVat)
       );
     } else if (ind === 'Real Estate & Property') {
@@ -82381,6 +82442,8 @@
       const vat4235 = dFloor(19800, s.totalVat11Usd);
       const deedPaid = dFloor(420000, s.salesPaidUsd);
       const woCost = dFloor(34000, s.woActualUsd);
+      const rentDiscUsd = Math.min(round2(Number(s.totalCollectedRentUsd || 0)), round2(Number(s.totalRentDiscountUsd || 0)));
+      const cashRentCollectedUsd = round2(Math.max(0, Number(s.totalCollectedRentUsd || 0) - rentDiscUsd));
       const ownEnt = round2((re.ownership || []).reduce((a, o) => a + Number(o.entitled_noi_usd || 0), 0));
       const ownDist = round2((re.ownership || []).reduce((a, o) => a + Number(o.distributed_usd || 0), 0));
       rawTb = [
@@ -82391,14 +82454,16 @@
         { code: '4196', name: 'Tenant Security Deposits & Deferred Rent', cls: '4', debit: 0, credit: dFloor(68000, s.securityDepositsHeldUsd), source_module: 'Lease Contracts', debit_rule: 'Deposit refund or damage offset at lease exit', credit_rule: 'Refundable security deposits held across active leases' },
         { code: '4427', name: '4235 Company S.A.L Official 11% Output VAT (#1..#6)', cls: '4', debit: 0, credit: vat4235, source_module: '4235 S.A.L VAT Register', debit_rule: 'Quarterly VAT declaration payment', credit_rule: '11% VAT on 4235 Company S.A.L sequential tax invoices #1..#6' },
         { code: '4515', name: 'Co-Owner NOI Distribution Accounts (/2400 Shares)', cls: '4', debit: dFloor(95000, ownDist), credit: dFloor(210000, ownEnt), source_module: 'Owner Distributions', debit_rule: 'Quarterly NOI cash payouts to co-owners', credit_rule: 'Net operating income allocated by /2400 Mulk deed shares' },
-        { code: '5121', name: 'Property Escrow & Rent Collection Bank Accounts', cls: '5', debit: round2(s.totalCollectedRentUsd + deedPaid), credit: dFloor(145000, ownDist), source_module: 'Real Estate Treasury', debit_rule: 'Rent collections & buyer deed instalments received', credit_rule: 'Contractor payouts & co-owner NOI distributions' },
+        { code: '5121', name: 'Property Escrow & Rent Collection Bank Accounts', cls: '5', debit: round2(cashRentCollectedUsd + deedPaid), credit: dFloor(145000, ownDist), source_module: 'Real Estate Treasury', debit_rule: 'Rent collections & buyer deed instalments received', credit_rule: 'Contractor payouts & co-owner NOI distributions' },
         { code: '614', name: 'Building Fit-Out, MEP Repairs & Municipal Taxes', cls: '6', debit: woCost, credit: 0, source_module: 'Work Orders & Recharges', debit_rule: 'Landlord maintenance & fit-out work orders', credit_rule: 'Tenant-fault repair recharges' },
+        ...(rentDiscUsd > 0 ? [{ code: '709', name: 'Discounts Allowed on Rent & Tenant Concessions', cls: '7', debit: rentDiscUsd, credit: 0, source_module: 'Tenant Receipts', debit_rule: 'Settlement discounts granted on rent receipts', credit_rule: 'Discount reversals' }] : []),
         { code: '706', name: 'Commercial & Residential Lease Rent & Deed Revenue', cls: '7', debit: 0, credit: round2(rentBase + deedPaid), source_module: 'Leases & Property Sales', debit_rule: 'Rent concessions', credit_rule: 'Recognized lease rental income + property sale revenue' }
       ];
       soaStream = [].concat(
         makeVoucherPair('2026-10-30', '4235 Company S.A.L', 'VAT-4235-06', '4111', 'Tenant Rent & Property Buyer Instalment AR', '706', 'Commercial & Residential Lease Rent & Deed Revenue', '4235 Msaytbeh Anchor Tenants', 'Official 4235 S.A.L commercial rent billing (Sequence #1..#6)', rentBase),
         makeVoucherPair('2026-10-30', '4235 Company S.A.L', 'VAT-4235-06V', '4111', 'Tenant Rent & Property Buyer Instalment AR', '4427', '4235 Company S.A.L Official 11% Output VAT (#1..#6)', '4235 Msaytbeh Anchor Tenants', '11% Output VAT on 4235 S.A.L official tax invoices', vat4235),
-        makeVoucherPair('2026-10-28', 'Properties', 'RCPT-RE-112', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial & Residential Tenants', 'Collected lease rent & buyer deed instalments', demoGl ? round2(s.totalCollectedRentUsd || 245000) : s.totalCollectedRentUsd),
+        makeVoucherPair('2026-10-28', 'Properties', 'RCPT-RE-112', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial & Residential Tenants', 'Collected lease rent & buyer deed instalments', demoGl ? round2(cashRentCollectedUsd || 245000) : cashRentCollectedUsd),
+        ...(rentDiscUsd > 0 ? makeVoucherPair('2026-10-28', 'Properties', 'DISC-RE-709', '709', 'Discounts Allowed on Rent & Tenant Concessions', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial & Residential Tenants', 'Settlement discounts granted on tenant receipts', rentDiscUsd) : []),
         makeVoucherPair('2026-10-26', 'Properties', 'DEP-4196-08', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4196', 'Tenant Security Deposits & Deferred Rent', 'Active Lease Tenants', 'Security deposits held in escrow across active leases', dFloor(68000, s.securityDepositsHeldUsd)),
         makeVoucherPair('2026-10-24', 'Properties', 'WO-MNT-19', '614', 'Building Fit-Out, MEP Repairs & Municipal Taxes', '4011', 'Fit-Out Contractors & Building Maintenance AP', 'MEP & Facade Contractors', 'Completed building maintenance & tenant fit-out work orders', woCost),
         makeVoucherPair('2026-10-22', 'Properties', 'NOI-2400-04', '4515', 'Co-Owner NOI Distribution Accounts (/2400 Shares)', '5121', 'Property Escrow & Rent Collection Bank Accounts', 'Mulk Co-Owners (/2400 Shares)', 'Quarterly Net Operating Income distribution by deed share', dFloor(95000, ownDist))
@@ -85899,7 +85964,10 @@
 
   function previewTradingReceiptFifo({ company, customer, method, totalSettledUsd, cashAmountUsd = null, editRow = null } = {}) {
     const settleNow = round2(Number(totalSettledUsd || 0) || 0);
-    if (!customer || !(settleNow > 0.005) || (cashAmountUsd != null && !(Number(cashAmountUsd) > 0.005))) {
+    if (!customer || !(settleNow > 0.005)) {
+      return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
+    }
+    if (cashAmountUsd != null && Number(cashAmountUsd) < -0.005) {
       return { openBeforeUsd: 0, allocatedUsd: 0, unallocatedUsd: 0, remainingOpenArUsd: 0, splitRows: [] };
     }
     const rCo = canonCompany(company) || String(company || '').trim();
@@ -86166,8 +86234,9 @@
     return { mode: 'receipt', openBeforeUsd, allocatedUsd, unallocatedUsd, remainingOpenArUsd, splitRows };
   }
 
-  function previewRealEstateReceiptFifo({ company, tenant, receiptType = 'Period Rent Settlement', grossUsd = 0, allocatedInputUsd = null, depositUsd = 0, editRow = null } = {}) {
+  function previewRealEstateReceiptFifo({ company, tenant, receiptType = 'Period Rent Settlement', grossUsd = 0, discountUsd = 0, allocatedInputUsd = null, depositUsd = 0, editRow = null } = {}) {
     const gross = Math.max(0, round2(Number(grossUsd || 0) || 0));
+    const disc = Math.max(0, round2(Number(discountUsd || 0) || 0));
     const dep = Math.max(0, round2(Number(depositUsd || 0) || 0));
     const coNorm = norm(company || '4235 Company S.A.L');
     const tenNorm = norm(tenant || '');
@@ -86185,9 +86254,10 @@
     if (allocatedInputUsd != null) {
       allocatedUsd = Math.max(0, round2(Number(allocatedInputUsd || 0) || 0));
     } else if (!skipAuto && tenNorm) {
-      allocatedUsd = round2(Math.min(Math.max(0, round2(gross - dep)), openBeforeUsd));
+      allocatedUsd = round2(Math.min(Math.max(0, round2(gross + disc - dep)), openBeforeUsd));
     }
-    const unallocatedUsd = Math.max(0, round2(gross - allocatedUsd - dep));
+    const cashAllocated = Math.max(0, round2(allocatedUsd - disc));
+    const unallocatedUsd = Math.max(0, round2(gross - cashAllocated - dep));
     const remainingOpenArUsd = Math.max(0, round2(openBeforeUsd - Math.min(allocatedUsd, openBeforeUsd)));
     const splitRows = [];
     if (allocatedUsd > 0.005) {
@@ -86328,6 +86398,9 @@
     }
     FORM_UI.domainNearCopyPeekItems = [];
     FORM_UI.domainFifoSplitPreview = null;
+    FORM_UI.ideDiscUnit = 'usd';
+    FORM_UI.ideSettleBase = null;
+    FORM_UI._lastIdeInputId = '';
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'dom');
     if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_AI_EDGE) {
@@ -86350,6 +86423,9 @@
     wireModulePopoverHandlersOnce();
     closeAllModalModulePopovers();
     FORM_UI.domainFifoSplitPreview = null;
+    FORM_UI.ideDiscUnit = 'usd';
+    FORM_UI.ideSettleBase = null;
+    FORM_UI._lastIdeInputId = '';
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false);
     if (typeof closeFifoSplitPeekPopover === 'function') closeFifoSplitPeekPopover(false);
     if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
@@ -86719,7 +86795,8 @@
         ${fldWrap('Property *', `<input type="text" id="ide_property" list="dl_ide_re_rcpt_props" style="${inpStyle}" value="${esc(defProp)}">`)}
         ${fldWrap('Receipt Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}">${rTypes.map(t => `<option value="${esc(t)}" ${t === defType ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
         ${fldWrap('Payment Method', `<select id="ide_method" data-plain-options="1" style="${inpStyle}">${rMethods.map(m => `<option value="${esc(m)}" ${m === defMethod ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`)}
-        ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
+        ${fldWrap('Gross Receipt ($) *', `<input type="number" id="ide_gross" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.gross_usd != null ? prefill.gross_usd : '')}" placeholder="0.00">`)}
+        ${fldWrap(`<span class="disc-unit-lbl-bar"><span>Settlement Discount</span>${renderDiscUnitPillsHtml(FORM_UI.ideDiscUnit, 'ide')}</span>`, `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount_usd != null ? prefill.discount_usd : '0')}">`)}
         ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Allocated to Invoices ($)', `<input type="number" id="ide_allocated" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.allocated_inv_usd != null ? prefill.allocated_inv_usd : '')}" placeholder="Auto (oldest open rent)">`, domainFifoSplitBtnHtml())}
         ${fldWrap('Security Deposit ($)', `<input type="number" id="ide_deposit" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.deposit_gl4196_usd != null ? prefill.deposit_gl4196_usd : '0')}">`)}
@@ -86836,7 +86913,7 @@
         ${fldWrap('Payment Method *', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Payment" ${defMth === 'Payment' ? 'selected' : ''}>Payment</option><option value="Barter" ${defMth === 'Barter' ? 'selected' : ''}>Barter</option><option value="VAT" ${defMth === 'VAT' ? 'selected' : ''}>VAT 11% receipt</option></select>`)}
         ${fldWrap('Amount Received ($) *', `<input type="number" id="ide_amount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.usd_amount != null ? prefill.usd_amount : (prefill.amount != null ? prefill.amount : ''))}" placeholder="0.00">`)}
         ${fldWrap('LBP Received (LL)', `<input type="number" id="ide_lbp" class="mono" step="1000" min="0" style="${inpStyle}" value="${esc(prefill.lbp_amount != null && Number(prefill.lbp_amount) !== 0 ? prefill.lbp_amount : '')}" placeholder="0">`)}
-        ${fldWrap('Settlement Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
+        ${fldWrap(`<span class="disc-unit-lbl-bar"><span>Settlement Discount</span>${renderDiscUnitPillsHtml(FORM_UI.ideDiscUnit, 'ide')}</span>`, `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount != null ? prefill.discount : '0')}">`)}
         ${fldWrap('Total Settled ($)', `<input type="text" id="ide_total_settled" class="mono" readonly style="${roStyle}" value="$0.00">`)}
         ${domainNearCopyAmtJumpHtml()}
         ${fldWrap('Allocated to Open Invoices ($)', `<input type="text" id="ide_trd_allocated" class="mono" readonly style="${roStyle}" value="$0.00">`, domainFifoSplitBtnHtml())}
@@ -87090,6 +87167,8 @@
     }
 
     let pendingDomainFiles = Array.isArray(prefill._pendingFiles) ? prefill._pendingFiles.slice() : [];
+    FORM_UI.ideDiscUnit = 'usd';
+    FORM_UI.ideSettleBase = null;
     modal._currentDomainSpec = spec;
     modal._currentDomainInd = ind;
     modal._getPendingDomainFiles = () => pendingDomainFiles;
@@ -87464,8 +87543,37 @@
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(net + vat, 2);
       } else if (spec.key === 're_receipts') {
-        const gross = Math.max(0, round2(numVal('ide_gross')));
         const dep = Math.max(0, round2(numVal('ide_deposit')));
+        const rawGrossIn = Math.max(0, round2(numVal('ide_gross')));
+        const rawDiscIn = round2(numVal('ide_discount'));
+        if (FORM_UI.ideDiscUnit === 'pct' && FORM_UI._lastIdeInputId === 'ide_gross') {
+          const baseSnap = FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : 0;
+          const rawCashIn = Math.max(0, round2(rawGrossIn - dep));
+          if (baseSnap > 0 && rawCashIn <= baseSnap + 0.005) {
+            const tweakedDisc = round2(Math.max(0, baseSnap - rawCashIn));
+            if ($('ide_discount')) $('ide_discount').value = tweakedDisc.toFixed(2);
+          } else {
+            const prevD = evalDiscInputState(rawDiscIn, baseSnap || rawCashIn, 'pct').usd;
+            if ($('ide_discount')) $('ide_discount').value = prevD.toFixed(2);
+          }
+          FORM_UI.ideDiscUnit = 'usd';
+          FORM_UI.ideSettleBase = null;
+          syncDiscUnitPillsDom(formEl, 'usd', false, 'ide');
+        }
+        let disc = 0;
+        let gross = rawGrossIn;
+        const discStRe = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : Math.max(0, round2(rawGrossIn - dep))) : Math.max(0, round2(rawGrossIn - dep)), FORM_UI.ideDiscUnit);
+        if (FORM_UI.ideDiscUnit === 'pct') {
+          if (FORM_UI.ideSettleBase > 0) {
+            disc = Math.min(FORM_UI.ideSettleBase, discStRe.usd);
+            gross = Math.max(0, round2(FORM_UI.ideSettleBase + dep - disc));
+            if ($('ide_gross') && FORM_UI._lastIdeInputId !== 'ide_gross') $('ide_gross').value = gross.toFixed(2);
+          } else {
+            disc = discStRe.usd;
+          }
+        } else {
+          disc = discStRe.usd;
+        }
         const allocRaw = strVal('ide_allocated');
         const coR = strVal('ide_company') || defCo;
         const tenR = strVal('ide_tenant');
@@ -87476,28 +87584,70 @@
           tenant: tenR,
           receiptType: rType,
           grossUsd: gross,
+          discountUsd: disc,
           allocatedInputUsd: allocIn,
           depositUsd: dep,
           editRow: isEditMode ? prefill : null
         });
         const alloc = fifoRe.allocatedUsd;
-        if ($('ide_unallocated')) $('ide_unallocated').value = fmtUSD(Math.max(0, round2(gross - alloc - dep)), 2);
+        const cashAllocatedRe = Math.max(0, round2(alloc - disc));
+        if ($('ide_unallocated')) $('ide_unallocated').value = fmtUSD(Math.max(0, round2(gross - cashAllocatedRe - dep)), 2);
         syncFifoSplitBtn(fifoRe, tenR, 're_receipts');
+        if (discStRe.over100) {
+          showMsg('Discount percentage cannot exceed 100%.', true);
+          return false;
+        }
+        if (discStRe.raw < 0) {
+          showMsg('Settlement Discount cannot be negative.', true);
+          return false;
+        }
+        if (disc > 0.005 && (rType === 'Security Deposit' || rType === 'Advance Rent Tranche')) {
+          showMsg('Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.', true);
+          return false;
+        }
         if (gross > 0 && dep > gross + 0.005) {
           showMsg('Security Deposit cannot exceed Gross Receipt Amount.', true);
           return false;
         }
-        if (gross > 0 && allocRaw !== '' && round2(alloc + dep) > gross + 0.005) {
-          showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt Amount.', true);
+        if (gross === 0 && dep > 0.005) {
+          showMsg('Security Deposit requires a positive cash Gross Receipt.', true);
+          return false;
+        }
+        if (allocRaw !== '' && round2(alloc + dep) > round2(gross + disc) + 0.005) {
+          showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.', true);
+          return false;
+        }
+        if (disc > alloc + 0.005 && rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche') {
+          showMsg(`Settlement Discount (${fmtUSD(disc, 2)}) cannot exceed Allocated to Rent Invoices (${fmtUSD(alloc, 2)}).`, true);
           return false;
         }
       } else if (spec.key === 'trd_receipts') {
         const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
+        if (FORM_UI.ideDiscUnit === 'pct' && (FORM_UI._lastIdeInputId === 'ide_amount' || FORM_UI._lastIdeInputId === 'ide_lbp')) {
+          const curCashUsd = round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / fx));
+          const baseSnap = FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : 0;
+          if (baseSnap > 0 && curCashUsd <= baseSnap + 0.005) {
+            if ($('ide_discount')) $('ide_discount').value = round2(Math.max(0, baseSnap - curCashUsd)).toFixed(2);
+          } else {
+            const prevD = evalDiscInputState(numVal('ide_discount'), baseSnap || curCashUsd, 'pct').usd;
+            if ($('ide_discount')) $('ide_discount').value = prevD.toFixed(2);
+          }
+          FORM_UI.ideDiscUnit = 'usd';
+          FORM_UI.ideSettleBase = null;
+          syncDiscUnitPillsDom(formEl, 'usd', false, 'ide');
+        }
         const usd = Math.max(0, numVal('ide_amount'));
         const lbp = Math.max(0, Math.round(numVal('ide_lbp')));
-        const disc = Math.max(0, numVal('ide_discount'));
-        const totAmt = round2(usd + (lbp / fx));
-        const settledTot = round2(totAmt + disc);
+        let totAmt = round2(usd + (lbp / fx));
+        const discStTrd = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : totAmt) : totAmt, FORM_UI.ideDiscUnit);
+        let disc = discStTrd.usd;
+        if (FORM_UI.ideDiscUnit === 'pct' && FORM_UI.ideSettleBase > 0) {
+          disc = Math.min(FORM_UI.ideSettleBase, discStTrd.usd);
+          const nextCashUsd = Math.max(0, round2(FORM_UI.ideSettleBase - disc - (lbp / fx)));
+          if ($('ide_amount') && FORM_UI._lastIdeInputId !== 'ide_amount') $('ide_amount').value = nextCashUsd.toFixed(2);
+          totAmt = round2(nextCashUsd + (lbp / fx));
+        }
+        const settledTot = round2(totAmt + Math.max(0, disc));
         if ($('ide_total_settled')) $('ide_total_settled').value = fmtUSD(settledTot, 2);
         const trdCust = strVal('ide_customer');
         const fifoTrd = previewTradingReceiptFifo({
@@ -87511,6 +87661,14 @@
         if ($('ide_trd_allocated')) $('ide_trd_allocated').value = fmtUSD(fifoTrd.allocatedUsd, 2);
         if ($('ide_trd_unallocated')) $('ide_trd_unallocated').value = fmtUSD(fifoTrd.unallocatedUsd, 2);
         syncFifoSplitBtn(fifoTrd, trdCust, 'trd_receipts');
+        if (discStTrd.over100) {
+          showMsg('Discount percentage cannot exceed 100%.', true);
+          return false;
+        }
+        if (discStTrd.raw < 0) {
+          showMsg('Settlement Discount cannot be negative.', true);
+          return false;
+        }
       } else if (spec.key === 're_sales') {
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
@@ -88080,7 +88238,12 @@
         const vatN = /4235/i.test(coNow) ? round2(netN * 0.11) : 0;
         return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), tax_seq: strVal('ide_tax_seq'), net_usd: netN, amount_ttc_usd: round2(netN + vatN) };
       }
-      if (spec.key === 're_receipts') return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), method: strVal('ide_method'), gross_usd: numVal('ide_gross'), allocated_inv_usd: numVal('ide_allocated'), deposit_gl4196_usd: numVal('ide_deposit'), audit_flag: strVal('ide_notes') };
+      if (spec.key === 're_receipts') {
+        const discCandRe = FORM_UI.ideDiscUnit === 'pct'
+          ? evalDiscInputState(numVal('ide_discount'), FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : Math.max(0, numVal('ide_gross') - numVal('ide_deposit')), 'pct').usd
+          : round2(numVal('ide_discount'));
+        return { id: ridNow, company: coNow, date: dtNow, tenant: strVal('ide_tenant'), method: strVal('ide_method'), gross_usd: numVal('ide_gross'), discount_usd: discCandRe, allocated_inv_usd: numVal('ide_allocated'), deposit_gl4196_usd: numVal('ide_deposit'), audit_flag: strVal('ide_notes') };
+      }
       if (spec.key === 're_sales') return { id: ridNow, company: coNow, date: dtNow, buyer: strVal('ide_buyer'), unit: strVal('ide_unit'), contract_usd: numVal('ide_contract'), paid_usd: numVal('ide_paid') };
       if (spec.key === 're_workorders') return { id: ridNow, company: coNow, date: dtNow, contractor: strVal('ide_contractor'), property: strVal('ide_property'), budget_usd: numVal('ide_budget'), actual_usd: numVal('ide_actual') };
       if (spec.key === 'trd_sales') {
@@ -88092,7 +88255,10 @@
         const lbpN = Math.max(0, Math.round(numVal('ide_lbp')));
         const fxN = getLbpFxRate(dtNow) || 89500;
         const amtN = round2(usdN + (lbpN / fxN));
-        return { id: ridNow, company: coNow, date: dtNow, customer: strVal('ide_customer'), method: strVal('ide_method') || 'Payment', amount: amtN, usd_amount: usdN, lbp_amount: lbpN, discount: round2(numVal('ide_discount')), reference: strVal('ide_ref'), notes: strVal('ide_notes') };
+        const discCandTrd = FORM_UI.ideDiscUnit === 'pct'
+          ? evalDiscInputState(numVal('ide_discount'), FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : amtN, 'pct').usd
+          : round2(numVal('ide_discount'));
+        return { id: ridNow, company: coNow, date: dtNow, customer: strVal('ide_customer'), method: strVal('ide_method') || 'Payment', amount: amtN, usd_amount: usdN, lbp_amount: lbpN, discount: discCandTrd, reference: strVal('ide_ref'), notes: strVal('ide_notes') };
       }
       if (spec.key === 'trd_purchases') {
         const fobN = numVal('ide_fob');
@@ -88135,8 +88301,13 @@
 
     formEl.querySelectorAll('input, select').forEach(el => {
       if (el.id === 'ide_nearcopyok') return;
-      const onFldEvt = () => {
-        recalcLive();
+      const onFldEvt = ev => {
+        FORM_UI._lastIdeInputId = (ev && ev.target && ev.target.id) || el.id || '';
+        try {
+          recalcLive();
+        } finally {
+          FORM_UI._lastIdeInputId = '';
+        }
         if (!isNearCopyDomainKey) return;
         if (domPostAttempted) {
           cancelDomainNearCopyLiveCheck();
@@ -88150,6 +88321,33 @@
     });
     const ideNcCb = $('ide_nearcopyok');
     if (ideNcCb) ideNcCb.addEventListener('change', () => { if (ideNcCb.checked) showMsg(''); });
+    formEl.addEventListener('click', ev => {
+      const unitBtn = ev.target && ev.target.closest ? ev.target.closest('[data-ide-disc-unit]') : null;
+      if (!unitBtn) return;
+      ev.preventDefault();
+      const nextUnit = unitBtn.getAttribute('data-ide-disc-unit') === 'pct' ? 'pct' : 'usd';
+      if (nextUnit === FORM_UI.ideDiscUnit) return;
+      const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
+      const curCash = spec.key === 're_receipts'
+        ? Math.max(0, round2(numVal('ide_gross') - numVal('ide_deposit')))
+        : round2(Math.max(0, numVal('ide_amount')) + (Math.max(0, Math.round(numVal('ide_lbp'))) / fx));
+      const rawD = numVal('ide_discount');
+      const curBase = FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : curCash;
+      if (nextUnit === 'pct') {
+        const usdD = Math.max(0, round2(rawD));
+        const baseForPct = round2(curCash + usdD);
+        FORM_UI.ideSettleBase = baseForPct > 0 ? baseForPct : null;
+        FORM_UI.ideDiscUnit = 'pct';
+        if ($('ide_discount')) $('ide_discount').value = (baseForPct > 0 && usdD > 0) ? String(round2((usdD / baseForPct) * 100)) : '0';
+      } else {
+        const resolvedD = evalDiscInputState(rawD, curBase, 'pct').usd;
+        FORM_UI.ideDiscUnit = 'usd';
+        FORM_UI.ideSettleBase = null;
+        if ($('ide_discount')) $('ide_discount').value = resolvedD.toFixed(2);
+      }
+      syncDiscUnitPillsDom(formEl, FORM_UI.ideDiscUnit, false, 'ide');
+      recalcLive();
+    });
     if (isEditMode) {
       bodyEl.querySelectorAll('#ide_client, #ide_tenant, #ide_buyer, #ide_customer, #ide_member, #ide_supplier, #ide_contractor, #ide_carrier, #ide_party, #ide_partner, #ide_lender, #ide_property, #ide_outlet, #ide_cashier, #ide_producer').forEach(el => {
         el.dataset.partyInitVal = String(el.value || '');
@@ -88592,22 +88790,48 @@
         const tenant = strVal('ide_tenant');
         if (!tenant) { showMsg('Tenant Name is required.', true); return; }
         const gross = Math.max(0, round2(numVal('ide_gross')));
-        if (!(gross > 0)) { showMsg('Gross Receipt Amount ($) > 0 is required.', true); return; }
         const dep = Math.max(0, round2(numVal('ide_deposit')));
+        const discStRe = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : Math.max(0, round2(gross - dep))) : Math.max(0, round2(gross - dep)), FORM_UI.ideDiscUnit);
+        if (discStRe.over100) { showMsg('Discount percentage cannot exceed 100%.', true); return; }
+        if (discStRe.raw < 0) { showMsg('Settlement Discount cannot be negative.', true); return; }
+        const disc = FORM_UI.ideDiscUnit === 'pct' && FORM_UI.ideSettleBase > 0 ? Math.min(FORM_UI.ideSettleBase, discStRe.usd) : Math.max(0, round2(discStRe.usd));
+        const nts = strVal('ide_notes') || '';
+        const reZeroErr = validateZeroCashSettlementWriteOff({ amount: gross, disc, method: strVal('ide_method') || 'Bank Transfer USD', notes: nts });
+        if (reZeroErr) { showMsg(reZeroErr.msg, true); return; }
         if (dep > gross + 0.005) { showMsg('Security Deposit cannot exceed Gross Receipt Amount.', true); return; }
+        if (gross === 0 && dep > 0.005) { showMsg('Security Deposit requires a positive cash Gross Receipt.', true); return; }
         const allocRaw = strVal('ide_allocated');
         const rType = strVal('ide_type') || 'Period Rent Settlement';
+        if (disc > 0.005 && (rType === 'Security Deposit' || rType === 'Advance Rent Tranche')) {
+          showMsg('Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.', true);
+          return;
+        }
+        const openArCheck = (typeof computeRealEstateOperations === 'function')
+          ? round2(((computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: isEditMode ? recId : '' }).invoices) || []).filter(inv => inv && norm(inv.company || '') === norm(co) && norm(inv.tenant || '') === norm(tenant)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0))
+          : 0;
+        if (gross === 0 && disc > openArCheck + 0.005) {
+          showMsg(`$0.00 cash discount write-off (${fmtUSD(disc, 2)}) cannot exceed tenant Open AR (${fmtUSD(openArCheck, 2)}).`, true);
+          return;
+        }
+        const reRentBase = round2(Math.max(0, gross - dep) + disc);
+        const maxDiscWarnPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+        if (isAlertRuleEnabled('G_DISCOUNT_WARN') && reRentBase > 0 && disc > reRentBase * (maxDiscWarnPct / 100) && nts.trim().length < 3) {
+          showMsg(`Settlement Discount exceeds ${fmtNum(maxDiscWarnPct, 0)}% (${fmtUSD(disc, 2)} on ${fmtUSD(reRentBase, 2)}). Enter an explanation in Reference / Note (3+ chars) before posting.`, true);
+          return;
+        }
         let alloc = 0;
         if (allocRaw !== '') {
           alloc = Math.max(0, round2(numVal('ide_allocated')));
-          if (round2(alloc + dep) > gross + 0.005) { showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt Amount.', true); return; }
+          if (round2(alloc + dep) > round2(gross + disc) + 0.005) { showMsg('Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.', true); return; }
         } else if (rType !== 'Security Deposit' && rType !== 'Advance Rent Tranche' && typeof computeRealEstateOperations === 'function') {
-          const curRe = computeRealEstateOperations({ ignoreSearch: true, ignoreRls: true, ignorePeriod: true, excludeReceiptId: isEditMode ? recId : '' });
-          const openAr = round2((curRe.invoices || []).filter(inv => inv && norm(inv.company || '') === norm(co) && norm(inv.tenant || '') === norm(tenant)).reduce((s, inv) => s + Math.max(0, Number(inv.open_ar_usd || 0)), 0));
-          alloc = round2(Math.min(Math.max(0, round2(gross - dep)), openAr));
+          alloc = round2(Math.min(Math.max(0, round2(gross + disc - dep)), openArCheck));
         }
-        const unalloc = Math.max(0, round2(gross - alloc - dep));
-        const nts = strVal('ide_notes') || '';
+        if (disc > alloc + 0.005) {
+          showMsg(`Settlement Discount (${fmtUSD(disc, 2)}) cannot exceed Allocated to Rent Invoices (${fmtUSD(alloc, 2)}).`, true);
+          return;
+        }
+        const cashAllocatedRe = Math.max(0, round2(alloc - disc));
+        const unalloc = Math.max(0, round2(gross - cashAllocatedRe - dep));
         addIndustryCustomRow('re_receipts', {
           id: recId,
           date: strVal('ide_date') || today,
@@ -88617,6 +88841,7 @@
           type: rType,
           method: strVal('ide_method') || 'Bank Transfer USD',
           gross_usd: gross,
+          discount_usd: disc,
           allocated_inv_usd: alloc,
           unallocated_adv_usd: unalloc,
           deposit_gl4196_usd: dep,
@@ -88739,18 +88964,41 @@
         const usdAmt = Math.max(0, round2(numVal('ide_amount')));
         const lbpAmt = Math.max(0, Math.round(numVal('ide_lbp')));
         const amt = round2(usdAmt + (lbpAmt / fx));
-        if (!(amt > 0)) { showMsg('Amount Received ($) > 0 is required.', true); return; }
-        const disc = Math.max(0, round2(numVal('ide_discount')));
+        const discStTrdSave = evalDiscInputState(numVal('ide_discount'), FORM_UI.ideDiscUnit === 'pct' ? (FORM_UI.ideSettleBase > 0 ? FORM_UI.ideSettleBase : amt) : amt, FORM_UI.ideDiscUnit);
+        if (discStTrdSave.over100) { showMsg('Discount percentage cannot exceed 100%.', true); return; }
+        if (discStTrdSave.raw < 0) { showMsg('Settlement Discount cannot be negative.', true); return; }
+        const disc = FORM_UI.ideDiscUnit === 'pct' && FORM_UI.ideSettleBase > 0 ? Math.min(FORM_UI.ideSettleBase, discStTrdSave.usd) : Math.max(0, round2(discStTrdSave.usd));
         const mth = strVal('ide_method') || 'Payment';
         const ref = strVal('ide_ref');
         const notes = strVal('ide_notes');
-        const curSeat = activeUser() || {};
-        const nowStamp = new Date().toISOString();
         const curRctArr = (STATE.customRecords && Array.isArray(STATE.customRecords.receipts)) ? STATE.customRecords.receipts : [];
         const seedRctArr = (SEED.records && Array.isArray(SEED.records.receipts)) ? SEED.records.receipts : [];
         const storedOrigRct = isEditMode ? (curRctArr.find(x => x && String(x.id) === String(recId)) || seedRctArr.find(x => x && String(x.id) === String(recId))) : null;
         const origRctSourceRaw = isEditMode ? String((storedOrigRct && storedOrigRct.source) ?? (prefill && prefill.source) ?? '').trim() : '';
         const keepNonAppSource = Boolean(isEditMode && (storedOrigRct || (prefill && prefill.source != null)) && origRctSourceRaw.toLowerCase() !== 'app');
+        const trdZeroErr = validateZeroCashSettlementWriteOff({ amount: amt, disc, method: mth, notes });
+        if (trdZeroErr) { showMsg(trdZeroErr.msg, true); return; }
+        if (amt <= 0.005 && disc > 0.005 && typeof computeTradingOperations === 'function') {
+          const trdOpsAr = computeTradingOperations({ ignoreSearch: true, ignoreRls: true });
+          const curCustAr = round2((trdOpsAr.receivableRows || []).filter(r => r && canonCompany(r.company) === canonCompany(co) && norm(r.customer || '') === norm(customer)).reduce((s, r) => s + Math.max(0, Number(r.gross_ar_usd || 0)), 0));
+          let origTrdCredit = 0;
+          if (isEditMode && storedOrigRct && !storedOrigRct.voided && canonCompany(storedOrigRct.company) === canonCompany(co) && norm(storedOrigRct.customer || '') === norm(customer)) {
+            origTrdCredit = round2(Math.max(0, Number(storedOrigRct.amount || 0)) + Math.max(0, Number(storedOrigRct.discount || 0)));
+          }
+          const availTrdAr = round2(curCustAr + origTrdCredit);
+          if (disc > availTrdAr + 0.005) {
+            showMsg(`$0.00 cash discount write-off (${fmtUSD(disc, 2)}) cannot exceed customer Open AR (${fmtUSD(availTrdAr, 2)}).`, true);
+            return;
+          }
+        }
+        const trdSettledTot = round2(amt + disc);
+        const maxDiscWarnTrdPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+        if (isAlertRuleEnabled('G_DISCOUNT_WARN') && trdSettledTot > 0 && disc > trdSettledTot * (maxDiscWarnTrdPct / 100) && String(notes || '').trim().length < 3) {
+          showMsg(`Settlement Discount exceeds ${fmtNum(maxDiscWarnTrdPct, 0)}% (${fmtUSD(disc, 2)} of ${fmtUSD(trdSettledTot, 2)} settled). Enter an explanation in Notes (3+ chars) before posting.`, true);
+          return;
+        }
+        const curSeat = activeUser() || {};
+        const nowStamp = new Date().toISOString();
         const rcptRec = {
           id: recId,
           name: `RCP ${dt} ${customer}`,
@@ -90639,6 +90887,62 @@
         return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
       }
 
+      if (rid === 'S22') {
+        const sdd = getStandingDiscountSentinelData({ user: u, company: evalCoKey });
+        const sRestricted = Boolean(sdd && sdd.restricted);
+        const sRows = (!sRestricted && sdd && Array.isArray(sdd.rows)) ? sdd.rows : [];
+        const sMinPct = Number((sdd && sdd.minPct) || getAlertParam('S22', 'min_standing_pct', 2) || 2);
+        const sMinVouch = Number((sdd && sdd.minVouchers) || getAlertParam('S22', 'min_vouchers', 3) || 3);
+        const sMinUsd = Number((sdd && sdd.minUsd) || getAlertParam('S22', 'min_voucher_usd', 100) || 100);
+        const topSd = sRows[0] || null;
+        expUsd = !sRestricted ? round2(Number((sdd && sdd.missedExpUsd) || 0)) : 0;
+        rowCnt = sRestricted ? 0 : sRows.length;
+        topParty = topSd ? String(topSd.supplier || 'Supplier') : (sRestricted ? 'Restricted' : 'All Clear');
+        topSubEn = topSd
+          ? `${fmtNum(topSd.expected_pct || 0, 1)}% standing · ${fmtUSD(topSd.expected_disc_usd || 0, 2)} missed`
+          : (sRestricted ? 'Requires Expenses access' : '0 missed standing discounts');
+        topSubAr = topSd
+          ? `خصم ثابت ${fmtNum(topSd.expected_pct || 0, 1)}% · مفقود ${fmtUSD(topSd.expected_disc_usd || 0, 2)}`
+          : (sRestricted ? 'يتطلب صلاحية المصاريف' : 'لا توجد خصومات ثابتة مفقودة');
+        topSubFr = topSd
+          ? `Remise ${fmtNum(topSd.expected_pct || 0, 1)}% · manquée ${fmtUSD(topSd.expected_disc_usd || 0, 2)}`
+          : (sRestricted ? 'Accès Dépenses requis' : 'Aucune remise manquée');
+        bEn = [
+          sRestricted
+            ? `Standing Supplier Discount monitoring is masked because this seat lacks Expenses access in ${companyEn}.`
+            : (rowCnt > 0
+                ? `${fmtNum(rowCnt, 0)} voucher(s) for ${fmtNum(sdd.missedSupsCount || 1, 0)} standing-discount supplier(s) posted $0 discount, totaling ${fmtUSD(expUsd, 2)} missed savings across ${companyEn}.`
+                : `All eligible vouchers for ${fmtNum((sdd && sdd.qualifiedSupsCount) || 0, 0)} standing-discount supplier(s) (>= ${fmtNum(sMinPct, 1)}% across ${fmtNum(sMinVouch, 0)}+ vouchers or Master Term) applied their expected discounts in ${companyEn}.`),
+          `Cash rounding dust (<= $10) and 100% write-offs are automatically excluded from percentage habits; vouchers >= $${fmtNum(sMinUsd, 0)} with explicit net-price notes stay cleared.`,
+          rowCnt > 0
+            ? 'Review missed vouchers in AI Sentinels or use the 1-tap Apply Discount pill on Expense & Settlement entry.'
+            : 'Standing discounts remain consistent across posted vouchers.'
+        ];
+        bAr = [
+          sRestricted
+            ? `رصد الخصومات الثابتة للموردين مخفي لعدم توفر صلاحية المصاريف لهذا الحساب في ${companyAr}.`
+            : (rowCnt > 0
+                ? `تم رصد ${fmtNum(rowCnt, 0)} سندات لموردين لديهم خصم ثابت سُجّلت بخصم $0 بإجمالي وفورات فائتة ${fmtUSD(expUsd, 2)} عبر ${companyAr}.`
+                : `كافة السندات المؤهلة للموردين ذوي الخصم الثابت (>= ${fmtNum(sMinPct, 1)}% أو شروط البطاقة) استوفت خصوماتها المتوقعة في ${companyAr}.`),
+          `تُستبعد فروقات التقريب النقدي (<= $10) وشطوبات 100% تلقائياً من متوسط الخصم؛ وتُستثنى السندات المزوّدة بملاحظة السعر الصافي.`,
+          rowCnt > 0
+            ? 'راجع السندات المرصودة في التنبيهات أو استخدم زر تطبيق الخصم بضغطة واحدة في نماذج المصاريف والتسويات.'
+            : 'انتظام خصومات الموردين متوافق عبر كافة السجلات.'
+        ];
+        bFr = [
+          sRestricted
+            ? `Le suivi des remises permanentes fournisseurs est masqué faute d accès Dépenses pour ${companyFr}.`
+            : (rowCnt > 0
+                ? `${fmtNum(rowCnt, 0)} pièce(s) de fournisseur(s) à remise permanente ont été saisies avec $0 de remise, soit ${fmtUSD(expUsd, 2)} d économies manquées sur ${companyFr}.`
+                : `Toutes les pièces éligibles pour ${fmtNum((sdd && sdd.qualifiedSupsCount) || 0, 0)} fournisseur(s) à remise permanente (>= ${fmtNum(sMinPct, 1)}% ou fiche maître) respectent leurs remises sur ${companyFr}.`),
+          `L appoint de caisse (<= $10) et les remises à 100% sont exclus automatiquement ; les pièces avec note prix net explicite ne sont pas signalées.`,
+          rowCnt > 0
+            ? 'Vérifiez les pièces signalées dans AI Sentinels ou utilisez le bouton Appliquer remise en 1 clic à la saisie.'
+            : 'La régularité des remises fournisseurs est conforme.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
       if (rid === 'S13') {
         const s13CritDays = getAlertParam('S13', 'crit_window_days', 7);
         const s13WarnDays = getAlertParam('S13', 'warn_window_days', 60);
@@ -91539,6 +91843,7 @@
       const expValFr = expHasUsd ? fmtUSD(det.expUsd, det.expUsd < 100 && det.expUsd > 0 ? 2 : 0) : det.physValFr;
 
       const RULE_TITLES_LOC = {
+        S22: { ar: 'مراقب انتظام الخصومات الثابتة للموردين', fr: 'Sentinelle de régularité des remises fournisseurs' },
         S1: { ar: 'سلامة ميزان المراجعة للقيد المزدوج', fr: 'Intégrité de la balance générale en partie double' },
         S2: { ar: 'مطابقة خزان المازوت الفعلي والدفتري', fr: 'Rapprochement stock physique vs comptable gasoil' },
         S3: { ar: 'مراقب عدادات المسافات وساعات عمل الآليات', fr: 'Contrôle compteurs kilométriques & horaires flotte' },
@@ -108654,8 +108959,8 @@
           ${repDateField}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { hintId: 'hint_customer', hint: '' })}
           ${fld('Payment Method *', sel('f_method', [['Payment', 'Payment'], ['Barter', 'Barter'], ['VAT', 'VAT 11% receipt'], ['Rent', 'Rent offset'], ['VATRent', 'VAT on rent']], 'Payment'))}
-          ${fld('Amount Received ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
-          ${fld('Settlement Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
+          ${fld('Amount Received ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
+          ${fld(`<span class="disc-unit-lbl-bar"><span>Settlement Discount</span>${renderDiscUnitPillsHtml(FORM_UI.discInputUnit, 'modal')}</span>`, inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
           ${nearCopyAmtJumpHtml()}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
@@ -108889,14 +109194,16 @@
               <span class="hint" id="hint_gross_amount"></span>
             </div>
             <div class="form-field" id="wrap_f_discount">
-              <label for="f_discount" class="exp-inline-bar-lbl">
+              <label for="f_discount" class="exp-inline-bar-lbl disc-unit-lbl-bar">
                 <span class="pa-fld-lbl" id="lbl_exp_discount">Discount ($)</span>
+                ${pendEditRow ? '' : renderDiscUnitPillsHtml(FORM_UI.discInputUnit, 'modal')}
               </label>
               <div class="exp-amt-input-wrap exp-item-cost-wrap" id="expDiscInputWrap">
-                <span class="exp-cost-prefix">$</span>
+                <span class="exp-cost-prefix" id="expDiscPrefix">${FORM_UI.discInputUnit === 'pct' && !pendEditRow ? '%' : '$'}</span>
                 ${inp('f_discount', 'number', expDiscVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}
               </div>
               <span class="hint" id="hint_discount"></span>
+              <div id="expDiscNudge" class="disc-stand-nudge" hidden></div>
             </div>
             <div class="form-field" id="wrap_f_amount">
               <label for="f_amount" class="exp-inline-bar-lbl">
@@ -108941,8 +109248,8 @@
           ['transportation', '2 · Transport'],
           ['expense', '3 · Expense (Bills & Overhead)']
         ], 'expense'), { id: 'wrap_f_payable_leg', hintId: 'hint_payable_leg', hint: '' })}
-        ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
-        ${fld('Difference / Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'))}
+        ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
+        ${fld(`<span class="disc-unit-lbl-bar"><span>Difference / Discount</span>${renderDiscUnitPillsHtml(FORM_UI.discInputUnit, 'modal')}</span>`, inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: '', afterHtml: '<div id="settleDiscNudge" class="disc-stand-nudge" hidden></div>' })}
         ${nearCopyAmtJumpHtml()}
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
@@ -108973,8 +109280,70 @@
     lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastSettleSupplier: '', lastDupSig: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     unpricedSiteCtx: null,
+    discInputUnit: 'usd', settleGrossBase: null, ideDiscUnit: 'usd', ideSettleBase: null,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
+
+  function renderDiscUnitPillsHtml(mode = 'usd', scope = 'modal') {
+    const attr = scope === 'ide' ? 'data-ide-disc-unit' : 'data-disc-unit';
+    const idAttr = scope === 'ide' ? 'id="ideDiscUnitPills"' : 'id="discUnitPills"';
+    const m = mode === 'pct' ? 'pct' : 'usd';
+    return `<span class="exp-price-mode-bar is-inline-lbl disc-unit-pills" ${idAttr} role="group" aria-label="Discount input unit"><button type="button" class="uom-qpill${m === 'usd' ? ' active' : ''}" ${attr}="usd">$</button><button type="button" class="uom-qpill${m === 'pct' ? ' active' : ''}" ${attr}="pct">%</button></span>`;
+  }
+  function syncDiscUnitPillsDom(hostEl, unitMode = 'usd', disabled = false, scope = 'modal') {
+    const root = hostEl || $('modalBody') || $('entryModal');
+    if (!root) return;
+    const isIde = scope === 'ide';
+    const wrap = root.querySelector(isIde ? '#ideDiscUnitPills' : '#discUnitPills');
+    const attr = isIde ? 'data-ide-disc-unit' : 'data-disc-unit';
+    const m = unitMode === 'pct' ? 'pct' : 'usd';
+    if (wrap) {
+      wrap.querySelectorAll(`[${attr}]`).forEach(b => {
+        b.classList.toggle('active', b.getAttribute(attr) === m);
+        b.disabled = Boolean(disabled);
+      });
+    }
+    if (!isIde) {
+      const pfx = root.querySelector('#expDiscPrefix');
+      if (pfx) pfx.textContent = m === 'pct' ? '%' : '$';
+      const lbl = root.querySelector('#lbl_exp_discount');
+      if (lbl) lbl.textContent = m === 'pct' ? 'Discount (%)' : 'Discount ($)';
+    }
+  }
+  function evalDiscInputState(rawVal, baseUsd, unitMode = 'usd') {
+    const raw = Number(rawVal);
+    if (!Number.isFinite(raw) || raw === 0) return { raw: 0, usd: 0, over100: false, noBase: false };
+    if (raw < 0) return { raw, usd: round2(raw), over100: false, noBase: false };
+    if (unitMode === 'pct') {
+      const over100 = raw > 100 + 1e-6;
+      const b = Number(baseUsd || 0);
+      const noBase = !(b > 0.005);
+      const usd = noBase ? 0 : round2(b * (raw / 100));
+      return { raw, usd, over100, noBase };
+    }
+    return { raw, usd: round2(raw), over100: false, noBase: false };
+  }
+  function validateZeroCashSettlementWriteOff({ amount = 0, disc = 0, method = 'Payment', notes = '' } = {}) {
+    const amt = round2(Number(amount || 0));
+    const d = round2(Number(disc || 0));
+    if (amt < 0) return { field: 'f_amount', msg: 'Amount cannot be negative.' };
+    if (d < 0) return { field: 'f_discount', msg: 'Discount cannot be negative.' };
+    if (amt <= 0.005) {
+      if (/^(VAT|VATConfig|VATRent|IVA)$/i.test(String(method || ''))) {
+        return { field: 'f_amount', msg: 'Cash amount must be above zero for VAT/IVA vouchers.' };
+      }
+      if (!(d > 0.005)) {
+        return { field: 'f_amount', msg: 'Enter a cash amount or settlement discount above zero.' };
+      }
+      if (String(notes || '').trim().length < 3) {
+        return { field: 'f_notes', msg: 'Notes required (3+ chars) for $0.00 cash discount write-off.' };
+      }
+    }
+    return null;
+  }
+  function hasExplicitNoDiscNote(notes) {
+    return /\b(?:no[\s-]?disc(?:ount)?|net[\s-]?price|agreed[\s-]?net|waived[\s-]?disc(?:ount)?)\b|بدون\s*خصم|صافي|sans\s*remise|prix\s*net/i.test(String(notes || ''));
+  }
 
   function renderEntryAttachmentsBarHtml(fType, canEdit = true) {
     const isDocForm = fType === 'document';
@@ -115452,8 +115821,48 @@
     const customer = val('f_customer');
     const cust = customerInfo(customer);
     const before = openArBalance(customer);
-    const amount = num('f_amount'), disc = num('f_discount');
-    const totCredit = round2(amount + disc);
+    const methodRct = val('f_method') || 'Payment';
+    syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(canModifyTextOnly()), 'modal');
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI._lastModalInputId === 'f_amount') {
+      const typedNetRct = Math.max(0, num('f_amount'));
+      const baseSnap = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : 0;
+      if (baseSnap > 0 && typedNetRct <= baseSnap + 0.005) {
+        if ($('f_discount')) $('f_discount').value = round2(Math.max(0, baseSnap - typedNetRct)).toFixed(2);
+      } else {
+        const prevD = evalDiscInputState(num('f_discount'), baseSnap || typedNetRct, 'pct').usd;
+        if ($('f_discount')) $('f_discount').value = prevD.toFixed(2);
+      }
+      FORM_UI.discInputUnit = 'usd';
+      FORM_UI.settleGrossBase = null;
+      syncDiscUnitPillsDom($('modalBody'), 'usd', Boolean(canModifyTextOnly()), 'modal');
+    }
+    const rawAmtRct = num('f_amount');
+    const baseRctForPct = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : Math.max(0, rawAmtRct);
+    const discStRct = evalDiscInputState(num('f_discount'), baseRctForPct, FORM_UI.discInputUnit);
+    let amount = rawAmtRct;
+    let disc = discStRct.usd;
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI.settleGrossBase > 0) {
+      disc = Math.min(FORM_UI.settleGrossBase, discStRct.usd);
+      amount = Math.max(0, round2(FORM_UI.settleGrossBase - disc));
+      if ($('f_amount') && FORM_UI._lastModalInputId !== 'f_amount') $('f_amount').value = amount.toFixed(2);
+    }
+    const totCredit = round2(Math.max(0, amount) + Math.max(0, disc));
+    const zeroRctHintErr = (val('f_amount') !== '' || disc > 0) ? validateZeroCashSettlementWriteOff({ amount, disc, method: methodRct, notes: val('f_notes') }) : null;
+    const maxDiscWarnRctPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+    const highDiscRctWarn = isAlertRuleEnabled('G_DISCOUNT_WARN') && totCredit > 0 && disc > totCredit * (maxDiscWarnRctPct / 100);
+    if (discStRct.over100) {
+      setHint('hint_disc', 'Discount percentage cannot exceed 100%', 'crit');
+    } else if (discStRct.raw < 0) {
+      setHint('hint_disc', 'Discount cannot be negative', 'crit');
+    } else if (highDiscRctWarn) {
+      const pctTxtR = totCredit > 0 ? fmtNum((disc / totCredit) * 100, 1) : '0';
+      const noNoteYetR = String(val('f_notes') || '').trim().length < 3;
+      setHint('hint_disc', `${pctTxtR}% of settled total (${fmtUSD(disc, 2)})${noNoteYetR ? ' · Explain in Notes (3+ chars)' : ' · Note recorded'}`, noNoteYetR ? 'warn' : 'ok');
+    } else if (disc > 0 && FORM_UI.discInputUnit === 'pct') {
+      setHint('hint_disc', `Resolved discount: ${fmtUSD(disc, 2)} (${fmtNum(totCredit > 0 ? (disc / totCredit) * 100 : 0, 1)}% of ${fmtUSD(totCredit, 2)})`, 'ok');
+    } else {
+      setHint('hint_disc', 'Written off against the oldest ticket', '');
+    }
     const fIdx = _getFormIntelIndex();
     const ct = customer ? fIdx.creditTermsByCust.get(norm(customer)) : null;
     const ov60 = customer ? (fIdx.custOverdue60ByCust.get(norm(customer)) || 0) : 0;
@@ -115464,12 +115873,13 @@
     setText('calc_total', fmtUSD(totCredit, 2));
     const afterBal = before == null ? null : round2(before - totCredit);
     setText('calc_after', afterBal == null ? '—' : (afterBal < -0.005 ? `Advance +${fmtUSD(Math.abs(afterBal), 2)}` : fmtUSD(afterBal, 2)));
-    setText('calc_alloc', val('f_method') === 'VAT' ? 'VAT leg only' : (afterBal != null && afterBal < -0.005 ? 'Clears AR + Customer Advance' : 'FIFO oldest ticket first'));
+    setText('calc_alloc', methodRct === 'VAT' ? 'VAT leg only' : (afterBal != null && afterBal < -0.005 ? 'Clears AR + Customer Advance' : 'FIFO oldest ticket first'));
     const cSub = $('paCustSubgridWrap');
-    if (cSub && window.MFG_FORMS) cSub.innerHTML = window.MFG_FORMS.renderCustomerOpenTicketsSubgrid({ SEED, STATE }, val('f_company'), customer, totCredit, val('f_method'));
+    if (cSub && window.MFG_FORMS) cSub.innerHTML = window.MFG_FORMS.renderCustomerOpenTicketsSubgrid({ SEED, STATE }, val('f_company'), customer, totCredit, methodRct);
     if (before != null && totCredit > before + 0.005) setHint('hint_amount', `Exceeds open AR (${fmtUSD(before, 2)}) by ${fmtUSD(totCredit - before, 2)} · excess posts as Customer Advance`, 'warn');
     else if (before != null && before > 0 && Math.abs(totCredit - before) <= 0.01) setHint('hint_amount', `Settles ${customer}'s full open AR balance (${fmtUSD(before, 2)})`, 'ok');
-    else setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+    else if (amount <= 0.005 && disc > 0 && !/^(VAT|VATConfig|VATRent|IVA)$/i.test(methodRct)) setHint('hint_amount', zeroRctHintErr ? zeroRctHintErr.msg : `$0.00 cash write-off clears ${fmtUSD(disc, 2)} AR`, zeroRctHintErr ? 'warn' : 'ok');
+    else setHint('hint_amount', amount < 0 ? 'Cannot be negative' : (amount === 0 && disc <= 0 && val('f_amount') ? 'Enter cash received or a settlement discount above zero' : ''), (amount < 0 || (amount === 0 && disc <= 0 && val('f_amount'))) ? 'crit' : '');
 
     const rStrip = $('rcptQuickContextStrip');
     if (rStrip) {
@@ -115515,7 +115925,7 @@
     });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { customer, cust, before, amount, disc, dupHit };
+    return { customer, cust, before, amount, disc, discOver100: discStRct.over100, discNoBase: discStRct.noBase, dupHit };
   }
 
   function recalcFuel() {
@@ -115931,6 +116341,23 @@
         : (document.activeElement === discEl ? 'discount'
           : (document.activeElement === amtEl ? 'amount'
             : (document.activeElement && /^f_exi_(?:cost|qty)_/.test(document.activeElement.id || '') ? 'item' : ''))));
+    if (FORM_UI.discInputUnit === 'pct' && !pendEditRow && !pricePending && FORM_UI.lastExpAmtSource === 'amount') {
+      const typedNetNow = num('f_amount');
+      const gCurForFlip = num('f_gross_amount');
+      const baseForFlip = gCurForFlip > 0 ? gCurForFlip : (typedNetNow > 0 ? round2(typedNetNow + evalDiscInputState(num('f_discount'), typedNetNow, 'pct').usd) : 0);
+      if (baseForFlip > 0 && typedNetNow <= baseForFlip + 0.005) {
+        if (discEl) discEl.value = Math.max(0, round2(baseForFlip - typedNetNow)).toFixed(2);
+      } else {
+        const fallbackUsdD = evalDiscInputState(num('f_discount'), gCurForFlip > 0 ? gCurForFlip : typedNetNow, 'pct').usd;
+        if (discEl) discEl.value = fallbackUsdD > 0 ? fallbackUsdD.toFixed(2) : '';
+      }
+      FORM_UI.discInputUnit = 'usd';
+    }
+    if ((pricePending || pendEditRow) && FORM_UI.discInputUnit === 'pct') {
+      FORM_UI.discInputUnit = 'usd';
+      if (discEl && pendEditRow && Number(pendEditRow.discount || 0) > 0) discEl.value = Number(pendEditRow.discount).toFixed(2);
+    }
+    syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(pricePending || pendEditRow || canModifyTextOnly()), 'modal');
     if (!pendEditRow) {
       if (expCoNow !== FORM_UI.lastExpCompany) {
         const prevDefLoc = defaultWarehouseLocationForCompany(FORM_UI.lastExpCompany || expCoNow);
@@ -116130,7 +116557,15 @@
         clearPendingZeroAttr(discEl);
       }
       const rawDiscNow = num('f_discount');
-      const effDiscNow = rawDiscNow > 0 ? round2(rawDiscNow) : 0;
+      const preEstGross = isMultiTicketSplit
+        ? round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0) * vatMult)
+        : (num('f_gross_amount') > 0
+            ? num('f_gross_amount')
+            : ((hasItemTickets && FORM_UI.expItems.length === 1 && Number(FORM_UI.expItems[0].unit_cost || 0) > 0)
+                ? round2(round2((((FORM_UI.expItems[0].qty !== '' && FORM_UI.expItems[0].qty != null && isFinite(Number(FORM_UI.expItems[0].qty))) ? Number(FORM_UI.expItems[0].qty) : 1) || 1) * Number(FORM_UI.expItems[0].unit_cost || 0)) * vatMult)
+                : num('f_amount')));
+      const effDiscStNow = evalDiscInputState(rawDiscNow, preEstGross, FORM_UI.discInputUnit);
+      const effDiscNow = effDiscStNow.usd > 0 ? round2(effDiscStNow.usd) : 0;
       if (isMultiTicketSplit) {
         const sumPreVat = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
         const sumGross = round2(sumPreVat * vatMult);
@@ -116258,11 +116693,16 @@
     const supplier = val('f_supplier');
     const amount = pricePending ? 0 : num('f_amount');
     const rawDisc = pricePending ? 0 : num('f_discount');
-    const disc = pricePending ? 0 : round2(rawDisc);
-    const grossRaw = pricePending ? 0 : num('f_gross_amount');
-    const grossAmount = pricePending ? 0 : (grossRaw > 0 ? round2(grossRaw) : round2(amount + (disc > 0 ? disc : 0)));
     const qty = num('f_qty');
     const cats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
+    const grossRaw = pricePending ? 0 : num('f_gross_amount');
+    const expDiscUnitNow = pendEditRow ? 'usd' : FORM_UI.discInputUnit;
+    const baseForDiscSt = grossRaw > 0 ? grossRaw : (expDiscUnitNow === 'usd' ? round2(amount + Math.max(0, rawDisc)) : amount);
+    const discStExp = pricePending
+      ? { raw: 0, usd: 0, over100: false, noBase: false }
+      : evalDiscInputState(rawDisc, baseForDiscSt, expDiscUnitNow);
+    const disc = pricePending ? 0 : round2(discStExp.usd);
+    const grossAmount = pricePending ? 0 : (grossRaw > 0 ? round2(grossRaw) : round2(amount + (disc > 0 ? disc : 0)));
     let catNow = val('f_category');
     const subEl = $('f_subcategory');
     const rawSubVal = subEl ? String(subEl.value || '').trim() : '';
@@ -116357,7 +116797,7 @@
     const isBulkTankRefill = isFuelDiesel && !hasEquipTarget && !hasWhTarget;
     setText('lbl_exp_qty', isBulkTankRefill ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : (hasEquipTarget || hasWhTarget ? 'Quantity & Unit *' : 'Quantity & Unit')));
     setText('lbl_exp_gross', pricePending ? 'Subtotal ($)' : (isSupIva ? 'Subtotal Incl. VAT ($)' : 'Subtotal ($)'));
-    setText('lbl_exp_discount', 'Discount ($)');
+    setText('lbl_exp_discount', expDiscUnitNow === 'pct' ? 'Discount (%)' : 'Discount ($)');
     setText('lbl_exp_amount', pricePending ? 'Total ($)' : (isSupIva ? 'Total Incl. 11% VAT ($) *' : 'Total ($) *'));
     setText('lbl_calc_exp_total', (!pricePending && disc > 0) ? 'Net to Pay' : 'Amount');
     setHint('hint_subcat', (FORM_UI.postAttempted && !subNow) ? 'Required' : '', (FORM_UI.postAttempted && !subNow) ? 'crit' : '');
@@ -116400,7 +116840,11 @@
     if (discWrapEl) discWrapEl.classList.toggle('field-live-invalid', isDiscLiveInvalid);
     if (discEl) discEl.setAttribute('aria-invalid', isDiscLiveInvalid ? 'true' : 'false');
     if (pricePending) {
-      setHint('hint_discount', '', '');
+      setHint('hint_discount', 'Locked at $0.00 while Price Pending is selected', '');
+    } else if (discStExp.over100) {
+      setHint('hint_discount', 'Discount percentage cannot exceed 100%', 'crit');
+    } else if (discStExp.noBase) {
+      setHint('hint_discount', 'Enter Subtotal or Item Price first so % discount can calculate', 'warn');
     } else if (rawDisc < 0) {
       setHint('hint_discount', 'Discount cannot be negative', 'crit');
     } else if (disc > 0 && grossAmount > 0 && disc > grossAmount + 0.001) {
@@ -116410,13 +116854,29 @@
     } else if (disc > 0 && grossAmount > 0) {
       const discPct = (disc / grossAmount) * 100;
       const warnLim = typeof G_DISCOUNT_WARN === 'number' ? G_DISCOUNT_WARN : 0.20;
+      const pctSuffix = expDiscUnitNow === 'pct' ? ` (${fmtUSD(disc, 2)})` : '';
       if (disc > grossAmount * warnLim) {
-        setHint('hint_discount', `${fmtNum(discPct, 1)}% off Subtotal - high discount, consider adding a note`, 'warn');
+        setHint('hint_discount', `${fmtNum(discPct, 1)}% off Subtotal${pctSuffix} - high discount, consider adding a note`, 'warn');
       } else {
-        setHint('hint_discount', `${fmtNum(discPct, 1)}% off ${fmtUSD(grossAmount, 2)}`, 'ok');
+        setHint('hint_discount', `${fmtNum(discPct, 1)}% off ${fmtUSD(grossAmount, 2)}${pctSuffix}`, 'ok');
       }
     } else {
       setHint('hint_discount', '', '');
+    }
+    const expNudgeEl = $('expDiscNudge');
+    if (expNudgeEl) {
+      const sdIdx = (!pricePending && !pendEditRow && supplier && isAlertRuleEnabled('S22') && disc <= 0.005 && !hasExplicitNoDiscNote(val('f_notes')))
+        ? getSupplierStandingDiscountIndex({ company: val('f_company') || defaultEntryCompany() }).bySup.get(normSupPayable(supplier))
+        : null;
+      if (sdIdx && sdIdx.expectedPct > 0) {
+        const sugUsd = grossAmount > 0 ? round2(grossAmount * (sdIdx.expectedPct / 100)) : 0;
+        const srcTxt = sdIdx.source === 'master' ? 'Agreed term' : `Usual across ${sdIdx.habitCount} vouchers`;
+        expNudgeEl.hidden = false;
+        expNudgeEl.innerHTML = `<span class="badge badge-warn">Standing ${fmtNum(sdIdx.expectedPct, 1)}% discount (${srcTxt})</span><button type="button" class="att-preset-pill" data-apply-standing-disc="${sdIdx.expectedPct}">Apply ${fmtNum(sdIdx.expectedPct, 1)}% Discount${sugUsd > 0 ? ' (' + fmtUSD(sugUsd, 2) + ')' : ''}</button>`;
+      } else {
+        expNudgeEl.hidden = true;
+        expNudgeEl.innerHTML = '';
+      }
     }
     const discBreakdownSuffix = (!pricePending && disc > 0 && grossAmount > 0)
       ? ` (Subtotal ${fmtUSD(grossAmount, 2)} - Discount ${fmtUSD(disc, 2)})`
@@ -116527,7 +116987,7 @@
     commonDateChecks([]);
     renderAdminLockBar();
     FORM_UI.lastExpAmtSource = '';
-    return { method, supplier, amount, grossAmount, disc, qty, pricePending, dupHit };
+    return { method, supplier, amount, grossAmount, disc, discOver100: discStExp.over100, discNoBase: discStExp.noBase, qty, pricePending, dupHit };
   }
 
   function getEditSettlementOrigRelief(targetCo, supplier, targetLeg, targetMethod) {
@@ -116622,8 +117082,31 @@
         ? Math.max(Number(before || 0), round2(lockCoOpen))
         : round2(lockCoOpen);
     }
-    const amount = num('f_amount'), disc = num('f_discount');
-    const totRelief = round2(amount + disc);
+    syncDiscUnitPillsDom($('modalBody'), FORM_UI.discInputUnit, Boolean(canModifyTextOnly()), 'modal');
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI._lastModalInputId === 'f_amount') {
+      const typedNetAmt = Math.max(0, num('f_amount'));
+      const baseSnap = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : 0;
+      if (baseSnap > 0 && typedNetAmt <= baseSnap + 0.005) {
+        if ($('f_discount')) $('f_discount').value = round2(Math.max(0, baseSnap - typedNetAmt)).toFixed(2);
+      } else {
+        const prevD = evalDiscInputState(num('f_discount'), baseSnap || typedNetAmt, 'pct').usd;
+        if ($('f_discount')) $('f_discount').value = prevD.toFixed(2);
+      }
+      FORM_UI.discInputUnit = 'usd';
+      FORM_UI.settleGrossBase = null;
+      syncDiscUnitPillsDom($('modalBody'), 'usd', Boolean(canModifyTextOnly()), 'modal');
+    }
+    const rawAmtSt = num('f_amount');
+    const baseStForPct = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : Math.max(0, rawAmtSt);
+    const discStSet = evalDiscInputState(num('f_discount'), baseStForPct, FORM_UI.discInputUnit);
+    let amount = rawAmtSt;
+    let disc = discStSet.usd;
+    if (FORM_UI.discInputUnit === 'pct' && FORM_UI.settleGrossBase > 0) {
+      disc = Math.min(FORM_UI.settleGrossBase, discStSet.usd);
+      amount = Math.max(0, round2(FORM_UI.settleGrossBase - disc));
+      if ($('f_amount') && FORM_UI._lastModalInputId !== 'f_amount') $('f_amount').value = amount.toFixed(2);
+    }
+    const totRelief = round2(Math.max(0, amount) + Math.max(0, disc));
     let legOpenRem = isVatMethod
       ? Number(legInfo.row ? (legInfo.row.exp_vat_rem_usd || legInfo.expRem || 0) : 0)
       : (payableLeg === 'quarry'
@@ -116680,13 +117163,46 @@
     const sSub = $('paSupSubgridWrap');
     const subLegFilter = !supplier ? 'all' : (payableLeg === 'quarry' ? 'material' : (payableLeg === 'transportation' ? 'haulage' : 'expense'));
     if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, subLegFilter);
+    const zeroSetErr = (val('f_amount') !== '' || disc > 0) ? validateZeroCashSettlementWriteOff({ amount, disc, method, notes: val('f_notes') }) : null;
+    const maxDiscWarnSetPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+    const highDiscSetWarn = isAlertRuleEnabled('G_DISCOUNT_WARN') && totRelief > 0 && disc > totRelief * (maxDiscWarnSetPct / 100);
+    if (discStSet.over100) {
+      setHint('hint_disc', 'Discount percentage cannot exceed 100%', 'crit');
+    } else if (discStSet.raw < 0) {
+      setHint('hint_disc', 'Discount cannot be negative', 'crit');
+    } else if (highDiscSetWarn) {
+      const pctTxt = totRelief > 0 ? fmtNum((disc / totRelief) * 100, 1) : '0';
+      const noNoteYet = String(val('f_notes') || '').trim().length < 3;
+      setHint('hint_disc', `${pctTxt}% of settled total (${fmtUSD(disc, 2)})${noNoteYet ? ' · Explain in Notes (3+ chars)' : ' · Note recorded'}`, noNoteYet ? 'warn' : 'ok');
+    } else if (disc > 0 && FORM_UI.discInputUnit === 'pct') {
+      setHint('hint_disc', `Resolved discount: ${fmtUSD(disc, 2)} (${fmtNum(totRelief > 0 ? (disc / totRelief) * 100 : 0, 1)}% of ${fmtUSD(totRelief, 2)})`, 'ok');
+    } else {
+      setHint('hint_disc', '', '');
+    }
+    const stNudgeEl = $('settleDiscNudge');
+    if (stNudgeEl) {
+      const sdIdxSt = (supplier && !isVatMethod && isAlertRuleEnabled('S22') && disc <= 0.005 && !hasExplicitNoDiscNote(val('f_notes')))
+        ? getSupplierStandingDiscountIndex({ company: settleCo }).bySup.get(normSupPayable(supplier))
+        : null;
+      if (sdIdxSt && sdIdxSt.expectedPct > 0) {
+        const previewBase = amount > 0 ? amount : Math.max(0, Number(before || 0));
+        const sugSetUsd = previewBase > 0 ? round2(previewBase * (sdIdxSt.expectedPct / 100)) : 0;
+        stNudgeEl.hidden = false;
+        stNudgeEl.innerHTML = `<span class="badge badge-warn">Standing ${fmtNum(sdIdxSt.expectedPct, 1)}% discount</span><button type="button" class="att-preset-pill" data-apply-standing-disc="${sdIdxSt.expectedPct}">Apply ${fmtNum(sdIdxSt.expectedPct, 1)}% Discount${sugSetUsd > 0 ? ' (' + fmtUSD(sugSetUsd, 2) + ')' : ''}</button>`;
+      } else {
+        stNudgeEl.hidden = true;
+        stNudgeEl.innerHTML = '';
+      }
+    }
     if (supplier && isAlertRuleEnabled('S20') && legExcessUsd >= minOverWarnUsd && totRelief > 0) {
       const trdSettleHint = getActiveIndustry(settleCo) === 'Automotive & Heavy Trading' ? ' · Add BL #, LC #, or Import File # for advances' : '';
       setHint('hint_amount', `Exceeds open leg credit by ${fmtUSD(legExcessUsd, 2)} · Explain in Notes (3+ chars)${effZeroCnt > 0 ? ` (${fmtNum(effZeroCnt)} raw loads at $0.00)` : ''}${trdSettleHint}`, 'warn');
     } else if (before != null && totRelief > before + 0.005) {
       setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
+    } else if (amount <= 0.005 && disc > 0 && !isVatMethod) {
+      setHint('hint_amount', zeroSetErr ? zeroSetErr.msg : `$0.00 cash write-off clears ${fmtUSD(disc, 2)} AP balance`, zeroSetErr ? 'warn' : 'ok');
     } else {
-      setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+      setHint('hint_amount', amount < 0 ? 'Cannot be negative' : (amount === 0 && disc <= 0 && val('f_amount') ? 'Enter cash paid or a settlement discount above zero' : ''), (amount < 0 || (amount === 0 && disc <= 0 && val('f_amount'))) ? 'crit' : '');
     }
     const stStrip = $('settleQuickContextStrip');
     if (stStrip) {
@@ -116751,7 +117267,7 @@
     });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { supplier, before, amount, disc, payableLeg, dupHit, legOpenRem, legExcessUsd, supZeroRawCnt: effZeroCnt, legInfoHasRow: Boolean(legInfo.row) };
+    return { supplier, before, amount, disc, discOver100: discStSet.over100, discNoBase: discStSet.noBase, payableLeg, dupHit, legOpenRem, legExcessUsd, supZeroRawCnt: effZeroCnt, legInfoHasRow: Boolean(legInfo.row) };
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -118977,6 +119493,297 @@
       scrollPanel: '',
       navView: 'users',
       navLabel: 'Open Users & Security'
+    };
+  }
+
+  // Supplier Standing-Discount Consistency Sentinel (S22, Rule #33): deterministic across all 6 industries (Hard Rule 15)
+  let _sdIndexCache = new Map();
+  function getSupplierStandingDiscountIndex(opts = {}) {
+    if (!SEED || !SEED._recordsReady) return { bySup: new Map(), minVouchers: 3, minPct: 2, minUsd: 100 };
+    const u = (opts && opts.user) || activeUser();
+    const minVouchers = Math.max(2, Math.round(Number(getAlertParam('S22', 'min_vouchers', 3)) || 3));
+    const minPct = Math.max(0.5, Number(getAlertParam('S22', 'min_standing_pct', 2)) || 2);
+    const minUsd = Math.max(1, Number(getAlertParam('S22', 'min_voucher_usd', 100)) || 100);
+    const ignoreCo = Boolean(opts && opts.ignoreCompany);
+    const coScope = (opts && opts.company) || STATE.company;
+    const allowedCos = allowedCompanyNames(u);
+    const offScope = typeof isOfficialScopeActive === 'function' ? isOfficialScopeActive(u) : false;
+    const recs = SEED.records || {};
+    const sdMemoKey = [
+      SEED._customRev || 0, STATE._customRev || 0,
+      (recs.expenses || []).length, (recs.settlements || []).length, (recs.suppliers || []).length,
+      (SEED._tableRev && SEED._tableRev.expenses) || 0,
+      (SEED._tableRev && SEED._tableRev.settlements) || 0,
+      (SEED._tableRev && SEED._tableRev.suppliers) || 0,
+      ignoreCo ? 'ALL' : String(coScope || ''), allowedCos.join(','), offScope ? 1 : 0,
+      _ALERT_RULES_REV, minVouchers, minPct, minUsd
+    ].join('|');
+    if (!opts._noMemo && !window.__MFG_SPEED_CACHES_OFF && _sdIndexCache.has(sdMemoKey)) {
+      return _sdIndexCache.get(sdMemoKey);
+    }
+    const supMap = new Map();
+    const ensureEntry = name => {
+      const k = normSupPayable(name);
+      if (!k) return null;
+      if (!supMap.has(k)) {
+        supMap.set(k, {
+          key: k,
+          supplier: String(name || '').trim(),
+          masterPct: 0,
+          expPcts: [],
+          settlePcts: [],
+          expEligibleTotal: 0,
+          settleEligibleTotal: 0,
+          ignoredRoundingCount: 0,
+          expMissed: [],
+          settleMissed: []
+        });
+      }
+      const cur = supMap.get(k);
+      if (String(name || '').trim().length > cur.supplier.length) cur.supplier = String(name || '').trim();
+      return cur;
+    };
+    const mergeActiveRecordsForSd = tbl => {
+      const custom = (STATE.customRecords && Array.isArray(STATE.customRecords[tbl])) ? STATE.customRecords[tbl] : [];
+      const seed = (recs && Array.isArray(recs[tbl])) ? recs[tbl] : [];
+      const seen = new Set();
+      const out = [];
+      const pushList = arr => {
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r) continue;
+          const rid = r.id != null ? String(r.id) : '';
+          if (rid) {
+            if (seen.has(rid)) continue;
+            seen.add(rid);
+          }
+          if (r.voided || r.voided_at || r._absorbedSeedTwin) continue;
+          if (offScope && tbl !== 'suppliers' && typeof isOfficialRecord === 'function' && !isOfficialRecord(r, tbl)) continue;
+          out.push(r);
+        }
+      };
+      pushList(custom);
+      pushList(seed);
+      return out;
+    };
+    const supRows = mergeActiveRecordsForSd('suppliers');
+    for (let i = 0; i < supRows.length; i++) {
+      const sr = supRows[i];
+      const pct = Number(sr.standing_discount_pct || 0);
+      if (pct > 0) {
+        const ent = ensureEntry(sr.name || sr.supplier);
+        if (ent && pct > ent.masterPct) ent.masterPct = round2(pct);
+      }
+    }
+    const expRows = mergeActiveRecordsForSd('expenses');
+    for (let i = 0; i < expRows.length; i++) {
+      const e = expRows[i];
+      if (!e || e.price_pending || /^(VAT|VATConfig|IVA|VAT Dis|Config|CR Return|C Return)$/i.test(String(e.method || '')) || Number(e.amount || 0) < 0) continue;
+      if (!ignoreCo && !matchesCashScopeCompany(e, coScope, allowedCos)) continue;
+      const ent = ensureEntry(e.supplier);
+      if (!ent) continue;
+      const disc = Math.max(0, round2(Number(e.discount || 0)));
+      const amt = Math.max(0, round2(Number(e.amount || 0)));
+      const gross = Number(e.gross_amount || 0) > 0 ? round2(Number(e.gross_amount)) : round2(amt + disc);
+      if (gross <= 0.01) continue;
+      if (disc > 0.005) {
+        const pct = (disc / gross) * 100;
+        if (disc <= 10.005 || (disc / gross) >= 0.995 || amt <= 0.005) {
+          if (disc <= 10.005) ent.ignoredRoundingCount += 1;
+        } else {
+          ent.expPcts.push(pct);
+          ent.expEligibleTotal += 1;
+        }
+      } else {
+        if (gross >= minUsd && !hasExplicitNoDiscNote(e.notes)) {
+          ent.expEligibleTotal += 1;
+          ent.expMissed.push({
+            id: e.id,
+            crKey: 'expenses',
+            kind_label: 'Expense',
+            date: String(e.date || '').slice(0, 10),
+            company: canonCompany(e.company || 'WTC') || String(e.company || 'WTC'),
+            supplier: ent.supplier || e.supplier,
+            gross_usd: gross
+          });
+        }
+      }
+    }
+    const setRows = mergeActiveRecordsForSd('settlements');
+    for (let i = 0; i < setRows.length; i++) {
+      const s = setRows[i];
+      if (!s || /^(VAT|VATConfig|IVA|Config)$/i.test(String(s.method || ''))) continue;
+      if (!ignoreCo && !matchesCashScopeCompany(s, coScope, allowedCos)) continue;
+      const ent = ensureEntry(s.supplier);
+      if (!ent) continue;
+      const disc = Math.max(0, round2(Number(s.discount || 0)));
+      const amt = Math.max(0, round2(Number(s.amount || 0)));
+      const settledTot = round2(amt + disc);
+      if (settledTot <= 0.01) continue;
+      if (disc > 0.005) {
+        const pct = (disc / settledTot) * 100;
+        if (amt <= 0.005 || disc <= 10.005 || (disc / settledTot) >= 0.995) {
+          if (disc <= 10.005) ent.ignoredRoundingCount += 1;
+        } else {
+          ent.settlePcts.push(pct);
+          ent.settleEligibleTotal += 1;
+        }
+      } else {
+        if (settledTot >= minUsd && !hasExplicitNoDiscNote(s.notes)) {
+          ent.settleEligibleTotal += 1;
+          ent.settleMissed.push({
+            id: s.id,
+            crKey: 'settlements',
+            kind_label: 'Settlement',
+            date: String(s.date || '').slice(0, 10),
+            company: canonCompany(s.company || 'WTC') || String(s.company || 'WTC'),
+            supplier: ent.supplier || s.supplier,
+            gross_usd: settledTot
+          });
+        }
+      }
+    }
+    const medianOf = arr => {
+      if (!arr.length) return 0;
+      const sorted = arr.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+    const bySup = new Map();
+    supMap.forEach((ent, k) => {
+      const allPcts = ent.expPcts.concat(ent.settlePcts);
+      const totalElig = ent.expEligibleTotal + ent.settleEligibleTotal;
+      const medPct = round2(medianOf(allPcts));
+      const consPct = totalElig > 0 ? round2((allPcts.length / totalElig) * 100) : 0;
+      const hasHist = allPcts.length >= minVouchers && consPct >= 50 && medPct >= minPct;
+      const expectedPct = ent.masterPct > 0 ? ent.masterPct : (hasHist ? medPct : 0);
+      const source = ent.masterPct > 0 ? 'master' : (hasHist ? 'history' : '');
+      const checkExp = ent.masterPct > 0 || ent.expPcts.length >= minVouchers;
+      const checkSettle = ent.settlePcts.length >= minVouchers || (ent.masterPct > 0 && ent.expPcts.length === 0 && ent.settleMissed.length > 0);
+      bySup.set(k, {
+        key: k,
+        supplier: ent.supplier,
+        masterPct: ent.masterPct,
+        observedPct: hasHist ? medPct : 0,
+        expectedPct,
+        source,
+        expHabitCount: ent.expPcts.length,
+        settleHabitCount: ent.settlePcts.length,
+        habitCount: allPcts.length,
+        consistencyPct: consPct,
+        ignoredRoundingCount: ent.ignoredRoundingCount,
+        checkExp,
+        checkSettle,
+        expMissed: checkExp ? ent.expMissed : [],
+        settleMissed: checkSettle ? ent.settleMissed : []
+      });
+    });
+    const res = { bySup, minVouchers, minPct, minUsd };
+    if (_sdIndexCache.size > 24) _sdIndexCache.clear();
+    _sdIndexCache.set(sdMemoKey, res);
+    return res;
+  }
+  function getStandingDiscountSentinelData(opts = {}) {
+    if (!SEED || !SEED._recordsReady) return null;
+    const u = (opts && opts.user) || activeUser();
+    const lens = seatLens(u);
+    if (!lens.expenses) {
+      return {
+        restricted: true,
+        rows: [],
+        missedCount: 0,
+        missedExpUsd: 0,
+        missedSupsCount: 0,
+        qualifiedSupsCount: 0,
+        minVouchers: Math.max(2, Math.round(Number(getAlertParam('S22', 'min_vouchers', 3)) || 3)),
+        minPct: Math.max(0.5, Number(getAlertParam('S22', 'min_standing_pct', 2)) || 2),
+        minUsd: Math.max(1, Number(getAlertParam('S22', 'min_voucher_usd', 100)) || 100)
+      };
+    }
+    const idx = getSupplierStandingDiscountIndex(opts);
+    const rows = [];
+    const missedSups = new Set();
+    let qualifiedSupsCount = 0;
+    let missedExpUsd = 0;
+    idx.bySup.forEach(s => {
+      if (!(s.expectedPct > 0)) return;
+      qualifiedSupsCount += 1;
+      const cands = s.expMissed.concat(s.settleMissed);
+      cands.forEach(c => {
+        const expDisc = round2(c.gross_usd * (s.expectedPct / 100));
+        if (!(expDisc > 0.005)) return;
+        missedExpUsd = round2(missedExpUsd + expDisc);
+        missedSups.add(s.key);
+        rows.push(Object.assign({}, c, {
+          expected_pct: s.expectedPct,
+          expected_disc_usd: expDisc,
+          source: s.source
+        }));
+      });
+    });
+    rows.sort((a, b) => Number(b.expected_disc_usd || 0) - Number(a.expected_disc_usd || 0) || String(b.date || '').localeCompare(String(a.date || '')));
+    return {
+      restricted: false,
+      rows,
+      missedCount: rows.length,
+      missedExpUsd,
+      missedSupsCount: missedSups.size,
+      qualifiedSupsCount,
+      minVouchers: idx.minVouchers,
+      minPct: idx.minPct,
+      minUsd: idx.minUsd
+    };
+  }
+  function buildStandingDiscountSentinelItem(sdSnOff, sdSn, scope, activeInd) {
+    const isMfg = !activeInd || activeInd === 'Manufacturing';
+    const code = `${isMfg ? 'Rule #33' : 'Rule #11'} · Payables & Procurement`;
+    const minPct = Number((sdSn && sdSn.minPct) || getAlertParam('S22', 'min_standing_pct', 2) || 2);
+    const minVouch = Number((sdSn && sdSn.minVouchers) || getAlertParam('S22', 'min_vouchers', 3) || 3);
+    const minUsd = Number((sdSn && sdSn.minUsd) || getAlertParam('S22', 'min_voucher_usd', 100) || 100);
+    if (sdSnOff) {
+      return {
+        id: 'S22', ruleId: 'S22', code,
+        title: 'Supplier Standing-Discount Consistency Sentinel',
+        detail: 'Paused in Alerts & Thresholds.',
+        severity: 'ok', badge: 'PAUSED', company: scope,
+        rawMetric: 0, rawSecondary: 0, scrollPanel: null, navView: 'expenses', navLabel: 'Open Expenses'
+      };
+    }
+    if (!sdSn || sdSn.restricted) {
+      return {
+        id: 'S22', ruleId: 'S22', code,
+        title: 'Supplier Standing-Discount Consistency Sentinel',
+        detail: 'Standing supplier discounts & $0-discount expense/settlement checks are masked (Expenses access required).',
+        severity: 'ok', badge: 'RESTRICTED', company: scope,
+        rawMetric: 0, rawSecondary: 0, scrollPanel: null, navView: 'expenses', navLabel: 'Open Expenses'
+      };
+    }
+    const cnt = Number(sdSn.missedCount || 0);
+    const expUsd = round2(Number(sdSn.missedExpUsd || 0));
+    const supsCnt = Number(sdSn.missedSupsCount || 0);
+    const qualCnt = Number(sdSn.qualifiedSupsCount || 0);
+    return {
+      id: 'S22', ruleId: 'S22', code,
+      title: 'Supplier Standing-Discount Consistency Sentinel',
+      detail: cnt > 0
+        ? `${fmtNum(cnt, 0)} voucher(s) (>= $${fmtNum(minUsd, 0)}) across ${fmtNum(supsCnt, 0)} standing-discount supplier(s) posted with $0 discount: ${fmtUSD(expUsd, 2)} missed savings.`
+        : `Monitoring ${fmtNum(qualCnt, 0)} supplier(s) with Master standing % or ${fmtNum(minVouch, 0)}+ vouchers >= ${fmtNum(minPct, 1)}% (cash rounding <= $10 ignored): 0 missed discounts.`,
+      severity: cnt > 0 ? 'warn' : 'ok',
+      badge: cnt > 0 ? `${fmtNum(cnt, 0)} MISSED · ${fmtUSD(expUsd, 0)}` : `${fmtNum(qualCnt, 0)} TRACKED · OK`,
+      company: scope,
+      rawMetric: cnt,
+      rawSecondary: Math.round(expUsd),
+      scrollPanel: cnt > 0 ? 'snMissedStandingDisc' : null,
+      navView: 'expenses',
+      navLabel: 'Open Expenses'
+    };
+  }
+  if (typeof window !== 'undefined') {
+    window.__mfgStandingDiscountSentinel = {
+      index: opts => getSupplierStandingDiscountIndex(opts),
+      data: opts => getStandingDiscountSentinelData(opts),
+      item: () => (buildSentinelItems() || []).find(x => x && x.id === 'S22') || null,
+      clearCache: () => { _sdIndexCache.clear(); }
     };
   }
 
@@ -126571,6 +127378,8 @@
     FORM_UI.lastSalStaffMonthKey = '';
     FORM_UI.salBackpayOn = false; FORM_UI.lastSalBackpayKey = '';
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = ''; FORM_UI.lastExpAmtSource = '';
+    FORM_UI.discInputUnit = 'usd'; FORM_UI.settleGrossBase = null; FORM_UI.ideDiscUnit = 'usd'; FORM_UI.ideSettleBase = null;
+    FORM_UI._lastModalInputId = ''; FORM_UI._lastIdeInputId = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketSeriesTabOpen = false; FORM_UI.ticketBookGridOpen = false; FORM_UI.lastAutoFilledReturnTicket = '';
@@ -127230,6 +128039,68 @@
           recalcForm();
           return;
         }
+        const discUnitBtn = ev.target && ev.target.closest ? ev.target.closest('[data-disc-unit]') : null;
+        if (discUnitBtn && !discUnitBtn.disabled) {
+          ev.preventDefault();
+          const nextUnit = discUnitBtn.getAttribute('data-disc-unit') === 'pct' ? 'pct' : 'usd';
+          if (nextUnit !== FORM_UI.discInputUnit) {
+            const rawD = num('f_discount');
+            if (STATE.modalForm === 'expense') {
+              const gCur = num('f_gross_amount');
+              const aCur = num('f_amount');
+              const prevResolvedD = evalDiscInputState(rawD, gCur > 0 ? gCur : aCur, FORM_UI.discInputUnit).usd;
+              const baseG = gCur > 0 ? gCur : (aCur > 0 ? round2(aCur + Math.max(0, prevResolvedD)) : 0);
+              FORM_UI.discInputUnit = nextUnit;
+              if ($('f_discount')) {
+                if (nextUnit === 'pct') {
+                  $('f_discount').value = (baseG > 0 && prevResolvedD > 0) ? String(round2((prevResolvedD / baseG) * 100)) : '0';
+                } else {
+                  $('f_discount').value = prevResolvedD > 0 ? prevResolvedD.toFixed(2) : '';
+                }
+              }
+              FORM_UI.lastExpAmtSource = 'discount';
+            } else {
+              const curAmt = Math.max(0, num('f_amount'));
+              if (nextUnit === 'pct') {
+                const usdD = Math.max(0, round2(rawD));
+                const openFallback = STATE.modalForm === 'settlement' ? Math.max(0, Number(openApBalance(val('f_supplier')) || 0)) : Math.max(0, Number(openArBalance(val('f_customer')) || 0));
+                const baseForPct = (curAmt + usdD) > 0 ? round2(curAmt + usdD) : openFallback;
+                FORM_UI.settleGrossBase = baseForPct > 0 ? baseForPct : null;
+                FORM_UI.discInputUnit = 'pct';
+                if ($('f_discount')) $('f_discount').value = (baseForPct > 0 && usdD > 0) ? String(round2((usdD / baseForPct) * 100)) : '0';
+              } else {
+                const baseNow = FORM_UI.settleGrossBase > 0 ? FORM_UI.settleGrossBase : round2(curAmt);
+                const resolvedD = evalDiscInputState(rawD, baseNow, 'pct').usd;
+                FORM_UI.discInputUnit = 'usd';
+                FORM_UI.settleGrossBase = null;
+                if ($('f_discount')) $('f_discount').value = resolvedD.toFixed(2);
+              }
+            }
+            syncDiscUnitPillsDom(body, FORM_UI.discInputUnit, false, 'modal');
+            recalcForm();
+          }
+          return;
+        }
+        const applySdBtn = ev.target && ev.target.closest ? ev.target.closest('[data-apply-standing-disc]') : null;
+        if (applySdBtn && !applySdBtn.disabled) {
+          ev.preventDefault();
+          const sdPct = Number(applySdBtn.getAttribute('data-apply-standing-disc') || 0);
+          if (sdPct > 0) {
+            if (STATE.modalForm === 'settlement') {
+              const curAmt = Math.max(0, num('f_amount'));
+              const prevD = evalDiscInputState(num('f_discount'), FORM_UI.settleGrossBase || curAmt, FORM_UI.discInputUnit).usd;
+              const openFallback = Math.max(0, Number(openApBalance(val('f_supplier')) || 0));
+              FORM_UI.settleGrossBase = (curAmt + prevD) > 0 ? round2(curAmt + prevD) : (openFallback > 0 ? openFallback : null);
+            } else if (STATE.modalForm === 'expense') {
+              FORM_UI.lastExpAmtSource = 'discount';
+            }
+            FORM_UI.discInputUnit = 'pct';
+            if ($('f_discount')) $('f_discount').value = String(round2(sdPct));
+            syncDiscUnitPillsDom(body, 'pct', false, 'modal');
+            recalcForm();
+          }
+          return;
+        }
         const qfBtn = ev.target && ev.target.closest ? ev.target.closest('[data-form-quickfill]') : null;
         if (qfBtn) {
           ev.preventDefault();
@@ -127239,6 +128110,10 @@
           if (settleLeg && $('f_payable_leg') && !FORM_UI.settleLegLocked) {
             $('f_payable_leg').value = settleLeg;
             FORM_UI.settleLegManual = true;
+          }
+          if (fid === 'f_amount' && (STATE.modalForm === 'receipt' || STATE.modalForm === 'settlement') && FORM_UI.discInputUnit === 'pct') {
+            const qv = Number(valStr || 0);
+            FORM_UI.settleGrossBase = qv > 0 ? round2(qv) : null;
           }
           const targetEl = fid ? $(fid) : null;
           if (targetEl && valStr != null) {
@@ -128733,7 +129608,9 @@
             if (!FORM_UI.settleAmtTouched && $('f_amount')) {
               const coMap = FORM_UI.stmt16LegLockCtx.byCoOpen || {};
               if (Object.keys(coMap).length > 0) {
-                $('f_amount').value = Number(coMap[el.value] || 0).toFixed(2);
+                const nextCoOpen = round2(Math.max(0, Number(coMap[el.value] || 0)));
+                $('f_amount').value = nextCoOpen.toFixed(2);
+                if (FORM_UI.discInputUnit === 'pct') FORM_UI.settleGrossBase = nextCoOpen;
               }
             }
           } else {
@@ -128760,7 +129637,12 @@
           else if (el.id === 'f_discount') FORM_UI.lastExpAmtSource = 'discount';
           else if (el.id === 'f_amount') FORM_UI.lastExpAmtSource = 'amount';
         }
-        recalcForm();
+        FORM_UI._lastModalInputId = el.id || '';
+        try {
+          recalcForm();
+        } finally {
+          FORM_UI._lastModalInputId = '';
+        }
       };
       el.addEventListener('input', handler);
       el.addEventListener('change', ev => {
@@ -130562,10 +131444,18 @@
         }
       }
     } else if (f === 'receipt') {
+      const rcptMth = val('f_method');
       if (!c.customer) addErr('f_customer', 'Customer is required.');
-      if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
-      if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
-      const rcptDup = findSameDayVoucherDuplicate('receipt', { company, date, customer: c.customer, method: val('f_method'), amount: c.amount, discount: c.disc, reference: val('f_reference') });
+      if (c.discOver100) addErr('f_discount', 'Discount percentage cannot exceed 100%.');
+      else if (c.discNoBase) addErr('f_discount', 'Enter Amount Received first so % discount can calculate.');
+      const zeroRctErr = validateZeroCashSettlementWriteOff({ amount: c.amount, disc: c.disc, method: rcptMth, notes });
+      if (zeroRctErr) addErr(zeroRctErr.field, zeroRctErr.msg);
+      const rcptTotSettle = round2(Math.max(0, c.amount) + Math.max(0, c.disc));
+      const maxDiscRctPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+      if (isAlertRuleEnabled('G_DISCOUNT_WARN') && rcptTotSettle > 0 && c.disc > rcptTotSettle * (maxDiscRctPct / 100) && String(notes || '').trim().length < 3) {
+        addErr('f_notes', `Settlement Discount exceeds ${fmtNum(maxDiscRctPct, 0)}% (${fmtUSD(c.disc, 2)} of ${fmtUSD(rcptTotSettle, 2)}). Enter a reason in Notes (3+ chars).`);
+      }
+      const rcptDup = findSameDayVoucherDuplicate('receipt', { company, date, customer: c.customer, method: rcptMth, amount: c.amount, discount: c.disc, reference: val('f_reference') });
       if (rcptDup && !($('f_dupok') && $('f_dupok').checked)) {
         addErr('f_dupok', rcptDup.sameRef
           ? `Duplicate reference "${cleanVoucherRef(val('f_reference'))}" already logged on ${date} (${rcptDup.summary}). Change the reference or tick the confirmation box.`
@@ -130601,7 +131491,9 @@
       if (!val('f_subcategory')) addErr('f_subcategory', 'Subcategory is required.');
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (!c.pricePending) {
-        if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
+        if (c.discOver100) addErr('f_discount', 'Discount percentage cannot exceed 100%.');
+        else if (c.discNoBase) addErr('f_discount', 'Enter Subtotal or Item Price first so % discount can calculate.');
+        else if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
         else if (c.disc > 0 && c.grossAmount > 0 && c.disc > c.grossAmount + 0.001) addErr('f_discount', 'Discount cannot exceed Subtotal.');
       }
       if (pendEditRow) {
@@ -130891,10 +131783,17 @@
         }
       }
     } else if (f === 'settlement') {
-      if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
-      if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
-      if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
       const settleMth = val('f_method');
+      if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
+      if (c.discOver100) addErr('f_discount', 'Discount percentage cannot exceed 100%.');
+      else if (c.discNoBase) addErr('f_discount', 'Enter Amount Paid or Open AP first so % discount can calculate.');
+      const zeroSetSaveErr = validateZeroCashSettlementWriteOff({ amount: c.amount, disc: c.disc, method: settleMth, notes });
+      if (zeroSetSaveErr) addErr(zeroSetSaveErr.field, zeroSetSaveErr.msg);
+      const stTotSave = round2(Math.max(0, c.amount) + Math.max(0, c.disc));
+      const maxDiscSetSavePct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+      if (isAlertRuleEnabled('G_DISCOUNT_WARN') && stTotSave > 0 && c.disc > stTotSave * (maxDiscSetSavePct / 100) && String(notes || '').trim().length < 3) {
+        addErr('f_notes', `Settlement Discount exceeds ${fmtNum(maxDiscSetSavePct, 0)}% (${fmtUSD(c.disc, 2)} of ${fmtUSD(stTotSave, 2)}). Enter a reason in Notes (3+ chars).`);
+      }
       const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.orig && STATE.editingRecord.orig.payable_leg) || '';
       const lockedSettleLeg = (!STATE.editingRecord && FORM_UI.settleLegLocked && FORM_UI.stmt16LegLockCtx && FORM_UI.stmt16LegLockCtx.payableLeg
         && (!c.supplier || normSupPayable(c.supplier) === normSupPayable(FORM_UI.stmt16LegLockCtx.supplier)))
@@ -131105,6 +132004,8 @@
       const isTo = isHaulerCategoryList(cats) || allDrvNames.length > 0 || allTruckNames.length > 0;
       if (isTo && !isHaulerCategoryList(cats)) cats.unshift('Hauler / Truck Owner');
       const supReg = val('f_region');
+      const standingDiscVal = num('f_standing_disc');
+      if (standingDiscVal < 0 || standingDiscVal > 100) addErr('f_standing_disc', 'Standing Discount (%) must be between 0 and 100.');
       record = {
         ...base,
         name: nm,
@@ -131115,6 +132016,7 @@
         category2: cats[1] || '',
         category3: cats[2] || '',
         method: val('f_method') || 'Credit',
+        standing_discount_pct: round2(Math.max(0, Math.min(100, standingDiscVal || 0))),
         phone: val('f_phone'),
         contact: val('f_phone'),
         region: supReg,
@@ -132846,6 +133748,11 @@
       if (orig.entered_at) record.entered_at = orig.entered_at;
       record.modified_by = who.email;
       record.modified_at = new Date().toISOString();
+      if (f === 'receipt' || f === 'settlement') {
+        delete record.usd_amount;
+        delete record.lbp_amount;
+        delete record.diff;
+      }
       if (f === 'sales' || f === 'raw') {
         if (orig.wb_truck && norm(record.truck) !== norm(orig.truck)) delete record.wb_truck;
         if (f === 'raw' && c && c.rawTot != null) record.total = c.rawTot;
@@ -132888,6 +133795,7 @@
         const isDispZeroedEdit = Boolean(record.removed_slip || (record.return_to_wtc && !record._post_as_paired_return && !isReturnTicket(orig)));
         if (!anyPriceDriverEdited && !isDispZeroedEdit) {
           ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
+            if ((f === 'receipt' || f === 'settlement') && (k === 'usd_amount' || k === 'lbp_amount')) return;
             if (orig[k] !== undefined) record[k] = orig[k];
           });
         }
@@ -133925,7 +134833,14 @@
         }
       }
       const syncTurnaroundKeysAfterAssign = target => {
-        if (!target || (crKey !== 'sales_tickets' && crKey !== 'raw_purchases')) return;
+        if (!target) return;
+        if (crKey === 'receipts' || crKey === 'settlements') {
+          ['usd_amount', 'lbp_amount', 'diff'].forEach(lk => {
+            if (!Object.prototype.hasOwnProperty.call(record, lk)) delete target[lk];
+          });
+          return;
+        }
+        if (crKey !== 'sales_tickets' && crKey !== 'raw_purchases') return;
         ['gate_arrival', 'unload_dwell_min', 'site_departure', 'turnaround_flagged', '_turnaround_meta', '_turnaround_ephemeral'].forEach(tk => {
           if (!Object.prototype.hasOwnProperty.call(record, tk)) delete target[tk];
         });
@@ -139468,22 +140383,28 @@
       FORM_UI.otManual = true;
       FORM_UI.ownerManuallyPicked = Boolean(row.truck_owner);
     } else if (form === 'receipt') {
+      const fxR = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || todayISO())) || 89500;
+      const legCashR = row.amount != null ? row.amount : ((row.usd_amount != null || row.lbp_amount != null) ? round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / fxR)) : '');
+      const legDiscR = row.discount != null ? Number(row.discount) : Number(row.diff || 0);
       setModalControlVal('f_customer', row.customer || '');
       setModalControlVal('f_method', row.method || 'Payment');
-      setModalControlVal('f_amount', row.amount != null ? row.amount : '');
-      setModalControlVal('f_discount', row.discount != null ? Number(row.discount).toFixed(2) : '0.00');
+      setModalControlVal('f_amount', legCashR);
+      setModalControlVal('f_discount', Number(legDiscR || 0).toFixed(2));
       setModalControlVal('f_reference', row.reference || '');
     } else if (form === 'settlement') {
       FORM_UI.settleLegLocked = false;
       FORM_UI.stmt16LegLockCtx = null;
       FORM_UI.settleAmtTouched = false;
+      const fxS = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || todayISO())) || 89500;
+      const legCashS = row.amount != null ? row.amount : ((row.usd_amount != null || row.lbp_amount != null) ? round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / fxS)) : '');
+      const legDiscS = row.discount != null ? Number(row.discount) : Number(row.diff || 0);
       setModalControlVal('f_supplier', row.supplier || '');
       setModalControlVal('f_method', row.method || 'Payment');
       setModalControlVal('f_payable_leg', row.payable_leg || inferSettlementPayableLeg(row.supplier, row.method, row.company));
       FORM_UI.settleLegManual = true;
       FORM_UI.lastSettleSupplier = row.supplier || '';
-      setModalControlVal('f_amount', row.amount != null ? row.amount : '');
-      setModalControlVal('f_discount', row.discount != null ? Number(row.discount).toFixed(2) : '0.00');
+      setModalControlVal('f_amount', legCashS);
+      setModalControlVal('f_discount', Number(legDiscS || 0).toFixed(2));
       setModalControlVal('f_reference', row.reference || '');
     } else if (form === 'fuel') {
       const rawItem = String(row.item || row.fuel_type || 'Diesel').trim();
@@ -139955,6 +140876,7 @@
       setModalControlVal('f_official_name', row.official_name || row.name || '');
       setModalControlVal('f_category', row.category || (Array.isArray(row.categories) ? row.categories.join(', ') : ''));
       setModalControlVal('f_method', row.method || 'Credit');
+      if ($('f_standing_disc')) setModalControlVal('f_standing_disc', row.standing_discount_pct != null && Number(row.standing_discount_pct) > 0 ? row.standing_discount_pct : '');
       setModalControlVal('f_phone', row.phone || row.contact || '');
       setModalControlVal('f_region', row.region || row.location || '');
       setModalControlVal('f_mof', row.mof_no || row.financial_no || '');
@@ -142533,7 +143455,7 @@
     if (typeof v === 'object') return JSON.stringify(v);
     if (typeof v === 'number') {
       if (key === 'vat_percent') return fmtNum(v, Number.isInteger(v) ? 1 : 2) + '%';
-      if (key === 'jv_share' || key === 'share_pct' || key === 'percentage') return fmtNum(v, Number.isInteger(v) ? 0 : 1) + '%';
+      if (key === 'jv_share' || key === 'share_pct' || key === 'percentage' || key === 'standing_discount_pct') return fmtNum(v, Number.isInteger(v) ? 0 : 1) + '%';
       if (key === 'rate' || key === 'vat_fx_rate' || key === 'active_rate') return fmtNum(v, Number.isInteger(v) ? 0 : 2);
       if (key === 'est_km' || key === 'est_round_trip_km' || key === 'distance_km' || key === 'radius_km') return `${fmtNum(v, 1)} km`;
       if (key === 'unload_dwell_min') return `${fmtNum(v, 0)} min`;
@@ -144646,10 +145568,11 @@
     if (!lens.expenses) {
       if (
         /^(?:raw_purchases|expenses|recurring_expenses|expense_items|settlements|repair_items|warehouse_movements|items|equipment_repairs|equipment_oil_logs|part_movements)$/i.test(tk)
-        && /^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|site_owner_ap|hauler_ap|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|warehouse_cost|outside_parts_cost|outside_labor_cost|new_part_cost|repair_cost|sale_proceeds|default_cost|avgunitcost|onhandvalue|price_pending)$/i.test(fk)
+        && /^(?:unit_cost|cost|trans_unit_cost|trans_rate|trans_cost|gross_amount|discount|total|total_ttc|net_amount|vat_amount|vat|landed_cost|price|amount|usd_amount|lbp_amount|site_owner_ap|hauler_ap|rate|rate_usd|total_cost|total_cost_usd|cost_usd|line_total|warehouse_parts_usd|outside_parts_usd|external_labor_usd|warehouse_cost|outside_parts_cost|outside_labor_cost|new_part_cost|repair_cost|sale_proceeds|default_cost|avgunitcost|onhandvalue|price_pending)$/i.test(fk)
       ) {
         return true;
       }
+      if (tk === 'suppliers' && fk === 'standing_discount_pct') return true;
       if (tk === 'price_rules' && (!row || /^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim()))) {
         if (/^(?:unit_price|trans_unit_price|adj1|adj2|trans_adj1|trans_adj2|total1|total2|price|trans_price|floor_price|indiff_price|trans_indiff_price|delivered_indiff_price)$/i.test(fk)) {
           return true;
@@ -144737,6 +145660,7 @@
         { key: 'name', label: 'Supplier / Hauler Name *', type: 'text', sec: 1 },
         { key: 'official_name', label: 'Official / Legal Name', type: 'text', sec: 1, placeholder: 'Legal vendor entity name' },
         { key: 'method', label: 'Default Settlement Method *', type: 'select', options: [['Credit', 'Credit (Account / AP)'], ['Cash', 'Cash (Immediate Settlement)']], sec: 3 },
+        { key: 'standing_discount_pct', label: 'Standing Discount (%)', type: 'number', step: '0.1', min: '0', max: '100', sec: 3, placeholder: '0 (optional)', getVal: r => { const v = (r.standing_discount_pct != null && r.standing_discount_pct !== '') ? Number(r.standing_discount_pct) : Number((supplierInfo(r.name || r.Supplier) || {}).standing_discount_pct || 0); return v > 0 ? v : ''; } },
         { key: 'category1', label: 'Primary Supplier Category *', type: 'select', options: [['', 'Select Primary Category']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category1 || (Array.isArray(r.categories) && r.categories[0]) || (r.category ? String(r.category).split(/\s*,\s*/)[0] : '') || '' },
         { key: 'category2', label: 'Secondary Category (Optional)', type: 'select', options: [['', 'None']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category2 || (Array.isArray(r.categories) && r.categories[1]) || (r.category ? String(r.category).split(/\s*,\s*/)[1] : '') || '' },
         { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...', getVal: r => r.phone || r.contact || (supplierInfo(r.name || r.Supplier) || {}).phone || '' },
@@ -149970,14 +150894,20 @@
         let mGross = getModNum('gross_amount');
         let mDisc = getModNum('discount');
         let mAmt = getModNum('amount');
-        const modFocusId = (document.activeElement && document.activeElement.id) || (modDrawer && modDrawer.dataset.lastExpFieldId) || '';
+        const activeExpId = (document.activeElement && /^insp_edit_(gross_amount|discount|amount)$/.test(document.activeElement.id)) ? document.activeElement.id : '';
+        const modFocusId = (modDrawer && modDrawer.dataset.lastExpFieldId) || activeExpId || '';
+        const grossEdited = $('insp_edit_gross_amount')?.dataset.userEdited === '1';
+        const discEdited = $('insp_edit_discount')?.dataset.userEdited === '1';
         if (modFocusId === 'insp_edit_gross_amount' || modFocusId === 'insp_edit_discount') {
-          if ($('insp_edit_amount') && (mGross > 0 || $('insp_edit_gross_amount')?.dataset.userEdited === '1')) {
+          if ($('insp_edit_amount') && (mGross > 0 || grossEdited)) {
             mAmt = Math.max(0, round2(mGross - Math.max(0, mDisc)));
             $('insp_edit_amount').value = mAmt.toFixed(2);
           }
         } else if (modFocusId === 'insp_edit_amount') {
-          if ($('insp_edit_gross_amount') && mAmt > 0) {
+          if (grossEdited && !discEdited && mGross > 0 && mAmt >= 0 && mGross >= mAmt) {
+            mDisc = round2(mGross - mAmt);
+            if ($('insp_edit_discount')) $('insp_edit_discount').value = mDisc.toFixed(2);
+          } else if ($('insp_edit_gross_amount') && mAmt > 0) {
             mGross = round2(mAmt + Math.max(0, mDisc));
             $('insp_edit_gross_amount').value = mGross.toFixed(2);
           }
@@ -150403,6 +151333,85 @@
         if (validationError) {
           toast(validationError, 'err');
           return;
+        }
+        if (key === 'suppliers' && 'standing_discount_pct' in pendingUpdates) {
+          const sdPctMod = pendingUpdates.standing_discount_pct == null ? 0 : Number(pendingUpdates.standing_discount_pct);
+          if (!Number.isFinite(sdPctMod) || sdPctMod < 0 || sdPctMod > 100) {
+            toast('Standing Discount (%) must be between 0 and 100.', 'err');
+            return;
+          }
+          pendingUpdates.standing_discount_pct = round2(sdPctMod);
+        }
+        const origFxMod = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || todayISO())) || 89500;
+        const origCashLegacyMod = row.amount != null ? Number(row.amount || 0) : round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / origFxMod));
+        const origDiscLegacyMod = row.discount != null ? Number(row.discount || 0) : Number(row.diff || 0);
+        const notesClearedBelow3OnDisc = 'notes' in pendingUpdates && String(pendingUpdates.notes || '').trim().length < 3 && String(row.notes || '').trim().length >= 3 && origDiscLegacyMod > 0;
+        if ((key === 'receipts' || key === 'settlements') && ('amount' in pendingUpdates || 'discount' in pendingUpdates || 'method' in pendingUpdates || notesClearedBelow3OnDisc)) {
+          const candAmtMod = 'amount' in pendingUpdates ? Number(pendingUpdates.amount || 0) : origCashLegacyMod;
+          const candDiscMod = 'discount' in pendingUpdates ? Number(pendingUpdates.discount || 0) : origDiscLegacyMod;
+          const candMthMod = String('method' in pendingUpdates ? pendingUpdates.method : (row.method || 'Payment'));
+          const candNtsMod = String('notes' in pendingUpdates ? pendingUpdates.notes : (row.notes || ''));
+          if (candDiscMod < 0) {
+            toast('Settlement Discount cannot be negative.', 'err');
+            return;
+          }
+          const zModErr = validateZeroCashSettlementWriteOff({ amount: candAmtMod, disc: candDiscMod, method: candMthMod, notes: candNtsMod });
+          if (zModErr) {
+            toast(zModErr.msg, 'err');
+            return;
+          }
+          const totRelMod = round2(Math.max(0, candAmtMod) + Math.max(0, candDiscMod));
+          const maxDiscModPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+          if (isAlertRuleEnabled('G_DISCOUNT_WARN') && totRelMod > 0 && candDiscMod > totRelMod * (maxDiscModPct / 100) && candNtsMod.trim().length < 3) {
+            toast(`Settlement Discount exceeds ${fmtNum(maxDiscModPct, 0)}% (${fmtUSD(candDiscMod, 2)} of ${fmtUSD(totRelMod, 2)}). Enter a reason in Notes (3+ chars).`, 'err');
+            return;
+          }
+        }
+        if (key === 'expenses' && ('discount' in pendingUpdates || 'gross_amount' in pendingUpdates || 'amount' in pendingUpdates || 'price_pending' in pendingUpdates)) {
+          const isPendAfter = 'price_pending' in pendingUpdates ? Boolean(pendingUpdates.price_pending) : Boolean(row.price_pending);
+          const origGrossExp = Number(row.gross_amount || 0) > 0 ? Number(row.gross_amount) : round2(Number(row.amount || 0) + Number(row.discount || 0));
+          let candGrossExp = 'gross_amount' in pendingUpdates ? Number(pendingUpdates.gross_amount || 0) : origGrossExp;
+          let candDiscExp = 'discount' in pendingUpdates ? Number(pendingUpdates.discount || 0) : Number(row.discount || 0);
+          let candAmtExp = 'amount' in pendingUpdates ? Number(pendingUpdates.amount || 0) : Number(row.amount || 0);
+          if (isPendAfter && candDiscExp > 0.005) {
+            toast('Complete the Pending Expense price from the Expense modal before adding a discount.', 'err');
+            return;
+          }
+          if (candDiscExp < 0) {
+            toast('Discount cannot be negative.', 'err');
+            return;
+          }
+          if (!('price_pending' in pendingUpdates && pendingUpdates.price_pending === true)) {
+            if ('gross_amount' in pendingUpdates && 'amount' in pendingUpdates && !('discount' in pendingUpdates)) {
+              candDiscExp = round2(candGrossExp - candAmtExp);
+              if (candDiscExp < 0) {
+                toast('Total cannot exceed Subtotal when discount is not negative.', 'err');
+                return;
+              }
+              pendingUpdates.discount = candDiscExp;
+            } else if ('amount' in pendingUpdates && !('gross_amount' in pendingUpdates) && !('discount' in pendingUpdates)) {
+              candGrossExp = round2(candAmtExp + Math.max(0, candDiscExp));
+              pendingUpdates.gross_amount = candGrossExp;
+            } else {
+              if (candGrossExp > 0 && candDiscExp > candGrossExp + 0.001) {
+                toast(`Cannot exceed Subtotal (${fmtUSD(candGrossExp, 2)})`, 'err');
+                return;
+              }
+              candAmtExp = round2(candGrossExp - candDiscExp);
+              pendingUpdates.amount = candAmtExp;
+            }
+            const willRemainPending = isPendAfter && !(candAmtExp > 0);
+            if (!willRemainPending && candAmtExp <= 0) {
+              toast('Net total after discount must be above zero', 'err');
+              return;
+            }
+          }
+          const candExpNts = String('notes' in pendingUpdates ? pendingUpdates.notes : (row.notes || '')).trim();
+          const maxExpModPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+          if (isAlertRuleEnabled('G_DISCOUNT_WARN') && candGrossExp > 0 && candDiscExp > candGrossExp * (maxExpModPct / 100) && candExpNts.length < 3) {
+            toast(`Settlement Discount exceeds ${fmtNum(maxExpModPct, 0)}% (${fmtUSD(candDiscExp, 2)} of ${fmtUSD(candGrossExp, 2)}). Enter a reason in Notes (3+ chars).`, 'err');
+            return;
+          }
         }
         if (!UNIVERSAL_MAIN_SPEC[key] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
           const nextTxDt = pendingUpdates.date !== undefined ? pendingUpdates.date : (row.date || '');
@@ -151109,6 +152118,12 @@
           if ('defect_ref' in pendingUpdates && !('prior_defect_notified' in pendingUpdates)) {
             row.prior_defect_notified = Boolean(row.defect_ref);
           }
+        } else if (key === 'receipts' || key === 'settlements') {
+          if ('amount' in pendingUpdates) {
+            delete row.usd_amount;
+            delete row.lbp_amount;
+          }
+          if ('discount' in pendingUpdates) delete row.diff;
         } else if (key === 'expenses') {
           let modDisc = round2(Number(row.discount || 0));
           let modGross = round2(Number(row.gross_amount || 0));

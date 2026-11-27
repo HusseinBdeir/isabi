@@ -16227,7 +16227,49 @@
       "1 Slip Ready": "إيصال واحد جاهز",
       "Send 1 Slip": "إرسال إيصال واحد",
       "Arrived Late": "وصلت متأخرة",
-      "Dismiss All": "إغلاق الكل"
+      "Dismiss All": "إغلاق الكل",
+      "Discount input unit": "وحدة إدخال الخصم",
+      "Discount (%)": "الخصم (%)",
+      "Settlement Discount": "خصم التسوية",
+      "Difference / Discount": "الفرق / الخصم",
+      "Standing Discount (%)": "الخصم الثابت (%)",
+      "Standing Disc %": "نسبة الخصم الثابت",
+      "Optional agreed supplier discount % · flags $0 invoices & offers 1-tap apply": "نسبة الخصم المتفق عليها اختيارياً · ترصد فواتير $0 وتتيح التطبيق بنقرة",
+      "Min Historical Discount Vouchers": "أدنى عدد سندات خصم تاريخية",
+      "Min Standing Discount (%)": "أدنى نسبة خصم ثابت (%)",
+      "Min Voucher Size ($ USD)": "أدنى قيمة سند ($ دولار)",
+      "Standing (%)": "الثابت (%)",
+      "Missed ($)": "المفقود ($)",
+      "Voucher ($)": "السند ($)",
+      "MISSED STANDING SUPPLIER DISCOUNTS": "خصومات الموردين الثابتة غير المطبقة",
+      "Supplier Standing-Discount Consistency Sentinel": "مراقب انتظام الخصومات الثابتة للموردين",
+      "Expenses & Payables, Suppliers Registry & AI Sentinels": "المصاريف والذمم الدائنة، سجل الموردين ومراقبو الذكاء الاصطناعي",
+      "High Discount & $0-Cash Settlement Note Guard": "حارس ملاحظات الخصم المرتفع وتسوية $0 نقدي",
+      "Sales Ticket, Expense, Receipt & Settlement Forms": "نماذج المبيعات والمصاريف والمقبوضات والتسويات",
+      "Discounts Allowed on Rent & Tenant Concessions": "خصومات وتسهيلات إيجار مسموح بها",
+      "Discount percentage cannot exceed 100%": "نسبة الخصم لا يمكن أن تتجاوز 100%",
+      "Discount percentage cannot exceed 100%.": "نسبة الخصم لا يمكن أن تتجاوز 100%.",
+      "Enter Subtotal or Item Price first so % discount can calculate": "أدخل المجموع الفرعي أو السعر أولاً لحساب الخصم %",
+      "Enter Subtotal or Item Price first so % discount can calculate.": "أدخل المجموع الفرعي أو السعر أولاً لحساب الخصم %.",
+      "Notes required (3+ chars) for $0.00 cash discount write-off.": "الملاحظة مطلوبة (3+ أحرف) لشطب رصيد بخصم $0.00 نقدي.",
+      "Cash amount must be above zero for VAT/IVA vouchers.": "المبلغ النقدي يجب أن يكون أكبر من الصفر لسندات الضريبة.",
+      "Enter a cash amount or settlement discount above zero.": "أدخل مبلغاً نقدياً أو خصم تسوية أكبر من الصفر.",
+      "Standing Discount (%) must be between 0 and 100.": "الخصم الثابت (%) يجب أن يكون بين 0 و 100.",
+      "Requires Expenses access": "يتطلب صلاحية المصاريف",
+      "0 missed standing discounts": "لا توجد خصومات ثابتة مفقودة",
+      "Standing discounts remain consistent across posted vouchers.": "انتظام خصومات الموردين متوافق عبر كافة السجلات.",
+      "Review missed vouchers in AI Sentinels or use the 1-tap Apply Discount pill on Expense & Settlement entry.": "راجع السندات المرصودة في التنبيهات أو استخدم زر تطبيق الخصم بضغطة واحدة في نماذج المصاريف والتسويات.",
+      "Standing supplier discounts & $0-discount expense/settlement checks are masked (Expenses access required).": "رصد الخصومات الثابتة وفحوصات $0 خصم مخفية (يتطلب صلاحية المصاريف).",
+      "Enter Amount Received first so % discount can calculate.": "أدخل المبلغ المستلم أولاً لحساب الخصم %.",
+      "Enter Amount Paid or Open AP first so % discount can calculate.": "أدخل المبلغ المدفوع أو الرصيد المفتوح أولاً لحساب الخصم %.",
+      "Enter cash received or a settlement discount above zero": "أدخل المبلغ النقدي المستلم أو خصم تسوية أكبر من الصفر",
+      "Enter cash paid or a settlement discount above zero": "أدخل المبلغ النقدي المدفوع أو خصم تسوية أكبر من الصفر",
+      "Security Deposit requires a positive cash Gross Receipt.": "يُشترط مبلغ إجمالي نقدي موجب لتأمين الضمان.",
+      "Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.": "الموزع على الفواتير + التأمين لا يمكن أن يتجاوز إجمالي المقبوض + خصم التسوية.",
+      "Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.": "يطبق خصم التسوية على تسديد فواتير الإيجار فقط، وليس على التأمين أو السلف.",
+      "Complete the Pending Expense price from the Expense modal before adding a discount.": "أكمل تسعير المصروف المعلّق من نافذة المصاريف قبل إضافة خصم.",
+      "Settlement Discount cannot be negative.": "خصم التسوية لا يمكن أن يكون سالباً.",
+      "Locked at $0.00 while Price Pending is selected": "مقفول عند $0.00 أثناء اختيار السعر معلق"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -31321,7 +31363,7 @@
       "Same day and party, already recorded on another form": "Même jour et même tiers, déjà saisi dans un autre formulaire",
       "Payments Exceeding Accrued Supplier & Site Credit": "Paiements dépassant le crédit dû aux fournisseurs et sites",
       "Payments Exceeding Accrued Supplier Credit": "Paiements dépassant le crédit dû aux fournisseurs",
-      "Payables & Procurement": "Dettes & Approvisionnements",
+      "Payables & Procurement": "Dettes fournisseurs & Achats",
       "Rule #32 · Payables & Sites": "Règle #32 · Dettes & Sites",
       "Rule #20 · Payables Audit": "Règle #20 · Audit Dettes",
       "Material & Transport, Suppliers & Payables & AI Sentinels": "Matières & Transport, Fournisseurs & Dettes & Sentinelles IA",
@@ -32436,7 +32478,49 @@
       "1 Slip Ready": "1 pièce prête",
       "Send 1 Slip": "Envoyer 1 pièce",
       "Arrived Late": "Arrivées tardives",
-      "Dismiss All": "Tout masquer"
+      "Dismiss All": "Tout masquer",
+      "Discount input unit": "Unité de saisie remise",
+      "Discount (%)": "Remise (%)",
+      "Settlement Discount": "Escompte de règlement",
+      "Difference / Discount": "Écart / Remise",
+      "Standing Discount (%)": "Remise permanente (%)",
+      "Standing Disc %": "Remise perm. %",
+      "Optional agreed supplier discount % · flags $0 invoices & offers 1-tap apply": "Remise fournisseur convenue (opt.) · signale les factures à $0 et propose 1 clic",
+      "Min Historical Discount Vouchers": "Nb min. pièces avec remise",
+      "Min Standing Discount (%)": "Remise permanente min. (%)",
+      "Min Voucher Size ($ USD)": "Montant min. pièce ($ USD)",
+      "Standing (%)": "Perm. (%)",
+      "Missed ($)": "Manquée ($)",
+      "Voucher ($)": "Pièce ($)",
+      "MISSED STANDING SUPPLIER DISCOUNTS": "REMISES PERMANENTES FOURNISSEURS MANQUÉES",
+      "Supplier Standing-Discount Consistency Sentinel": "Sentinelle de régularité des remises fournisseurs",
+      "Expenses & Payables, Suppliers Registry & AI Sentinels": "Dépenses & Dettes, Répertoire Fournisseurs & AI Sentinels",
+      "High Discount & $0-Cash Settlement Note Guard": "Garde-fou remise élevée & règlement à $0 cash",
+      "Sales Ticket, Expense, Receipt & Settlement Forms": "Formulaires Ventes, Dépenses, Encaissements & Règlements",
+      "Discounts Allowed on Rent & Tenant Concessions": "Remises accordées sur loyers",
+      "Discount percentage cannot exceed 100%": "Le pourcentage de remise ne peut pas dépasser 100 %",
+      "Discount percentage cannot exceed 100%.": "Le pourcentage de remise ne peut pas dépasser 100 %.",
+      "Enter Subtotal or Item Price first so % discount can calculate": "Saisissez d'abord le sous-total ou le prix pour calculer %",
+      "Enter Subtotal or Item Price first so % discount can calculate.": "Saisissez d'abord le sous-total ou le prix pour calculer %.",
+      "Notes required (3+ chars) for $0.00 cash discount write-off.": "Motif requis en Notes (3+ car.) pour un solde par remise à 0,00 $ cash.",
+      "Cash amount must be above zero for VAT/IVA vouchers.": "Le montant cash doit être supérieur à zéro pour les pièces TVA.",
+      "Enter a cash amount or settlement discount above zero.": "Saisissez un montant cash ou une remise supérieure à zéro.",
+      "Standing Discount (%) must be between 0 and 100.": "La remise permanente (%) doit être comprise entre 0 et 100.",
+      "Requires Expenses access": "Accès Dépenses requis",
+      "0 missed standing discounts": "Aucune remise manquée",
+      "Standing discounts remain consistent across posted vouchers.": "La régularité des remises fournisseurs est conforme.",
+      "Review missed vouchers in AI Sentinels or use the 1-tap Apply Discount pill on Expense & Settlement entry.": "Vérifiez les pièces signalées dans AI Sentinels ou utilisez le bouton Appliquer remise en 1 clic à la saisie.",
+      "Standing supplier discounts & $0-discount expense/settlement checks are masked (Expenses access required).": "Le suivi des remises permanentes et des pièces à 0 $ de remise est masqué (accès Dépenses requis).",
+      "Enter Amount Received first so % discount can calculate.": "Saisissez d'abord le montant encaissé pour calculer le pourcentage.",
+      "Enter Amount Paid or Open AP first so % discount can calculate.": "Saisissez d'abord le montant payé ou le solde fournisseur pour calculer %.",
+      "Enter cash received or a settlement discount above zero": "Saisissez un montant encaissé ou une remise supérieure à zéro",
+      "Enter cash paid or a settlement discount above zero": "Saisissez un montant payé ou une remise supérieure à zéro",
+      "Security Deposit requires a positive cash Gross Receipt.": "Le dépôt de garantie exige un encaissement brut positif.",
+      "Allocated to Invoices + Security Deposit cannot exceed Gross Receipt + Settlement Discount.": "Montant affecté + Dépôt ne peut pas dépasser Encaissement + Escompte.",
+      "Settlement Discount applies only to rent invoice settlements, not Security Deposit or Advance tranches.": "L'escompte s'applique uniquement aux loyers facturés, pas aux dépôts ni aux avances.",
+      "Complete the Pending Expense price from the Expense modal before adding a discount.": "Complétez d'abord le prix en attente dans le formulaire Dépense avant d'appliquer une remise.",
+      "Settlement Discount cannot be negative.": "L'escompte de règlement ne peut pas être négatif.",
+      "Locked at $0.00 while Price Pending is selected": "Verrouillé à 0,00 $ tant que Prix en attente est sélectionné"
     }
   };
 
@@ -34834,6 +34918,103 @@
       return lang === 'ar'
         ? `التسوية تتجاوز رصيد فرع ${legTr} المفتوح بمقدار ${m[2]}. أدخل السبب في الملاحظات (3+ أحرف) قبل الحفظ.`
         : `Le règlement dépasse le crédit ouvert (${legTr}) de ${m[2]}. Saisissez un motif en Notes (3+ car.) avant validation.`;
+    }
+
+    m = trimmed.match(/^Discount > ([\d.,]+)% or \$0-cash needs Note$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `الخصم > ${m[1]}% أو شطب $0 يتطلب ملاحظة`
+        : `Remise > ${m[1]} % ou 0 $ cash exige Note`;
+    }
+
+    m = trimmed.match(/^Standing ([\d.,]+)% discount(?:\s*\((Agreed term|Usual across ([\d,]+) vouchers)\))?$/i);
+    if (m) {
+      const tagAr = !m[2] ? '' : (m[3] ? ` (المعتاد عبر ${m[3]} سندات)` : ' (شرط متفق عليه)');
+      const tagFr = !m[2] ? '' : (m[3] ? ` (habituelle sur ${m[3]} pièces)` : ' (condition convenue)');
+      return lang === 'ar' ? `خصم ثابت ${m[1]}%${tagAr}` : `Remise permanente ${m[1]} %${tagFr}`;
+    }
+
+    m = trimmed.match(/^Apply ([\d.,]+)% Discount(?:\s*\((\$[\d,.-]+)\))?$/i);
+    if (m) {
+      const valP = m[2] ? ` (${m[2]})` : '';
+      return lang === 'ar' ? `تطبيق خصم ${m[1]}%${valP}` : `Appliquer remise ${m[1]} %${valP}`;
+    }
+
+    m = trimmed.match(/^Resolved discount:\s*(\$[\d,.-]+)\s*\(([\d.,]+)% of (\$[\d,.-]+)\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `الخصم المحتسب: ${m[1]} (${m[2]}% من ${m[3]})`
+        : `Remise calculée : ${m[1]} (${m[2]} % de ${m[3]})`;
+    }
+
+    m = trimmed.match(/^\$0\.00 cash write-off clears (\$[\d,.-]+) (AP|AR)(?: balance)?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `شطب $0.00 نقدي يغلق ${m[1]} من ${m[2] === 'AP' ? 'ذمة المورد' : 'ذمة العميل'}`
+        : `Solde à 0,00 $ cash : déduit ${m[1]} (${m[2]})`;
+    }
+
+    m = trimmed.match(/^(\$0\.00 cash discount write-off)\s*\((\$[\d,.-]+)\)\s*cannot exceed tenant Open AR\s*\((\$[\d,.-]+)\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `شطب الخصم النقدي $0.00 (${m[2]}) لا يمكن أن يتجاوز رصيد المستأجر المفتوح (${m[3]}).`
+        : `La remise à 0,00 $ cash (${m[2]}) ne peut pas dépasser les créances locatives ouvertes (${m[3]}).`;
+    }
+
+    m = trimmed.match(/^Settlement Discount\s*\((\$[\d,.-]+)\)\s*cannot exceed Allocated to Rent Invoices\s*\((\$[\d,.-]+)\)\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `خصم التسوية (${m[1]}) لا يمكن أن يتجاوز الموزع على فواتير الإيجار (${m[2]}).`
+        : `L'escompte (${m[1]}) ne peut pas dépasser le montant affecté aux loyers (${m[2]}).`;
+    }
+
+    m = trimmed.match(/^Settlement Discount exceeds\s*([\d.,]+)%\s*\((\$[\d,.-]+)\s*(?:of|on)\s*(\$[\d,.-]+)\)\.\s*Enter (?:a reason|an explanation) in (Notes|Reference \/ Note)\s*\(3\+ chars\)(?:\s*before posting)?\.?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `خصم التسوية يتجاوز ${m[1]}% (${m[2]} من ${m[3]}). أدخل توضيحاً في الملاحظات (3+ أحرف) قبل الترحيل.`
+        : `L'escompte dépasse ${m[1]} % (${m[2]} sur ${m[3]}). Saisissez une explication en Notes (3+ car.) avant validation.`;
+    }
+
+    m = trimmed.match(/^([\d.,]+%)\s+of settled total\s*\((\$[\d,.-]+)\)\s*·\s*(Explain in Notes \(3\+ chars\)|Note recorded)$/i);
+    if (m) {
+      const okN = /recorded/i.test(m[3]);
+      return lang === 'ar'
+        ? `${m[1]} من إجمالي التسوية (${m[2]}) · ${okN ? 'تم تسجيل الملاحظة' : 'أضف ملاحظة (3+ أحرف)'}`
+        : `${m[1]} du total réglé (${m[2]}) · ${okN ? 'Note enregistrée' : 'Préciser en Notes (3+ car.)'}`;
+    }
+
+    m = trimmed.match(/^([\d.,]+%)\s+off (Subtotal|\$[\d,.-]+)(\s*\(\$[\d,.-]+\))?(\s*-\s*high discount, consider adding a note)?$/i);
+    if (m) {
+      const targetStr = m[2].toLowerCase() === 'subtotal' ? (lang === 'ar' ? 'المجموع الفرعي' : 'le sous-total') : m[2];
+      const pfx = m[3] || '';
+      const warnSfx = m[4] ? (lang === 'ar' ? ' - خصم مرتفع، يُنصح بإضافة ملاحظة' : ' - remise élevée, ajoutez une note') : '';
+      return lang === 'ar'
+        ? `خصم ${m[1]} من ${targetStr}${pfx}${warnSfx}`
+        : `${m[1]} de remise sur ${targetStr}${pfx}${warnSfx}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+voucher\(s\)\s+\(>=\s*(\$[\d,.-]+)\)\s+across\s+([\d,]+)\s+standing-discount supplier\(s\) posted with \$0 discount:\s*(\$[\d,.-]+)\s+missed savings\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `تم رصد ${m[1]} سند(ات) (>= ${m[2]}) لدى ${m[3]} مورد(ين) بخصم ثابت سجلت بخصم $0: وفورات فائتة ${m[4]}.`
+        : `${m[1]} pièce(s) (>= ${m[2]}) pour ${m[3]} fournisseur(s) à remise permanente saisies avec 0 $ : ${m[4]} d'économies manquées.`;
+    }
+
+    m = trimmed.match(/^Monitoring\s+([\d,]+)\s+supplier\(s\)\s+with Master standing % or\s+([\d,]+)\+\s+vouchers\s+>=\s*([\d.,]+)%\s+\(cash rounding <=\s*\$10 ignored\):\s*0 missed discounts\.$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `مراقبة ${m[1]} مورد(ين) بخصم ثابت أو ${m[2]}+ سندات >= ${m[3]}% (تجاهل تقريب <= $10): 0 خصومات مفقودة.`
+        : `Suivi de ${m[1]} fournisseur(s) à remise permanente ou ${m[2]}+ pièces >= ${m[3]} % (appoint <= 10 $ ignoré) : 0 remise manquée.`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+MISSED\s*·\s*(\$[\d,.-]+)$/i);
+    if (m) {
+      return lang === 'ar' ? `${m[1]} مفقود · ${m[2]}` : `${m[1]} MANQUÉ(S) · ${m[2]}`;
+    }
+
+    m = trimmed.match(/^([\d,]+)\s+TRACKED\s*·\s*OK$/i);
+    if (m) {
+      return lang === 'ar' ? `${m[1]} مراقب · سليم` : `${m[1]} SUIVIS · OK`;
     }
 
     // Overpaid alert strip summary sentences (raw, suppliers, sibling expenses)
