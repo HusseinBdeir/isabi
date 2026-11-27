@@ -712,6 +712,7 @@
     geoAuditFilter: 'all',
     userGeoAuditFilter: 'all',
     hubInspectorReturn: null,
+    stmt14ReturnCtx: null,
     stmt16ReturnCtx: null,
     ovkMoversReturn: null,
     dailyOpsDate: '',
@@ -6985,11 +6986,17 @@
   window.__mfgResolveSupplierPhoneDigits = resolveSupplierPhoneDigits;
 
   function openSupplierStatementLeg(opts = {}) {
-    if (!canAccessRdlReport('16')) {
+    if (STATE.kioskLocked || !canAccessRdlReport('16')) {
+      toast('Restricted by seat permissions', 'err');
+      return false;
+    }
+    const lens16 = seatLens();
+    if (opts.openShare && !(lens16 && (lens16.books || lens16.expenses))) {
       toast('Restricted by seat permissions', 'err');
       return false;
     }
     const sup = String(opts.supplier || '').trim();
+    if (!sup || sup === 'ALL' || sup.startsWith('(')) return false;
     const leg = normStmt16Leg(opts.leg || 'ALL');
     const prevView = STATE.view || 'overview';
     if (prevView !== 'statements') {
@@ -6997,11 +7004,16 @@
       STATE.stmt16ReturnCtx = {
         view: prevView,
         company: STATE.company,
+        userIdx: STATE.activeUserIdx,
         panelId: String(opts.panelId || ''),
         label: String(opts.returnLabel || VIEW_TITLES[prevView] || prevView),
-        scrollTop: ws ? ws.scrollTop : 0
+        scrollTop: ws ? ws.scrollTop : 0,
+        chipFilter: STATE.chipFilter || 'all',
+        search: STATE.search || '',
+        colFilters: STATE.colFilters ? JSON.parse(JSON.stringify(STATE.colFilters)) : {}
       };
     }
+    STATE.stmt14ReturnCtx = null;
     STATE.activeStatement = '16';
     if (window.MFG_RDL && typeof window.MFG_RDL.ensureState === 'function') {
       window.MFG_RDL.ensureState(STATE, SEED);
@@ -7010,13 +7022,67 @@
     }
     STATE.rdl._dateTouched = false;
     if (!STATE.rdl.params) STATE.rdl.params = {};
-    if (sup) STATE.rdl.params.supplier = sup;
+    STATE.rdl.params.supplier = sup;
     STATE.rdl.params.leg = leg;
     setView('statements', { _keepStmt16Return: true });
-    if (opts.openShare && window.MFG_RDL && typeof window.MFG_RDL.openStmt16ShareModal === 'function') {
+    if (opts.openShare && lens16 && (lens16.books || lens16.expenses) && window.MFG_RDL && typeof window.MFG_RDL.openStmt16ShareModal === 'function') {
       window.MFG_RDL.openStmt16ShareModal();
     }
     return true;
+  }
+
+  function openCustomerStatement(opts = {}) {
+    if (STATE.kioskLocked || !canAccessRdlReport('14')) {
+      toast('Restricted by seat permissions', 'err');
+      return false;
+    }
+    const lens14 = seatLens();
+    if (opts.openShare && !(lens14 && lens14.books)) {
+      toast('Restricted by seat permissions', 'err');
+      return false;
+    }
+    const cust = String(opts.customer || '').trim();
+    if (!cust || cust === 'ALL' || cust.startsWith('(')) return false;
+    const prevView = STATE.view || 'overview';
+    if (prevView !== 'statements') {
+      const ws = $('workspace');
+      STATE.stmt14ReturnCtx = {
+        view: prevView,
+        company: STATE.company,
+        userIdx: STATE.activeUserIdx,
+        panelId: String(opts.panelId || ''),
+        label: String(opts.returnLabel || VIEW_TITLES[prevView] || prevView),
+        scrollTop: ws ? ws.scrollTop : 0,
+        chipFilter: STATE.chipFilter || 'all',
+        search: STATE.search || '',
+        colFilters: STATE.colFilters ? JSON.parse(JSON.stringify(STATE.colFilters)) : {}
+      };
+    }
+    STATE.stmt16ReturnCtx = null;
+    STATE.activeStatement = '14';
+    if (window.MFG_RDL && typeof window.MFG_RDL.ensureState === 'function') {
+      window.MFG_RDL.ensureState(STATE, SEED);
+    } else if (!STATE.rdl) {
+      STATE.rdl = { cat: 'All', search: '', paramsOpen: true, _dateTouched: false, params: {} };
+    }
+    STATE.rdl._dateTouched = false;
+    if (!STATE.rdl.params) STATE.rdl.params = {};
+    STATE.rdl.params.customer = cust;
+    setView('statements', { _keepStmt14Return: true });
+    if (opts.openShare && lens14 && lens14.books && window.MFG_RDL && typeof window.MFG_RDL.openStmt14ShareModal === 'function') {
+      window.MFG_RDL.openStmt14ShareModal();
+    }
+    return true;
+  }
+
+  function renderCustStmtActionsHtml(partyName, panelId, canShareBooks) {
+    if (STATE.kioskLocked || !canAccessRdlReport('14')) return '';
+    const party = String(partyName || '').trim();
+    if (!party || party === 'ALL' || party.startsWith('(')) return '';
+    const shareBtn = canShareBooks
+      ? `<button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-cust-stmt="${esc(party)}" data-stmt-share="1" data-stmt-panel="${esc(panelId || '')}" data-ui-tip="Share Statement (WhatsApp / PDF)" aria-label="Share Statement (WhatsApp / PDF)">${ic('send_msg')}</button>`
+      : '';
+    return `<span class="raw-leg-stmt-actions no-print"><button type="button" class="raw-leg-act-btn" data-open-cust-stmt="${esc(party)}" data-stmt-panel="${esc(panelId || '')}" data-ui-tip="Open Statement 14 (Customer SOA)" aria-label="Open Statement 14 (Customer SOA)">${ic('statements')}</button>${shareBtn}</span>`;
   }
 
   function openStmt16LegSettlement() {
@@ -47244,7 +47310,7 @@
             <tbody>
               ${shownCusts.map(c => `
                 <tr class="rrow" data-rkey="customers" data-rid="${esc((customerInfo(c.Customer) || {}).id || c.Customer)}">
-                  <td>${relLink('customers', c.Customer, c.Customer, true)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}</td>
+                  <td class="td-raw-leg-party">${relLink('customers', c.Customer, c.Customer, true)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}${renderCustStmtActionsHtml(c.Customer, 'custPanel', canArBooks)}</td>
                   ${showTaxCols
                     ? `<td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${canArBooks && c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>`
                     : `<td><span class="mono">${fmtNum(c.credit_days || 30)}d${canArBooks && c.credit_limit > 0 ? ' · ' + fmtUSDk(c.credit_limit) : ''}</span></td>`}
@@ -47719,13 +47785,26 @@
                 </tr>
               </thead>
               <tbody>
-                ${shownSups.map(s => {
+                ${(() => {
+                  const apLens = seatLens();
+                  const canSupStmt16 = !STATE.kioskLocked && Boolean(apLens && (apLens.expenses || apLens.books)) && canAccessRdlReport('16');
+                  const supChipLeg = STATE.chipFilter === 'mat_leg'
+                    ? 'material'
+                    : (STATE.chipFilter === 'haul_leg'
+                      ? 'transport'
+                      : ((STATE.chipFilter === 'exp_leg' || STATE.chipFilter === 'cash_vendor') ? 'expenses' : 'ALL'));
+                  return shownSups.map(s => {
                   const isUnassigned = String(s.Supplier || '').startsWith('(');
                   const supObj = isUnassigned ? null : supplierInfo(s.Supplier);
                   const roleCls = s.role === 'Multi-Leg' ? 'badge-brass' : (s.role === 'Hauler' ? 'badge-info' : (s.role === 'Cash Vendor' ? 'badge-ok' : 'badge-neutral'));
+                  const supStmtActsHtml = (!isUnassigned && canSupStmt16) ? `
+                    <span class="raw-leg-stmt-actions no-print">
+                      <button type="button" class="raw-leg-act-btn" data-open-sup-stmt="${esc(s.Supplier)}" data-stmt-leg="${esc(supChipLeg)}" data-stmt-panel="supPanel" data-ui-tip="Open Statement 16 (Supplier SOA)" aria-label="Open Statement 16 (Supplier SOA)">${ic('statements')}</button>
+                      <button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-sup-stmt="${esc(s.Supplier)}" data-stmt-leg="${esc(supChipLeg)}" data-stmt-share="1" data-stmt-panel="supPanel" data-ui-tip="Share Statement (WhatsApp / PDF)" aria-label="Share Statement (WhatsApp / PDF)">${ic('send_msg')}</button>
+                    </span>` : '';
                   return `
                   <tr class="${isUnassigned ? '' : 'rrow'}" ${isUnassigned ? '' : `data-rkey="suppliers" data-rid="${esc((supObj || {}).id || s.Supplier)}"`}>
-                    <td>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}`}</td>
+                    <td${isUnassigned ? '' : ' class="td-raw-leg-party"'}>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}${supStmtActsHtml}`}</td>
                     <td><span class="badge ${roleCls}">${esc(s.role || 'Supplier')}</span></td>
                     <td>${s.IVA === 'Yes' ? '<span class="badge badge-info">IVA</span>' : '—'}</td>
                     <td class="r">${fmtNum(s.raw_loads)}</td>
@@ -47738,7 +47817,8 @@
                     <td class="r">${fmtUSD(s.ap_settled != null ? s.ap_settled : s.settlements_paid, 0)}</td>
                     <td class="r" data-ui-tip="${esc(`Material Rem: ${fmtUSD(s.quarry_rem || 0, 2)} · Transport Rem: ${fmtUSD(s.trans_rem || 0, 2)} · Expense Ex-VAT: ${fmtUSD(s.exp_rem_usd || 0, 2)} · IVA LBP: ${fmtNum(s.exp_rem_lbp || 0, 0)} LL · Expense Incl. VAT: ${fmtUSD(s.exp_rem_ttc || 0, 2)}`)}">${(Number(s.ap_balance || 0) < -0.005 || (opApData && opApData.bySupNorm && opApData.bySupNorm.has(normSupPayable(s.Supplier)))) ? `<strong style="color:${Number(s.ap_balance || 0) < -0.005 ? 'var(--crit)' : 'var(--warn)'}">${fmtUSD(s.ap_balance, 2)}</strong> <span class="badge badge-warn">Overpaid</span>` : `<strong>${fmtUSD(s.ap_balance, 2)}</strong>`}</td>
                   </tr>`;
-                }).join('') || emptyRow(supColCount, q ? `No counterparties match "${STATE.search}".` : 'No supplier or vendor balances for this entity')}
+                }).join('');
+                })() || emptyRow(supColCount, q ? `No counterparties match "${STATE.search}".` : 'No supplier or vendor balances for this entity')}
                 ${showMoreRow('sups', sups.length, supColCount)}
               </tbody>
               <tfoot>
@@ -50420,7 +50500,7 @@
     return out.replace(/\s+/g, ' ').trim();
   }
 
-  const CLEAN_DOMAIN_CELL_REJECT_SELECTOR = '.att-inline-badge, .sr-only, .ind-agr-pill, .rep-shift-ico, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select, .row-sel-dot, [data-row-sel]';
+  const CLEAN_DOMAIN_CELL_REJECT_SELECTOR = '.att-inline-badge, .sr-only, .ind-agr-pill, .raw-leg-stmt-actions, .rep-shift-ico, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select, .row-sel-dot, [data-row-sel]';
 
   function cleanDomainCellText(tdEl) {
     return walkBlockSeparatedCellText(tdEl, CLEAN_DOMAIN_CELL_REJECT_SELECTOR, false);
@@ -63349,10 +63429,17 @@
                 </tr>
               </thead>
               <tbody>
-                ${bList.length ? bList.map(c => `
+                ${bList.length ? bList.map(c => {
+                  const lenderStmtHtml = (c.borrowerCo === 'Bdeir Holding' && c.lenderCo !== 'Bdeir Holding')
+                    ? renderCustStmtActionsHtml(c.lenderCo, 'hldDueMatrixPanel', canHldBooks)
+                    : '';
+                  const borrowerStmtHtml = !(c.borrowerCo === 'Bdeir Holding' && c.lenderCo !== 'Bdeir Holding')
+                    ? renderCustStmtActionsHtml(c.borrowerCo, 'hldDueMatrixPanel', canHldBooks)
+                    : '';
+                  return `
                   <tr class="rrow">
-                    <td>${coBadge(c.lenderCo)} <strong>${esc(c.lenderCo)}</strong></td>
-                    <td>${coBadge(c.borrowerCo)} <strong>${esc(c.borrowerCo)}</strong></td>
+                    <td${lenderStmtHtml ? ' class="td-raw-leg-party"' : ''}>${coBadge(c.lenderCo)} <strong>${esc(c.lenderCo)}</strong>${lenderStmtHtml}</td>
+                    <td${borrowerStmtHtml ? ' class="td-raw-leg-party"' : ''}>${coBadge(c.borrowerCo)} <strong>${esc(c.borrowerCo)}</strong>${borrowerStmtHtml}</td>
                     <td class="r mono">${fmtNum(c.givenCount)} given · ${fmtNum(c.paidBackCount)} repaid</td>
                     <td class="r mono">${canHldBooks ? fmtUSD(c.givenUsd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono ${canHldBooks ? 'good' : ''}">${canHldBooks ? `<strong>${fmtUSD(c.paidBackUsd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
@@ -63360,8 +63447,8 @@
                     <td class="r mono ${canHldBooks ? (c.repayPct >= 80 ? 'good' : 'warn') : ''}">${canHldBooks ? `<strong>${fmtUSD(c.netUnpaidUsd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                     <td><span class="badge ${c.repayBadgeCls}">${esc(c.repayStatus)}</span> ${canHldBooks ? `<small class="mu">${esc(c.borrowerCo)} owes ${esc(c.lenderCo)} <b>${fmtUSD(c.netUnpaidUsd, 0)}</b></small>` : ''} ${canNetSettleDue ? `<button type="button" class="btn btn-ghost-bar hld-due-row-settle-btn" data-hld-settle-pair="${esc(c.lenderCo)}||${esc(c.borrowerCo)}" data-ui-tip="Open Monthly Net Settlement Sheet"><span>Settle</span></button>` : ''}</td>
                     <td class="r mono">${fmtNum(c.matchedCount)} / ${fmtNum(c.totalCount)}</td>
-                  </tr>
-                `).join('') : emptyRow(9, 'No intercompany pairs in selected period')}
+                  </tr>`;
+                }).join('') : emptyRow(9, 'No intercompany pairs in selected period')}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
@@ -69744,7 +69831,7 @@
                 <tr class="rrow" data-ind-row-tbl="hsp_memberships" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                   <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_memberships', r.id)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
-                  <td><strong>${esc(r.member)}</strong></td>
+                  <td class="td-raw-leg-party"><strong>${esc(r.member)}</strong>${renderCustStmtActionsHtml(r.member, 'hspMembershipsPanel', canHspMemBooks)}</td>
                   <td>${esc(r.unit)}</td>
                   <td class="mono">${esc(r.season)}</td>
                   <td class="r mono"><strong>${fmtUSD(r.contract_usd, 2)}</strong></td>
@@ -71392,7 +71479,7 @@
                   <tr class="rrow" data-ind-row-tbl="trd_receivables" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company || '')}">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td${coStyle}>${coBadge(r.company)}</td>
-                    <td><strong>${esc(r.customer)}</strong></td>
+                    <td class="td-raw-leg-party"><strong>${esc(r.customer)}</strong>${renderCustStmtActionsHtml(r.customer, 'trdReceivablesPanel', canTrdSalBooks)}</td>
                     <td class="r mono">${fmtUSD(r.invoiced_ttc, 2)}</td>
                     <td class="r mono">${canTrdSalBooks ? fmtUSD(r.settled_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono ${canTrdSalBooks && r.gross_ar_usd > 0 ? 'warn' : ''}">${canTrdSalBooks ? `<strong>${fmtUSD(r.gross_ar_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
@@ -73388,7 +73475,7 @@
                     <td class="mono">${esc(r.date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.tax_seq)}</td>
-                    <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
+                    <td class="td-raw-leg-party"><strong>${esc(r.tenant)}</strong>${renderCustStmtActionsHtml(r.tenant, 'reInvoicingPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
                     <td>${esc(r.period)}</td>
                     <td class="r mono">${canReLTax ? fmtUSD(r.net_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLTax ? fmtUSD(r.vat_usd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -73588,7 +73675,7 @@
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
-                  <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
+                  <td class="td-raw-leg-party"><strong>${esc(r.tenant)}</strong>${renderCustStmtActionsHtml(r.tenant, 'reLeasesPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
                   <td>${esc(r.frequency)}${r.start_date ? `<div class="muted mono" style="font-size:11px">${esc(r.start_date)} .. ${esc(r.end_date || 'Open')}</div>` : ''}</td>
                   <td class="r mono">${canReLTax ? fmtUSD(r.net_period_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                   <td class="r mono"><strong>${fmtUSD(r.ttc_period_usd, 2)}</strong></td>
@@ -73800,7 +73887,7 @@
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
-                  <td><strong>${esc(r.buyer)}</strong><div class="muted" style="font-size:11px">${esc(r.gl_stage)}</div></td>
+                  <td class="td-raw-leg-party"><strong>${esc(r.buyer)}</strong>${renderCustStmtActionsHtml(r.buyer, 'reSalesPanel', canReSBooks)}<div class="muted" style="font-size:11px">${esc(r.gl_stage)}</div></td>
                   <td class="r mono"><strong>${fmtUSD(r.contract_usd, 2)}</strong></td>
                   <td class="r mono">${canReSBooks ? fmtUSD(r.paid_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                   <td class="r mono ${canReSBooks && r.balance_usd > 0 ? 'crit' : ''}">${canReSBooks ? `<strong>${fmtUSD(r.balance_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
@@ -75490,7 +75577,7 @@
                   <td class="mono">${esc(r.due_date)}</td>
                   <td style="display:none">${coBadge(r.company)}</td>
                   <td class="mono">${esc(r.policy_no)}</td>
-                  <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.instalment)}</div></td>
+                  <td class="td-raw-leg-party"><strong>${esc(r.client)}</strong>${renderCustStmtActionsHtml(r.client, 'insBillingPanel', canInsBBooks)}<div class="muted" style="font-size:11px">${esc(r.instalment)}</div></td>
                   <td>${esc(r.carrier)}</td>
                   <td class="r mono">${fmtUSD(r.client_billed_4112_usd, 0)}</td>
                   <td class="r mono">${canInsBBooks ? fmtUSD(r.collected_usd, 0) : '<span class="muted">Restricted</span>'}</td>
@@ -83651,9 +83738,25 @@
     if (!tdEl) return;
     const v = String(newVal ?? '');
     const trailingNodes = tdEl.querySelectorAll
-      ? Array.from(tdEl.querySelectorAll('.att-inline-badge, .ind-agr-pill, button.void-btn, u.row-sel-dot'))
+      ? Array.from(tdEl.querySelectorAll('.att-inline-badge, .ind-agr-pill, .raw-leg-stmt-actions, button.void-btn, u.row-sel-dot'))
       : [];
     const strong = tdEl.querySelector ? tdEl.querySelector('strong, b, .badge:not(.att-inline-badge)') : null;
+    const mutedEl = tdEl.querySelector ? tdEl.querySelector('.muted') : null;
+    const syncStmtBtnParty = partyOverride => {
+      const src = partyOverride != null ? String(partyOverride) : v;
+      const cleanParty = src.split(/\r?\n|\s+·\s+/)[0].trim();
+      if (!cleanParty || cleanParty.startsWith('(')) return;
+      tdEl.querySelectorAll('[data-open-cust-stmt]').forEach(b => b.setAttribute('data-open-cust-stmt', cleanParty));
+      tdEl.querySelectorAll('[data-open-sup-stmt]').forEach(b => b.setAttribute('data-open-sup-stmt', cleanParty));
+    };
+    if (mutedEl && strong) {
+      const sepIdx = v.indexOf(' · ');
+      const mainText = sepIdx >= 0 ? v.slice(0, sepIdx).trim() : v.split(/\r?\n/)[0].trim();
+      if (sepIdx >= 0) mutedEl.textContent = v.slice(sepIdx + 3).trim();
+      strong.textContent = mainText;
+      syncStmtBtnParty(mainText);
+      return;
+    }
     if (trailingNodes.length) {
       if (strong && tdEl.children.length <= trailingNodes.length + 1) {
         strong.textContent = v;
@@ -83673,10 +83776,12 @@
           tdEl.appendChild(cl);
         });
       }
+      syncStmtBtnParty();
       return;
     }
     if (strong && tdEl.children.length === 1) strong.textContent = v;
     else tdEl.textContent = v;
+    syncStmtBtnParty();
   }
 
   function applyIndustryDomRowEdits(root) {
@@ -144908,7 +145013,7 @@
   }
 
   function extractTdCellCleanText(td) {
-    return walkBlockSeparatedCellText(td, 'button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select, .att-inline-badge, .ind-agr-pill, .rep-shift-ico');
+    return walkBlockSeparatedCellText(td, 'button, .void-btn, .tkt-print-mini, .btn-ind-wf, .sr-only, input, select, .att-inline-badge, .ind-agr-pill, .raw-leg-stmt-actions, .rep-shift-ico');
   }
 
   function canMobPeekEditRrow(checkKey, row) {
@@ -170418,6 +170523,8 @@
     clearDesktopIdleLockWatchdog();
     if (!isIdleLock) _idleLockedDraftSnap = null;
     STATE.hubInspectorReturn = null;
+    STATE.stmt14ReturnCtx = null;
+    STATE.stmt16ReturnCtx = null;
     STATE.ovkMoversReturn = null;
     if (STATE.authed) STATE.authed = false;
     purgeOverlaysOnSessionOrKioskLock();
@@ -170656,6 +170763,14 @@
     KIOSK_ATT_STATE.fillLightHoldUntil = 0;
     if (typeof document !== 'undefined' && document.body) {
       document.body.classList.remove('is-att-fill-light');
+    }
+    if (typeof syncKioskNativeFillLightBoost === 'function') {
+      syncKioskNativeFillLightBoost(false, { forceRelease: true });
+    }
+    if (typeof _kioskOptDiagState !== 'undefined') {
+      _kioskOptDiagState.apkMetaFlushed = false;
+      clearTimeout(_kioskOptDiagState.apkMetaFlushTimer);
+      _kioskOptDiagState.apkMetaFlushTimer = null;
     }
     clearTimeout(toastTimer);
     clearTimeout(toastFadeTimer);
@@ -172342,6 +172457,8 @@
     fillLightActive: false,
     lowLightSince: 0,
     fillLightHoldUntil: 0,
+    nativeBoostActive: false,
+    nativeBoostLastRefreshAt: 0,
     lastMotionOrFaceAt: 0,
     lastProbeMeanLuma: null,
     bestDist: 9,
@@ -172542,7 +172659,7 @@
     const onWakePointer = e => {
       if (!STATE.kioskLocked || STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return;
       if (KIOSK_ADMIN_MODAL_STATE.open) return;
-      const hitAdmin = Boolean(e.target && e.target.closest && e.target.closest('#kioskWallAdminBtn'));
+      const hitAdmin = Boolean(e.target && e.target.closest && e.target.closest('#kioskWallAdminBtn, #kioskWallApkUpdatePill'));
       if (KIOSK_ATT_STATE.standbyIdle || KIOSK_ATT_STATE.nightSleep) {
         if (hitAdmin) {
           KIOSK_ATT_STATE.standbyIdle = false;
@@ -172560,7 +172677,7 @@
     };
     const onWakeClickCapture = e => {
       if ((Date.now() - (KIOSK_ATT_STATE.justWokeAt || 0)) < 450) {
-        const hitAdmin = Boolean(e.target && e.target.closest && e.target.closest('#kioskWallAdminBtn'));
+        const hitAdmin = Boolean(e.target && e.target.closest && e.target.closest('#kioskWallAdminBtn, #kioskWallApkUpdatePill'));
         if (!hitAdmin) {
           e.preventDefault();
           e.stopPropagation();
@@ -173600,9 +173717,147 @@
     });
   }
 
-  function syncKioskAttViewportVisualState() {
+  function getAndroidKioskNativeInfo(opts = {}) {
+    const hasCustomBridge = Boolean(opts && Object.prototype.hasOwnProperty.call(opts, 'bridge'));
+    const nb = hasCustomBridge
+      ? opts.bridge
+      : (typeof window !== 'undefined' ? (window.IsabiNativeBridge || window.ISABINativeKiosk || null) : null);
+    let ua = '';
+    if (opts && opts.userAgent != null) {
+      ua = String(opts.userAgent || '');
+    } else if (typeof window !== 'undefined' && window.__MFG_TEST_KIOSK_UA) {
+      ua = String(window.__MFG_TEST_KIOSK_UA || '');
+    } else if (typeof navigator !== 'undefined') {
+      ua = String(navigator.userAgent || '');
+    }
+    const uaMatch = ua.match(/ISABIKiosk\/(\d{1,3}(?:\.\d{1,5}){0,3})/i);
+    let bridgeVer = '';
+    if (nb && typeof nb.getAppVersion === 'function') {
+      try {
+        const rawVer = String(nb.getAppVersion() || '').trim();
+        if (/^\d{1,3}(?:\.\d{1,5}){0,3}$/.test(rawVer)) bridgeVer = rawVer;
+      } catch (_) {}
+    }
+    if (!bridgeVer && nb && typeof nb.getStatusJson === 'function') {
+      try {
+        const stObj = JSON.parse(String(nb.getStatusJson() || '{}'));
+        const rawVer = String((stObj && (stObj.versionName || stObj.appVersion)) || '').trim();
+        if (/^\d{1,3}(?:\.\d{1,5}){0,3}$/.test(rawVer)) bridgeVer = rawVer;
+      } catch (_) {}
+    }
+    let bridgeFlag = false;
+    if (nb) {
+      if (typeof nb.isAndroidKiosk === 'function') {
+        try { bridgeFlag = nb.isAndroidKiosk() !== false; } catch (_) {}
+      } else if (
+        typeof nb.getStatusJson === 'function' ||
+        typeof nb.syncStationPreset === 'function' ||
+        typeof nb.setStationPreset === 'function' ||
+        typeof nb.setFillLightBoost === 'function' ||
+        typeof nb.setScreenBrightnessBoost === 'function'
+      ) {
+        bridgeFlag = true;
+      }
+    }
+    const isAndroidWrapper = Boolean(uaMatch || bridgeFlag);
+    const hasBrightnessBridge = Boolean(
+      nb && (typeof nb.setFillLightBoost === 'function' || typeof nb.setScreenBrightnessBoost === 'function')
+    );
+    const apkVersion = bridgeVer || (uaMatch ? uaMatch[1] : '');
+    const needsApkUpdate = Boolean(isAndroidWrapper && !hasBrightnessBridge);
+    const hwBrightnessState = !isAndroidWrapper ? 'web' : (hasBrightnessBridge ? 'ready' : 'apk_outdated');
+    return {
+      isAndroidWrapper,
+      hasBrightnessBridge,
+      apkVersion,
+      minRequiredApk: '1.3.0',
+      needsApkUpdate,
+      hwBrightnessState,
+      bridge: nb
+    };
+  }
+
+  function syncKioskNativeFillLightBoost(active, opts = {}) {
+    const info = getAndroidKioskNativeInfo();
+    const visHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const wantBoost = Boolean(
+      active &&
+      STATE.kioskLocked &&
+      STATE.view === 'kiosks' &&
+      STATE.activeKiosk === 'attendance' &&
+      STATE.kioskFillLight !== false &&
+      !KIOSK_ATT_STATE.standbyIdle &&
+      !KIOSK_ATT_STATE.camPausedByUser &&
+      !KIOSK_ADMIN_MODAL_STATE.open &&
+      !visHidden
+    );
+    if (!info.hasBrightnessBridge || !info.bridge) {
+      KIOSK_ATT_STATE.nativeBoostActive = false;
+      KIOSK_ATT_STATE.nativeBoostLastRefreshAt = 0;
+      return false;
+    }
+    const callNative = on => {
+      try {
+        if (typeof info.bridge.setFillLightBoost === 'function') {
+          info.bridge.setFillLightBoost(Boolean(on));
+        } else if (typeof info.bridge.setScreenBrightnessBoost === 'function') {
+          info.bridge.setScreenBrightnessBoost(Boolean(on));
+        }
+      } catch (_) {}
+    };
+    const now = Number((opts && opts.nowMs) || Date.now());
+    if (wantBoost) {
+      const wasActive = Boolean(KIOSK_ATT_STATE.nativeBoostActive);
+      const elapsed = now - Number(KIOSK_ATT_STATE.nativeBoostLastRefreshAt || 0);
+      if (!wasActive || elapsed >= 4000) {
+        callNative(true);
+        KIOSK_ATT_STATE.nativeBoostActive = true;
+        KIOSK_ATT_STATE.nativeBoostLastRefreshAt = now;
+        if (!wasActive && typeof recordKioskOpticalDiagEvent === 'function') {
+          recordKioskOpticalDiagEvent('hw_boost', { nowMs: now, allowOffView: true });
+        }
+      }
+    } else {
+      if (KIOSK_ATT_STATE.nativeBoostActive || (opts && opts.forceRelease)) {
+        callNative(false);
+      }
+      KIOSK_ATT_STATE.nativeBoostActive = false;
+      KIOSK_ATT_STATE.nativeBoostLastRefreshAt = 0;
+    }
+    return Boolean(KIOSK_ATT_STATE.nativeBoostActive);
+  }
+
+  function wireKioskBrightnessLifecycleOnce() {
+    if (typeof _kioskOptDiagState === 'undefined' || _kioskOptDiagState.lifecycleWired || typeof window === 'undefined') return;
+    _kioskOptDiagState.lifecycleWired = true;
+    const releaseOnHide = () => {
+      KIOSK_ATT_STATE.fillLightActive = false;
+      KIOSK_ATT_STATE.lowLightSince = 0;
+      KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.remove('is-att-fill-light');
+      }
+      syncKioskNativeFillLightBoost(false, { forceRelease: true });
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') releaseOnHide();
+      });
+    }
+    window.addEventListener('pagehide', releaseOnHide);
+    window.addEventListener('beforeunload', releaseOnHide);
+  }
+
+  function syncKioskAttViewportVisualState(opts = {}) {
+    wireKioskBrightnessLifecycleOnce();
     const vpEl = $('kioskAttViewport');
-    if (!vpEl) return;
+    if (!vpEl) {
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.remove('is-att-fill-light');
+      }
+      syncKioskNativeFillLightBoost(false, opts);
+      return;
+    }
     const canShow = !KIOSK_ATT_STATE.standbyIdle && !KIOSK_ATT_STATE.camPausedByUser;
     vpEl.classList.toggle('is-detecting', canShow && KIOSK_ATT_STATE.visualState === 'detecting');
     vpEl.classList.toggle('is-unrecognized', canShow && KIOSK_ATT_STATE.visualState === 'unrecognized');
@@ -173613,6 +173868,7 @@
     if (typeof document !== 'undefined' && document.body) {
       document.body.classList.toggle('is-att-fill-light', Boolean(STATE.kioskLocked && showFill));
     }
+    syncKioskNativeFillLightBoost(Boolean(STATE.kioskLocked && showFill), opts);
   }
 
   function syncKioskAttLiveUiInPlace() {
@@ -173790,6 +174046,12 @@
     }
     saveKioskStationConfig({ kioskLocked: STATE.kioskLocked });
     syncNativeStationPreset(STATE.kioskLocked ? STATE.activeKiosk : 'command');
+    if (!STATE.kioskLocked) {
+      KIOSK_ATT_STATE.fillLightActive = false;
+      KIOSK_ATT_STATE.lowLightSince = 0;
+      KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+      syncKioskNativeFillLightBoost(false, { forceRelease: true });
+    }
     syncKioskLockedUrl();
     updateUnsentEntriesBar();
     updateDevicesHoldingBar();
@@ -173973,10 +174235,11 @@
         return allAllowedKeys.includes(c.key);
       });
       const pCfg = (window.MFG_PRINT && window.MFG_PRINT.SETTINGS) || { paperWidth: 80, priceMode: 'priced', channel: 'rawbt', bleDeviceName: '' };
-      const nb = window.IsabiNativeBridge || null;
+      const ksaNativeInfo = getAndroidKioskNativeInfo();
+      const nb = ksaNativeInfo.bridge || null;
       const hasNative = Boolean(nb && typeof nb.isAndroidKiosk === 'function');
       let nativeOrient = 'auto';
-      if (hasNative && typeof nb.getOrientationMode === 'function') {
+      if (hasNative && nb && typeof nb.getOrientationMode === 'function') {
         try { nativeOrient = String(nb.getOrientationMode() || 'auto'); } catch (_) {}
       }
       const curIdleSec = Number(STATE.kioskIdleStandbySec != null ? STATE.kioskIdleStandbySec : 60);
@@ -174218,11 +174481,27 @@
                     <span class="panel-meta">Auto-checks OTA every 60s + daily 05:25 AM refresh</span>
                   </div>
                 </div>
+                ${ksaNativeInfo.isAndroidWrapper ? `
+                  <div class="ksa-cfg-row" id="ksaNativeApkStatusRow">
+                    <span class="kiosk-bar-lbl">${ic('shield')} ${esc(faceTr('Wrapper APK'))}</span>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                      ${ksaNativeInfo.needsApkUpdate ? `
+                        <span class="badge badge-warn mono">${esc(ksaNativeInfo.apkVersion ? `APK v${ksaNativeInfo.apkVersion}` : faceTr('Legacy APK'))} · ${esc(faceTr('Update to v1.3.0 Needed'))}</span>
+                        <span class="panel-meta">${esc(faceTr('Install ISABI Kiosk APK v1.3.0 via USB provisioning to unlock hardware screen brightness boost during low-light scans.'))}</span>
+                      ` : `
+                        <span class="badge badge-ok mono">${esc(ksaNativeInfo.apkVersion ? `APK v${ksaNativeInfo.apkVersion}` : 'APK v1.3.0')} · ${esc(faceTr('Hardware Brightness Boost Ready'))}</span>
+                      `}
+                    </div>
+                  </div>
+                ` : ''}
                 <div class="ksa-cfg-row">
                   <span class="kiosk-bar-lbl">${ic('sparkles')} Warm Fill-Light</span>
-                  <div class="kiosk-seg-group" id="ksaFillLightGroup">
-                    <button type="button" class="kiosk-seg-btn ${STATE.kioskFillLight !== false ? 'active' : ''}" data-tone="amber" data-ksa-fill-light="auto">Auto Warm Halo</button>
-                    <button type="button" class="kiosk-seg-btn ${STATE.kioskFillLight === false ? 'active' : ''}" data-tone="muted" data-ksa-fill-light="off">Off</button>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    <div class="kiosk-seg-group" id="ksaFillLightGroup">
+                      <button type="button" class="kiosk-seg-btn ${STATE.kioskFillLight !== false ? 'active' : ''}" data-tone="amber" data-ksa-fill-light="auto">Auto Warm Halo</button>
+                      <button type="button" class="kiosk-seg-btn ${STATE.kioskFillLight === false ? 'active' : ''}" data-tone="muted" data-ksa-fill-light="off">Off</button>
+                    </div>
+                    ${ksaNativeInfo.isAndroidWrapper ? `<span class="panel-meta">${esc(faceTr(ksaNativeInfo.needsApkUpdate ? 'CSS Halo Only · Needs APK v1.3.0 for Full Backlight' : 'Halo + Full Backlight Boost'))}</span>` : ''}
                   </div>
                 </div>
                 <div class="ksa-cfg-row">
@@ -186705,7 +186984,7 @@
     KIOSK_ATT_STATE.fillLightHoldUntil = 0;
     KIOSK_ATT_STATE.lastVideoTime = -1;
     KIOSK_ATT_STATE.lastTimeMoveAt = 0;
-    syncKioskAttViewportVisualState();
+    syncKioskAttViewportVisualState({ forceRelease: true });
     const v = $('kioskAttVideo');
     if (v && v.srcObject) {
       try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
@@ -186775,7 +187054,10 @@
     lastFlushAt: 0,
     lastScanAt: 0,
     unsyncedScans: 0,
-    flushing: false
+    flushing: false,
+    apkMetaFlushed: false,
+    apkMetaFlushTimer: null,
+    lifecycleWired: false
   };
 
   function getKioskOpticalBandKey(dateObj = null) {
@@ -186846,6 +187128,7 @@
     const shell = String(window.__MFG_SHELL_VER || '').trim();
     const ind = typeof getActiveIndustry === 'function' ? getActiveIndustry(co) : 'Manufacturing';
     const site = String(STATE.kioskAttSite || `${co} Main Entrance`).slice(0, 80);
+    const nativeInfo = getAndroidKioskNativeInfo();
     let row = map[key];
     if (!row || typeof row !== 'object') {
       row = {
@@ -186854,6 +187137,9 @@
         industry: ind,
         site,
         shell,
+        apk_ver: nativeInfo.apkVersion || '',
+        hw_brightness: nativeInfo.hwBrightnessState,
+        hw_boost_activations: 0,
         fill_light_mode: STATE.kioskFillLight === false ? 'off' : 'auto',
         scans_total: 0,
         punches_ok: 0,
@@ -186882,6 +187168,17 @@
       row.industry = ind;
       row.site = site;
       if (shell) row.shell = shell;
+      const nextApkVer = nativeInfo.apkVersion || '';
+      if (row.apk_ver !== nextApkVer || row.hw_brightness !== nativeInfo.hwBrightnessState) {
+        row.apk_ver = nextApkVer;
+        row.hw_brightness = nativeInfo.hwBrightnessState;
+        row.reported_at = new Date().toISOString();
+        _kioskOptDiagState.apkMetaFlushed = false;
+      } else {
+        row.apk_ver = nextApkVer;
+        row.hw_brightness = nativeInfo.hwBrightnessState;
+      }
+      row.hw_boost_activations = Number(row.hw_boost_activations || 0);
       row.fill_light_mode = STATE.kioskFillLight === false ? 'off' : 'auto';
       if (!row.bands || typeof row.bands !== 'object') row.bands = createEmptyKioskOptBands();
       for (const bk of KIOSK_OPT_BAND_KEYS) {
@@ -186907,16 +187204,6 @@
     }
     const scans = Number(row.scans_total || 0);
     const hal = Number(row.hal_restarts || 0);
-    if (scans < 5 && hal < 2) {
-      return {
-        level: 'baseline',
-        rank: 3,
-        badgeCls: 'badge',
-        statusLabel: faceTr('Collecting Baseline'),
-        recommendation: faceTr('Collecting baseline scans before scoring placement.'),
-        worstBand: ''
-      };
-    }
     if (hal >= 3) {
       return {
         level: 'crit',
@@ -186927,11 +187214,10 @@
         worstBand: ''
       };
     }
-    const padSpoof = Number(row.pad_spoof_count || 0);
-    const padRate = scans > 0 ? (padSpoof / scans) : 0;
     const bands = (row.bands && typeof row.bands === 'object') ? row.bands : {};
     let maxBandSpoof = 0;
     let worstBand = '';
+    const padSpoof = Number(row.pad_spoof_count || 0);
     for (const bk of KIOSK_OPT_BAND_KEYS) {
       const b = bands[bk];
       const cnt = (b && Number(b.pad_spoof || 0)) || 0;
@@ -186940,63 +187226,86 @@
         worstBand = bk;
       }
     }
-    const worstShare = padSpoof >= 2 ? (maxBandSpoof / padSpoof) : 0;
-    if (padRate >= 0.30) {
-      return {
-        level: 'crit',
-        rank: 0,
-        badgeCls: 'badge-err',
-        statusLabel: faceTr('High Glare / Backlight'),
-        recommendation: faceTr('Strong glare or window backlight is blocking scans. Shade glass or angle tablet away from open light.'),
-        worstBand
-      };
+    if (scans >= 5) {
+      const padRate = scans > 0 ? (padSpoof / scans) : 0;
+      const worstShare = padSpoof >= 2 ? (maxBandSpoof / padSpoof) : 0;
+      if (padRate >= 0.30) {
+        return {
+          level: 'crit',
+          rank: 0,
+          badgeCls: 'badge-err',
+          statusLabel: faceTr('High Glare / Backlight'),
+          recommendation: faceTr('Strong glare or window backlight is blocking scans. Shade glass or angle tablet away from open light.'),
+          worstBand
+        };
+      }
+      if (padRate >= 0.18 || (padRate >= 0.12 && worstShare >= 0.55)) {
+        return {
+          level: 'warn',
+          rank: 1,
+          badgeCls: 'badge-warn',
+          statusLabel: (worstBand === 'dawn' || worstBand === 'dusk') ? faceTr('Sun-Angle Glare') : faceTr('Window Glare'),
+          recommendation: faceTr('Recurring glare in one time band. Pivot tablet slightly away from glass reflections.'),
+          worstBand
+        };
+      }
+      const lowCnt = Number(row.det_low_light_count || 0);
+      const lowRate = scans > 0 ? (lowCnt / scans) : 0;
+      const lumaCnt = Number(row.ambient_luma_count || 0);
+      const meanLuma = lumaCnt > 0 ? (Number(row.ambient_luma_sum || 0) / lumaCnt) : 0;
+      if (lowRate >= 0.30 || (meanLuma > 0 && meanLuma < 48 && lowRate >= 0.18)) {
+        return {
+          level: 'warn',
+          rank: 1,
+          badgeCls: 'badge-warn',
+          statusLabel: faceTr('Low Entrance Light'),
+          recommendation: faceTr('Dim lighting is slowing matches. Keep Warm Fill-Light Auto on or add corridor lighting.'),
+          worstBand
+        };
+      }
+      const smallRate = scans > 0 ? (Number(row.small_face_count || 0) / scans) : 0;
+      if (smallRate >= 0.28) {
+        return {
+          level: 'warn',
+          rank: 1,
+          badgeCls: 'badge-warn',
+          statusLabel: faceTr('Stand-Off Distance'),
+          recommendation: faceTr('Staff are standing too far back. Lower mounting angle or mark a closer floor line.'),
+          worstBand
+        };
+      }
+      const edgeCnt = Number(row.edge_verify_count || 0);
+      const edgeP95 = Number(row.edge_verify_p95_ms || 0);
+      const edgeFailRate = edgeCnt > 0 ? (Number(row.edge_verify_fail_count || 0) / edgeCnt) : 0;
+      if (edgeCnt >= 3 && (edgeP95 >= 1400 || edgeFailRate >= 0.20)) {
+        return {
+          level: 'warn',
+          rank: 1,
+          badgeCls: 'badge-warn',
+          statusLabel: faceTr('Slow Edge Verify'),
+          recommendation: faceTr('High cloud verification latency or misses. Check entrance Wi-Fi strength and biometric sync.'),
+          worstBand
+        };
+      }
     }
-    if (padRate >= 0.18 || (padRate >= 0.12 && worstShare >= 0.55)) {
+    if (row.hw_brightness === 'apk_outdated') {
       return {
         level: 'warn',
         rank: 1,
         badgeCls: 'badge-warn',
-        statusLabel: (worstBand === 'dawn' || worstBand === 'dusk') ? faceTr('Sun-Angle Glare') : faceTr('Window Glare'),
-        recommendation: faceTr('Recurring glare in one time band. Pivot tablet slightly away from glass reflections.'),
+        statusLabel: faceTr('APK Update Needed'),
+        recommendation: faceTr('Tablet runs an older Android Kiosk APK without hardware screen brightness boost. Update to APK v1.3.0 via USB provisioning.'),
         worstBand
       };
     }
-    const lowCnt = Number(row.det_low_light_count || 0);
-    const lowRate = scans > 0 ? (lowCnt / scans) : 0;
-    const lumaCnt = Number(row.ambient_luma_count || 0);
-    const meanLuma = lumaCnt > 0 ? (Number(row.ambient_luma_sum || 0) / lumaCnt) : 0;
-    if (lowRate >= 0.30 || (meanLuma > 0 && meanLuma < 48 && lowRate >= 0.18)) {
+    if (scans < 5 && hal < 2) {
       return {
-        level: 'warn',
-        rank: 1,
-        badgeCls: 'badge-warn',
-        statusLabel: faceTr('Low Entrance Light'),
-        recommendation: faceTr('Dim lighting is slowing matches. Keep Warm Fill-Light Auto on or add corridor lighting.'),
-        worstBand
-      };
-    }
-    const smallRate = scans > 0 ? (Number(row.small_face_count || 0) / scans) : 0;
-    if (smallRate >= 0.28) {
-      return {
-        level: 'warn',
-        rank: 1,
-        badgeCls: 'badge-warn',
-        statusLabel: faceTr('Stand-Off Distance'),
-        recommendation: faceTr('Staff are standing too far back. Lower mounting angle or mark a closer floor line.'),
-        worstBand
-      };
-    }
-    const edgeCnt = Number(row.edge_verify_count || 0);
-    const edgeP95 = Number(row.edge_verify_p95_ms || 0);
-    const edgeFailRate = edgeCnt > 0 ? (Number(row.edge_verify_fail_count || 0) / edgeCnt) : 0;
-    if (edgeCnt >= 3 && (edgeP95 >= 1400 || edgeFailRate >= 0.20)) {
-      return {
-        level: 'warn',
-        rank: 1,
-        badgeCls: 'badge-warn',
-        statusLabel: faceTr('Slow Edge Verify'),
-        recommendation: faceTr('High cloud verification latency or misses. Check entrance Wi-Fi strength and biometric sync.'),
-        worstBand
+        level: 'baseline',
+        rank: 3,
+        badgeCls: 'badge',
+        statusLabel: faceTr('Collecting Baseline'),
+        recommendation: faceTr('Collecting baseline scans before scoring placement.'),
+        worstBand: ''
       };
     }
     return {
@@ -187052,6 +187361,9 @@
       dirty = true;
     } else if (kind === 'fill_light') {
       row.fill_light_activations += 1;
+      dirty = true;
+    } else if (kind === 'hw_boost') {
+      row.hw_boost_activations = Number(row.hw_boost_activations || 0) + 1;
       dirty = true;
     } else if (kind === 'pad_spoof') {
       row.pad_spoof_count += 1;
@@ -187117,10 +187429,11 @@
     if (_kioskOptDiagState.flushing && !opts.force) return { ok: false, reason: 'busy' };
     const map = hydrateKioskOptDiagMap();
     const keys = Object.keys(_kioskOptDiagState.dirtyKeys);
-    if (!keys.length && !opts.force) return { ok: true, skipped: true };
-    const sendKey = keys[0] || ensureLocalKioskOptDiagRow().key;
+    if (!keys.length && !opts.key && !opts.force) return { ok: true, skipped: true };
+    const sendKey = (opts.key && map[opts.key]) ? opts.key : (keys[0] || ensureLocalKioskOptDiagRow().key);
     const row = map[sendKey];
-    if (!row || (!row.scans_total && !row.hal_restarts && !opts.force)) return { ok: true, skipped: true };
+    const hasWrapperMeta = Boolean(row && (row.apk_ver || row.hw_brightness === 'apk_outdated' || row.hw_brightness === 'ready'));
+    if (!row || (!row.scans_total && !row.hal_restarts && !(opts.allowMetaOnly && hasWrapperMeta) && !opts.force)) return { ok: true, skipped: true };
     _kioskOptDiagState.flushing = true;
     _kioskOptDiagState.lastFlushAt = Date.now();
     try {
@@ -187133,6 +187446,8 @@
       if (res && res.ok) {
         delete _kioskOptDiagState.dirtyKeys[sendKey];
         _kioskOptDiagState.unsyncedScans = 0;
+        row.reported_at = new Date().toISOString();
+        saveKioskOptDiagMap();
         mergeKioskOpticalStationList(row);
         return { ok: true };
       }
@@ -187156,6 +187471,25 @@
     if (dueByScans || dueByTime || dueByPunch) {
       flushKioskOpticalDiagNow();
     }
+  }
+
+  function scheduleKioskApkMetadataFlushIfNeeded() {
+    if (isDemoScopeActive() || isDemoSandboxSession()) return;
+    if (IS_AUTOMATED_TEST && !window.__MFG_TEST_OPT_DIAG_SYNC) return;
+    const nativeInfo = getAndroidKioskNativeInfo();
+    if (!nativeInfo.isAndroidWrapper) return;
+    const { key, row } = ensureLocalKioskOptDiagRow();
+    if (_kioskOptDiagState.apkMetaFlushed) return;
+    if (!row.reported_at) row.reported_at = new Date().toISOString();
+    _kioskOptDiagState.dirtyKeys[key] = true;
+    saveKioskOptDiagMap();
+    if (_kioskOptDiagState.apkMetaFlushTimer) return;
+    _kioskOptDiagState.apkMetaFlushTimer = setTimeout(async () => {
+      _kioskOptDiagState.apkMetaFlushTimer = null;
+      if (!STATE.authed || !hasServerApi() || isDemoScopeActive()) return;
+      const res = await flushKioskOpticalDiagNow({ allowMetaOnly: true, key });
+      if (res && res.ok) _kioskOptDiagState.apkMetaFlushed = true;
+    }, 1500);
   }
 
   async function fetchKioskOpticalDiagStations(opts = {}) {
@@ -187230,7 +187564,7 @@
       KIOSK_ATT_STATE.fillLightActive = false;
       KIOSK_ATT_STATE.lowLightSince = 0;
       KIOSK_ATT_STATE.fillLightHoldUntil = 0;
-      if (prevActive) syncKioskAttViewportVisualState();
+      if (prevActive || KIOSK_ATT_STATE.nativeBoostActive) syncKioskAttViewportVisualState({ nowMs: ctx.nowMs, forceRelease: true });
       return false;
     }
     const now = Number(ctx.nowMs || Date.now());
@@ -187262,7 +187596,9 @@
       }
     }
     if (Boolean(KIOSK_ATT_STATE.fillLightActive) !== prevActive) {
-      syncKioskAttViewportVisualState();
+      syncKioskAttViewportVisualState({ nowMs: now });
+    } else if (KIOSK_ATT_STATE.fillLightActive || KIOSK_ATT_STATE.nativeBoostActive) {
+      syncKioskNativeFillLightBoost(Boolean(STATE.kioskLocked && KIOSK_ATT_STATE.fillLightActive), { nowMs: now });
     }
     return Boolean(KIOSK_ATT_STATE.fillLightActive);
   }
@@ -187272,6 +187608,8 @@
       const { row } = ensureLocalKioskOptDiagRow();
       return { row: serializeKioskOptDiagRow(row), diag: diagnoseKioskOpticalSignal(row) };
     },
+    getNativeInfo: getAndroidKioskNativeInfo,
+    syncNativeBoost: syncKioskNativeFillLightBoost,
     recordEvent: recordKioskOpticalDiagEvent,
     evaluateFillLight: evaluateKioskFillLightState,
     diagnose: diagnoseKioskOpticalSignal,
@@ -202638,6 +202976,9 @@
           industry: activeInd,
           site: `${demoCo} Main Gate`,
           shell: String(window.__MFG_SHELL_VER || 'live'),
+          apk_ver: '1.3.0',
+          hw_brightness: 'ready',
+          hw_boost_activations: 1,
           fill_light_mode: 'auto',
           scans_total: 42,
           punches_ok: 40,
@@ -202665,6 +203006,9 @@
           industry: activeInd,
           site: `${demoCo} East Door`,
           shell: String(window.__MFG_SHELL_VER || 'live'),
+          apk_ver: '1.2.0',
+          hw_brightness: 'apk_outdated',
+          hw_boost_activations: 0,
           fill_light_mode: 'auto',
           scans_total: 26,
           punches_ok: 19,
@@ -202692,6 +203036,9 @@
           industry: activeInd,
           site: `${demoCo} Yard Turnstile`,
           shell: String(window.__MFG_SHELL_VER || 'live'),
+          apk_ver: '1.3.0',
+          hw_brightness: 'ready',
+          hw_boost_activations: 0,
           fill_light_mode: 'off',
           scans_total: 15,
           punches_ok: 9,
@@ -202735,7 +203082,9 @@
     };
     serverRows.forEach(addRow);
     Object.values(localMap).forEach(r => {
-      if (r && (r.scans_total > 0 || r.hal_restarts > 0)) addRow(serializeKioskOptDiagRow(r));
+      if (r && (r.scans_total > 0 || r.hal_restarts > 0 || r.hw_brightness === 'apk_outdated' || r.hw_brightness === 'ready' || Boolean(r.apk_ver))) {
+        addRow(serializeKioskOptDiagRow(r));
+      }
     });
 
     const indCoNames = new Set(
@@ -202823,11 +203172,17 @@
                   const bg = Number((b && b.pad_spoof) || 0);
                   return `<span class="kiosk-opt-band-pill mono">${esc(bandLabels[bk])} ${fmtNum(bs)}${bg > 0 ? ` · ${fmtNum(bg)}g` : ''}</span>`;
                 }).filter(Boolean).join('');
+                const apkTagHtml = st.hw_brightness === 'apk_outdated'
+                  ? ` · <span class="kiosk-opt-apk-flag is-warn">${esc(st.apk_ver ? `APK v${st.apk_ver}` : faceTr('Legacy APK'))} · ${esc(faceTr('Update Needed'))}</span>`
+                  : (st.hw_brightness === 'ready'
+                    ? ` · <span class="kiosk-opt-apk-flag is-ok">${esc(st.apk_ver ? `APK v${st.apk_ver}` : 'APK v1.3.0')} · ${esc(faceTr('HW Boost'))}</span>`
+                    : '');
+                const hwBoostCount = Number(st.hw_boost_activations || 0);
                 return `
                   <tr data-opt-diag-row="${esc(st.device_id)}">
                     <td>
                       <strong>${esc(st.site || `${st.company} Entrance`)}</strong>
-                      <div class="drv-sub mono">${esc(String(st.device_id || '').slice(0, 14))}${st.shell ? ` · v${esc(st.shell)}` : ''} · ${st.fill_light_mode === 'off' ? esc(faceTr('Halo Off')) : esc(faceTr('Halo Auto'))}</div>
+                      <div class="drv-sub mono">${esc(String(st.device_id || '').slice(0, 14))}${st.shell ? ` · v${esc(st.shell)}` : ''} · ${st.fill_light_mode === 'off' ? esc(faceTr('Halo Off')) : esc(faceTr('Halo Auto'))}${apkTagHtml}</div>
                     </td>
                     ${showCoCol ? `<td>${coBadge(st.company)}</td>` : ''}
                     <td><span class="badge ${esc(st.diag.badgeCls)}">${esc(st.diag.statusLabel)}</span></td>
@@ -202837,7 +203192,7 @@
                     </td>
                     <td class="mono">
                       <div>Score ${esc(avgDet)}${meanLuma != null ? ` · Luma ${fmtNum(meanLuma)}` : ''}</div>
-                      <div class="drv-sub">${lowPct}% dim · ${smallPct}% far · ${fmtNum(st.fill_light_activations || 0)} halo</div>
+                      <div class="drv-sub">${lowPct}% dim · ${smallPct}% far · ${fmtNum(st.fill_light_activations || 0)} halo${hwBoostCount > 0 ? ` · ${fmtNum(hwBoostCount)} ${esc(faceTr('boost'))}` : ''}</div>
                     </td>
                     <td>
                       <div class="mono">${glarePct}% glare (${fmtNum(st.pad_spoof_count || 0)})</div>
@@ -204401,6 +204756,7 @@
     };
     const wallRoleMeta = wallRoleCatalog[kMode] || wallRoleCatalog.sales;
     const wallClockNow = formatKioskWallClockNow();
+    const wallNativeInfo = STATE.kioskLocked ? getAndroidKioskNativeInfo() : null;
 
     const wallHeaderHtml = STATE.kioskLocked ? `
       <div class="kiosk-wall-header" id="kioskWallHeader">
@@ -204417,7 +204773,10 @@
           </svg>
           <div class="kwh-station-meta">
             <strong class="kwh-station-name" id="kioskWallStationName">${esc(kMode === 'attendance' ? STATE.kioskAttSite : defCo)}</strong>
-            <span class="kiosk-wall-role-pill">${wallRoleMeta.icon} <span>${esc(wallRoleMeta.title)}</span></span>
+            <div class="kwh-role-row">
+              <span class="kiosk-wall-role-pill">${wallRoleMeta.icon} <span>${esc(wallRoleMeta.title)}</span></span>
+              ${wallNativeInfo && wallNativeInfo.needsApkUpdate ? `<button type="button" class="kiosk-wall-apk-pill" id="kioskWallApkUpdatePill" aria-label="${esc(faceTr('Android Kiosk APK Update Needed'))}">${ic('warn')} <span>${esc(faceTr('APK Update'))}</span></button>` : ''}
+            </div>
           </div>
         </div>
         <div class="kwh-right">
@@ -206350,6 +206709,13 @@
         openKioskStationAdminModal({ targetAction: 'admin' });
       });
     }
+    const wallApkUpdatePill = $('kioskWallApkUpdatePill');
+    if (wallApkUpdatePill) {
+      wallApkUpdatePill.addEventListener('click', () => {
+        openKioskStationAdminModal({ targetAction: 'admin' });
+      });
+    }
+    scheduleKioskApkMetadataFlushIfNeeded();
     const stationSwitchBtn = $('kioskStationSwitchOpenBtn');
     if (stationSwitchBtn) {
       stationSwitchBtn.addEventListener('click', () => {
@@ -209717,13 +210083,42 @@
             ? 'Transportation (Sup + Cust)'
             : (panelId === 'trdOemPayablesPanel'
               ? 'OEM Suppliers AP'
-              : (panelId === 'trdFreightPayablesPanel' ? 'Freight & Customs AP' : '')));
+              : (panelId === 'trdFreightPayablesPanel'
+                ? 'Freight & Customs AP'
+                : (panelId === 'supPanel' ? 'Suppliers AP' : ''))));
         openSupplierStatementLeg({
           supplier: supName,
           leg: legKey,
           openShare,
           panelId,
           returnLabel: lbl
+        });
+        return;
+      }
+
+      const openCustStmtBtn = t.closest('[data-open-cust-stmt]');
+      if (openCustStmtBtn && container.contains(openCustStmtBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const custName = openCustStmtBtn.getAttribute('data-open-cust-stmt') || '';
+        const openShare = openCustStmtBtn.getAttribute('data-stmt-share') === '1';
+        const panelEl = openCustStmtBtn.closest('.panel-card, .panel');
+        const panelId = openCustStmtBtn.getAttribute('data-stmt-panel') || (panelEl && panelEl.id) || '';
+        const custReturnLabelMap = {
+          custPanel: 'Customer AR',
+          trdReceivablesPanel: 'Customer Receivables',
+          hspMembershipsPanel: 'Seasonal Memberships',
+          reInvoicingPanel: 'Rent Invoices',
+          reLeasesPanel: 'Leases & Rent Roll',
+          reSalesPanel: 'Property Sales',
+          insBillingPanel: 'Instalments & AR',
+          hldDueMatrixPanel: 'Intercompany Matrix'
+        };
+        openCustomerStatement({
+          customer: custName,
+          openShare,
+          panelId,
+          returnLabel: custReturnLabelMap[panelId] || ''
         });
         return;
       }
@@ -212969,12 +213364,22 @@
     if (view !== 'users' && view !== 'kiosks' && (FACE_STATE.enrolCamActive || streamAlive())) {
       stopFaceCamera();
     }
-    if (view !== 'kiosks' && KIOSK_ATT_STATE.camActive) {
-      stopKioskAttCamera();
+    if (view !== 'kiosks') {
+      if (KIOSK_ATT_STATE.camActive) {
+        stopKioskAttCamera();
+      } else if (KIOSK_ATT_STATE.fillLightActive || KIOSK_ATT_STATE.nativeBoostActive) {
+        KIOSK_ATT_STATE.fillLightActive = false;
+        KIOSK_ATT_STATE.lowLightSince = 0;
+        KIOSK_ATT_STATE.fillLightHoldUntil = 0;
+        syncKioskAttViewportVisualState({ forceRelease: true });
+      }
     }
     const prevView = STATE.view;
     if (!(opts && opts._keepInspReturn)) {
       STATE.hubInspectorReturn = null;
+    }
+    if (!(opts && opts._keepStmt14Return) && view !== 'statements') {
+      STATE.stmt14ReturnCtx = null;
     }
     if (!(opts && opts._keepStmt16Return) && view !== 'statements') {
       STATE.stmt16ReturnCtx = null;
@@ -218167,6 +218572,7 @@
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
     openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
+    openCustomerStatement: typeof openCustomerStatement === 'function' ? openCustomerStatement : null,
     openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
     canPostStmt16MissingRow: typeof canPostStmt16MissingRow === 'function' ? canPostStmt16MissingRow : null,
     openStmt16MissingSlip: typeof openStmt16MissingSlip === 'function' ? openStmt16MissingSlip : null,
@@ -218280,6 +218686,7 @@
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeSupplierStatement16Vouchers: typeof computeSupplierStatement16Vouchers === 'function' ? computeSupplierStatement16Vouchers : null,
     openSupplierStatementLeg: typeof openSupplierStatementLeg === 'function' ? openSupplierStatementLeg : null,
+    openCustomerStatement: typeof openCustomerStatement === 'function' ? openCustomerStatement : null,
     openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
     canPostStmt16MissingRow: typeof canPostStmt16MissingRow === 'function' ? canPostStmt16MissingRow : null,
     openStmt16MissingSlip: typeof openStmt16MissingSlip === 'function' ? openStmt16MissingSlip : null,

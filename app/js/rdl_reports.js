@@ -1417,9 +1417,17 @@
     const sel = String(selectedName == null ? '' : selectedName).trim();
     if (!sel || sel === 'ALL') return sel;
     if (Array.isArray(pool) && pool.includes(sel)) return sel;
+    const selLow = sel.toLowerCase();
+    const ciDirect = Array.isArray(pool) ? pool.find(p => String(p).toLowerCase() === selLow) : null;
+    if (ciDirect) return ciDirect;
     const mapped = _rdlResolveRollup(ctx && ctx.ind, partyType, sel, ctx && ctx.co, '');
-    if (mapped && Array.isArray(pool) && pool.includes(mapped)) return mapped;
-    return sel;
+    if (mapped && Array.isArray(pool)) {
+      if (pool.includes(mapped)) return mapped;
+      const mapLow = String(mapped).toLowerCase();
+      const ciMapped = pool.find(p => String(p).toLowerCase() === mapLow);
+      if (ciMapped) return ciMapped;
+    }
+    return mapped || sel;
   }
 
   function _rdlRollupRecordParty(r, ind, co, basis, partyType, field) {
@@ -5646,9 +5654,18 @@
     const { lSoa14, isMfg, dt, custName, periodRows, openDr, openCr, openBal, totDr, totCr, totM3, closingBal, bd14, siteList, from, to } = m;
     let runBal = openBal;
     const dash = '-';
+    const stObj14 = (ctx && ctx.state) || (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || {};
+    const retCtx14 = stObj14.stmt14ReturnCtx
+      && String(stObj14.stmt14ReturnCtx.company || '') === String(stObj14.company || '')
+      && (stObj14.stmt14ReturnCtx.userIdx === undefined || stObj14.stmt14ReturnCtx.userIdx === stObj14.activeUserIdx)
+      ? stObj14.stmt14ReturnCtx
+      : null;
+    const retBtn14Html = retCtx14
+      ? `<button type="button" class="rdl-tb-btn" data-stmt14-return="1"><span>Back to</span> <span>${esc(retCtx14.label || 'Receivables')}</span></button>`
+      : '';
     const canShare14 = Boolean(lSoa14.books && !(ctx.state && ctx.state.kioskLocked) && custName && custName !== 'ALL');
-    const actions14Html = canShare14
-      ? `<div class="rdl-stmt16-actions no-print"><div class="rdl-stmt16-btn-group"></div><div class="rdl-stmt16-btn-group"><button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt14ShareConfirmBtn">${ic('send_msg')} <span>Share Statement</span></button></div></div>`
+    const actions14Html = (retBtn14Html || canShare14)
+      ? `<div class="rdl-stmt16-actions no-print"><div class="rdl-stmt16-btn-group">${retBtn14Html}</div><div class="rdl-stmt16-btn-group">${canShare14 ? `<button type="button" class="rdl-tb-btn rdl-stmt16-share-btn" id="stmt14ShareConfirmBtn">${ic('send_msg')} <span>Share Statement</span></button>` : ''}</div></div>`
       : '';
 
     return `
@@ -7259,7 +7276,7 @@
     const stObj = (ent && ent.STATE) || window.STATE || {};
     const ctx = ctxOverride || buildRdlContext(seedObj, stObj);
     const m = buildStmt16Model(ctx);
-    if (!m.lAp16.books && !m.lAp16.expenses) return false;
+    if ((ctx.state && ctx.state.kioskLocked) || (!m.lAp16.books && !m.lAp16.expenses)) return false;
     const canBooks = Boolean(m.lAp16 && m.lAp16.books);
     const cmpNow = (opts && opts.cmp)
       || (_stmt16CompareState.open && String(_stmt16CompareState.text || '').trim()
@@ -7387,7 +7404,9 @@
       ? compareStmt16WithVendorRows(ctx, m, _stmt16CompareState.text, { scope: _stmt16CompareState.scopeMode })
       : null;
     _stmt16CompareState.lastResult = cmpResult;
-    const retCtx = stObj.stmt16ReturnCtx && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
+    const retCtx = stObj.stmt16ReturnCtx
+      && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
+      && (stObj.stmt16ReturnCtx.userIdx === undefined || stObj.stmt16ReturnCtx.userIdx === stObj.activeUserIdx)
       ? stObj.stmt16ReturnCtx
       : null;
     const retBtnHtml = retCtx ? `<button type="button" class="rdl-tb-btn" data-stmt16-return="1"><span>Back to</span> <span>${esc(retCtx.label || 'Payables')}</span></button>` : '';
@@ -11459,6 +11478,34 @@
           }
           return;
         }
+        const retBtn14 = ev.target && ev.target.closest ? ev.target.closest('[data-stmt14-return]') : null;
+        if (retBtn14 && root.contains(retBtn14)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const ent = window.MFG_ENTERPRISE;
+          const stObj = (ent && ent.STATE) || window.STATE;
+          const ret = stObj && stObj.stmt14ReturnCtx;
+          if (ret && ret.view && (ret.userIdx === undefined || ret.userIdx === stObj.activeUserIdx) && ent && typeof ent.setView === 'function') {
+            stObj.stmt14ReturnCtx = null;
+            if (ret.chipFilter != null) stObj.chipFilter = ret.chipFilter;
+            if (ret.search != null) stObj.search = ret.search;
+            if (ret.colFilters && typeof ret.colFilters === 'object') stObj.colFilters = ret.colFilters;
+            ent.setView(ret.view, { reset: false });
+            setTimeout(() => {
+              if (window.MFG_HUBS && typeof window.MFG_HUBS.releaseLaterBlocks === 'function') {
+                window.MFG_HUBS.releaseLaterBlocks();
+              }
+              const wsEl = document.getElementById('workspace');
+              if (ret.scrollTop > 0 && wsEl) {
+                wsEl.scrollTop = ret.scrollTop;
+              } else {
+                const pnl = ret.panelId ? document.getElementById(ret.panelId) : null;
+                if (pnl && typeof pnl.scrollIntoView === 'function') pnl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }, 60);
+          }
+          return;
+        }
         const retBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-return]') : null;
         if (retBtn && root.contains(retBtn)) {
           ev.preventDefault();
@@ -11466,12 +11513,23 @@
           const ent = window.MFG_ENTERPRISE;
           const stObj = (ent && ent.STATE) || window.STATE;
           const ret = stObj && stObj.stmt16ReturnCtx;
-          if (ret && ret.view && ent && typeof ent.setView === 'function') {
+          if (ret && ret.view && (ret.userIdx === undefined || ret.userIdx === stObj.activeUserIdx) && ent && typeof ent.setView === 'function') {
             stObj.stmt16ReturnCtx = null;
-            ent.setView(ret.view);
+            if (ret.chipFilter != null) stObj.chipFilter = ret.chipFilter;
+            if (ret.search != null) stObj.search = ret.search;
+            if (ret.colFilters && typeof ret.colFilters === 'object') stObj.colFilters = ret.colFilters;
+            ent.setView(ret.view, { reset: false });
             setTimeout(() => {
-              const pnl = ret.panelId ? document.getElementById(ret.panelId) : null;
-              if (pnl && typeof pnl.scrollIntoView === 'function') pnl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              if (window.MFG_HUBS && typeof window.MFG_HUBS.releaseLaterBlocks === 'function') {
+                window.MFG_HUBS.releaseLaterBlocks();
+              }
+              const wsEl = document.getElementById('workspace');
+              if (ret.scrollTop > 0 && wsEl) {
+                wsEl.scrollTop = ret.scrollTop;
+              } else {
+                const pnl = ret.panelId ? document.getElementById(ret.panelId) : null;
+                if (pnl && typeof pnl.scrollIntoView === 'function') pnl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
             }, 60);
           }
           return;

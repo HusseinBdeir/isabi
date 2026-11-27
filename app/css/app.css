@@ -18863,6 +18863,21 @@ body.kiosk-locked.is-att-fill-light .kiosk-att-shell.is-wall-mode {
   color: var(--ink);
   max-width: 280px;
 }
+.kiosk-opt-apk-flag {
+  font-weight: 700;
+}
+.kiosk-opt-apk-flag.is-warn {
+  color: #B45309;
+}
+.kiosk-opt-apk-flag.is-ok {
+  color: #15803D;
+}
+:root[data-theme="dark"] .kiosk-opt-apk-flag.is-warn {
+  color: #FCD34D;
+}
+:root[data-theme="dark"] .kiosk-opt-apk-flag.is-ok {
+  color: #6EE7B7;
+}
 .kiosk-opt-local-card {
   margin-top: 8px;
   padding: 8px 10px;
@@ -33585,6 +33600,41 @@ body.kiosk-locked #workspace {
   height: 12px;
   color: var(--brass);
 }
+.kwh-role-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.kiosk-wall-apk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(217, 119, 6, 0.42);
+  color: #92400E;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.kiosk-wall-apk-pill svg {
+  width: 12px;
+  height: 12px;
+  color: #D97706;
+}
+:root[data-theme="dark"] .kiosk-wall-apk-pill {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(251, 191, 36, 0.44);
+  color: #FCD34D;
+}
+:root[data-theme="dark"] .kiosk-wall-apk-pill svg {
+  color: #FBBF24;
+}
 .kwh-right {
   display: flex;
   align-items: center;
@@ -33647,7 +33697,8 @@ body.kiosk-locked #workspace {
     max-width: 100%;
     font-size: 13.5px;
   }
-  .kiosk-wall-role-pill {
+  .kiosk-wall-role-pill,
+  .kiosk-wall-apk-pill {
     font-size: 10.5px;
     padding: 1px 7px;
   }
