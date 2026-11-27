@@ -82,6 +82,7 @@ jobs:
           python3 build/verify_deploy_cli.py
           # The checks a PC deploy relies on: Edge entry files parse, the schema file can run on every deploy.
           python3 build/verify_deploy_preflight.py
+          python3 build/verify_pwa_ios_contract.py
           # A deploy never replaces the live signing secret unless asked (--rotate-secrets).
           python3 build/verify_jwt_secret_keep.py
           python3 build/verify_version_claims.py

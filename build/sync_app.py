@@ -119,6 +119,7 @@ RELEASE_GATES = [
     ("isabi", "build/verify_kiosk_cloud.mjs", "node"),               # tablet kiosk routes: station keys, pos_sales, <site>__att
     ("isabi", "build/verify_build_ticket.mjs", "node"),              # build-ticket sign-in through the real Edge router
     ("isabi", "build/verify_build_ticket_guard.py", "python"),       # build scripts never issue a ticket in a gate or a dry run
+    ("isabi", "build/verify_pwa_ios_contract.py", "python"),      # iOS 26/27 standalone CSS, top-header backdrop-filter & ?v= contract
 ]
 
 
