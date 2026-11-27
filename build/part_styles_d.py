@@ -1288,7 +1288,49 @@ html[dir="rtl"] .d-flip { transform: scaleX(-1); }
   .d-logo, .d-btn, .d-nav a { transition: none; }
 }
 @media print {
-  .d-header, .d-foot-more, .d-strip, .d-tour-backdrop { display: none !important; }
+  .d-header, .d-foot-more, .d-strip, .d-tour-backdrop, .pwa-status-bar-surface { display: none !important; }
   .d-page { min-height: 0; break-inside: avoid; }
+}
+.pwa-status-bar-surface { display: none; }
+@supports (-webkit-touch-callout: none) and (background-clip: text) {
+  @media (display-mode: standalone) {
+    .pwa-status-bar-surface {
+      display: block;
+      position: fixed;
+      inset: 0 0 auto 0;
+      width: 100%;
+      height: 12px;
+      z-index: 2147483647;
+      pointer-events: none;
+      background-color: var(--d-bg);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
+}
+@supports (-webkit-touch-callout: none) {
+  html.ios-standalone {
+    --ios-pwa-top-clear: calc(max(env(safe-area-inset-top, 0px), 52px) + 28px);
+    scroll-padding-top: calc(var(--ios-pwa-top-clear) + 74px);
+  }
+  @media (min-width: 744px) {
+    html.ios-standalone {
+      --ios-pwa-top-clear: calc(max(env(safe-area-inset-top, 0px), 24px) + 20px);
+    }
+  }
+  @media (orientation: landscape) and (max-height: 499px) {
+    html.ios-standalone {
+      --ios-pwa-top-clear: calc(env(safe-area-inset-top, 0px) + 8px);
+    }
+  }
+  html.ios-standalone .d-header,
+  html.ios-standalone .site-header,
+  html.ios-standalone .ai-drawer-hdr {
+    padding-top: var(--ios-pwa-top-clear);
+    background: var(--d-bg);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
 }
 """
