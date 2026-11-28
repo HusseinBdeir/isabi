@@ -233,4 +233,223 @@
     svg: svg,
     nav: nav
   };
+
+  // Universal deterministic entity-name capitalization helper (names of people, places, items,
+  // counterparties, equipment, roles, and categories across all 6 verticals & kiosks).
+  const CAP_CONNECTOR_WORDS = new Set([
+    'of', 'and', 'for', 'in', 'on', 'to', 'by', 'with', 'at', 'from',
+    'or', 'nor', 'per', 'vs', 'via', 'sur', 'de', 'du', 'des', 'chez'
+  ]);
+  const CAP_ALWAYS_UNIT_TOKENS = new Set([
+    'm³', 'm²', 'm3', 'm2', 'kg', 'km', 'cm', 'mm', 'ml', 'mg',
+    'kw', 'kva', 'kwh', 'kwp', 'hp', 'psi', 'rpm', 'ah', 'hz', 'pcs', 'pc'
+  ]);
+  const CAP_DIGIT_UNIT_TOKENS = new Set(['g', 'l', 'm', 't', 'bar', 'hr', 'hrs', 'min', 'mins', 'sec']);
+  const CAP_APOS_SUFFIXES = new Set(['s', 't', 're', 've', 'll', 'd', 'm']);
+  const CAP_LOWER_CHECK_RE = /[a-z\u00e0-\u00f6\u00f8-\u00ff]/;
+  const CAP_EMAIL_OR_URL_RE = /@|https?:\/\/|^www\./i;
+  const CAP_FILENAME_RE = /\.(?:pdf|jpe?g|png|webp|gif|svg|csv|xlsx?|docx?|json|txt|zip|mp4|mov|html?|xml)$/i;
+  const CAP_SENTINEL_RE = /^\((?:no site on ticket|unassigned|unspecified|open)\)$/i;
+  const CAP_LITERAL_SKIP_RE = /^(?:none|null|undefined|true|false|__empty__|__nonempty__)$/i;
+  const CAP_INTERNAL_ID_RE = /^(?:[a-z]{2,4}_[0-9a-f]{8,}|stf_seed_|ws_seed_|dt_\d{4}|[a-z]{2}-m[a-z0-9]{6,}-)/;
+  const CAP_TOKEN_RE = /[A-Za-z0-9\u00B2\u00B3\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+(?:\.[A-Za-z0-9\u00B2\u00B3\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+)*\.?/g;
+
+  const ENTITY_NAME_COLS = new Set([
+    'name', 'customer', 'Customer', 'supplier', 'Supplier', 'official_name',
+    'site_owner', 'truck_owner', 'jv_partner', 'driver', 'default_driver',
+    'day_operator', 'night_operator', 'staff', 'staff_name', 'full_name',
+    'father_name', 'mother_name', 'nationality', 'contact', 'reported_by', 'counterparty',
+    'borrower', 'lender', 'partner', 'partners_summary', 'party', 'vendor', 'tenant', 'buyer',
+    'client', 'insured', 'policyholder', 'carrier', 'broker', 'adjuster', 'producer',
+    'beneficiary', 'member', 'member_corporate_account', 'guest', 'cashier', 'contractor', 'inspector', 'appraiser',
+    'operator', 'owner_name', 'holder', 'co_ownership_holder', 'freight_vendor', 'insured_client', 'insurer',
+    'site', 'Site', 'region', 'Region', 'geo_zone', 'location',
+    'warehouse_location', 'storage_location', 'default_location', 'address',
+    'zone', 'property', 'property_name', 'property_unit', 'property_asset', 'unit_floor', 'chalet_unit', 'tier_unit_scope', 'building', 'unit_name', 'venue',
+    'outlet', 'warehouse', 'store', 'from_wh', 'to_wh', 'origin', 'origin_port', 'port', 'corridor', 'destination',
+    'product', 'Product', 'product_name', 'Material Family', 'family', 'input_product', 'item', 'item_detail',
+    'item_name', 'item_group', 'item_summary', 'items_summary', 'items_desc', 'part_name', 'part_description', 'equipment',
+    'Equipment', 'target_equipment', 'default_equipment', 'asset', 'insured_asset_census', 'truck', 'model',
+    'category', 'category_segment', 'risk_category', 'subcategory', 'role', 'role_category', 'worker_category',
+    'subsystem', 'oil_type', 'peril', 'line', 'carrier_line', 'line_product', 'plan_name', 'tariff_name', 'asset_name',
+    'facility', 'line_name', 'detail', 'oem_supplier', 'technician', 'payee', 'entity', 'terminal', 'chalet', 'cabana', 'tier', 'area', 'building_unit'
+  ]);
+  const NON_ENTITY_COLS = new Set([
+    'id', 'expense_id', 'parent_id', 'user_id', 'staff_id', 'repair_id',
+    'code', 'shift_code', 'item_code', 'line_code', 'gl_code', 'gl_payable',
+    'tax_seq', 'seq_no', 'cadastry', 'plot_no', 'identifier', 'location_or_vin',
+    'doc_ref', 'receipt_ref', 'container_bl', 'container_ref', 'import_file',
+    'plate_no', 'plate', 'chassis', 'chassis_vin', 'engine_no', 'vin', 'ticket_no',
+    'invoice', 'invoice_no', 'policy_no', 'reference', 'mof_no', 'nssf_no',
+    'work_permit_no', 'residency_no', 'phone', 'email', 'uom', 'unit',
+    'rate_per', 'currency', 'from_currency', 'to_currency', 'status', 'kind',
+    'type', 'method', 'source', 'book_scope', 'notes', 'description',
+    'audit_flag', 'wb_truck', 'external_invoice', 'company', 'bu', 'industry'
+  ]);
+
+  function capFirstWordChar(tok) {
+    if (!tok) return tok;
+    let out = tok;
+    const ch = out.charAt(0);
+    if (CAP_LOWER_CHECK_RE.test(ch)) {
+      const up = ch.toUpperCase();
+      if (up !== ch) out = up + out.slice(1);
+    }
+    if (out.indexOf('.') > 0) {
+      out = out.replace(/(\.)([a-z\u00e0-\u00f6\u00f8-\u00ff])/g, (all, dot, c) => dot + c.toUpperCase());
+    }
+    return out;
+  }
+
+  const CAP_NAME_MEMO = new Map();
+  const CAP_MEMO_LIMIT = 8192;
+  function _memoCapSet(raw, res) {
+    if (raw.length <= 160) {
+      if (CAP_NAME_MEMO.size >= CAP_MEMO_LIMIT) CAP_NAME_MEMO.clear();
+      CAP_NAME_MEMO.set(raw, res);
+    }
+    return res;
+  }
+
+  function capitalizeEntityName(raw) {
+    if (typeof raw !== 'string' || !raw) return raw;
+    const memoHit = CAP_NAME_MEMO.get(raw);
+    if (memoHit !== undefined) return memoHit;
+    if (!CAP_LOWER_CHECK_RE.test(raw)) return _memoCapSet(raw, raw);
+    const trimmed = raw.trim();
+    if (!trimmed) return raw;
+    if (CAP_EMAIL_OR_URL_RE.test(trimmed) || CAP_FILENAME_RE.test(trimmed) ||
+        CAP_SENTINEL_RE.test(trimmed) || CAP_LITERAL_SKIP_RE.test(trimmed) ||
+        CAP_INTERNAL_ID_RE.test(trimmed)) {
+      return _memoCapSet(raw, raw);
+    }
+    let out = '';
+    let lastEnd = 0;
+    let changed = false;
+    CAP_TOKEN_RE.lastIndex = 0;
+    let m;
+    while ((m = CAP_TOKEN_RE.exec(raw)) !== null) {
+      const tok = m[0];
+      const idx = m.index;
+      const gap = raw.slice(lastEnd, idx);
+      if (gap) out += gap;
+      let rep = tok;
+      const prevChar = idx > 0 ? raw.charAt(idx - 1) : '';
+      const prevPrevChar = idx > 1 ? raw.charAt(idx - 2) : '';
+      const isAposCont = (prevChar === "'" || prevChar === '\u2019') && /[A-Za-z\u00C0-\u00FF]/.test(prevPrevChar);
+      const isPhraseStart = lastEnd === 0 || /[:\u00b7\u2022(\[\u2014\u2013/\n]|(?:^|\s)-\s*$/.test(gap);
+      const low = tok.toLowerCase();
+      if (prevChar === '#') {
+        rep = tok;
+      } else if (isAposCont && CAP_APOS_SUFFIXES.has(low)) {
+        rep = tok;
+      } else if (/^x\d{1,2}(?:\.\d+)?$/i.test(tok) || /^\d+x\d+(?:x\d+)?$/i.test(tok)) {
+        rep = tok;
+      } else if (low === 'jv') {
+        rep = 'JV';
+      } else if (low === 'sarl') {
+        rep = 'SARL';
+      } else if (low === 's.a.r.l' || low === 's.a.r.l.') {
+        rep = low.endsWith('.') ? 'S.A.R.L.' : 'S.A.R.L';
+      } else if (low === 's.a.l' || low === 's.a.l.') {
+        rep = low.endsWith('.') ? 'S.A.L.' : 'S.A.L';
+      } else if (CAP_ALWAYS_UNIT_TOKENS.has(low) && !isPhraseStart) {
+        rep = tok;
+      } else if (CAP_ALWAYS_UNIT_TOKENS.has(low) && raw.trim() === tok) {
+        rep = tok;
+      } else if (CAP_DIGIT_UNIT_TOKENS.has(low) && /\d\s*$/.test(raw.slice(0, idx))) {
+        rep = tok;
+      } else if (!isPhraseStart && CAP_CONNECTOR_WORDS.has(low)) {
+        rep = tok;
+      } else if (CAP_LOWER_CHECK_RE.test(tok.charAt(0))) {
+        rep = capFirstWordChar(tok);
+      }
+      if (rep !== tok) changed = true;
+      out += rep;
+      lastEnd = idx + tok.length;
+    }
+    if (!changed) return _memoCapSet(raw, raw);
+    if (lastEnd < raw.length) out += raw.slice(lastEnd);
+    return _memoCapSet(raw, out);
+  }
+
+  function isEntityCol(colKey, tableKey) {
+    if (!colKey || typeof colKey !== 'string' || colKey.charCodeAt(0) === 95) return false;
+    if (colKey === 'doc' && tableKey === 'soa_stream') return true;
+    if (colKey === 'unit' && /^(?:hsp_|re_|hospitality|realestate|membershipRows|leases|re_sales|units|workorders)/i.test(String(tableKey || ''))) return true;
+    if (NON_ENTITY_COLS.has(colKey)) return false;
+    if (colKey === 'name' && tableKey === 'uoms') return false;
+    return ENTITY_NAME_COLS.has(colKey);
+  }
+
+  const HEADER_NON_ENTITY_RE = /(?:^|_)(?:id|no|num|ref|code|sku|seq|vin|chassis|plate|plot|cadastry|date|time|month|year|days|hrs|hours|min|mins|qty|quantity|count|loads|entries|bills|jobs|amount|total|price|cost|rate|tax|vat|fee|discount|payable|receivable|balance|settled|billed|collected|paid|margin|profit|spend|budget|actual|variance|status|stage|mode|method|direction|flow|flag|notes|note|email|phone|company|bu|industry)$/;
+  function isEntityHeader(headerLabel, tableKey) {
+    if (!headerLabel || typeof headerLabel !== 'string') return false;
+    if (/[$%]|#\s*$|\b(?:usd|lbp|l\.l\.?|sqm|m2|m3)\b|m²|m³|\(\s*(?:m2|m3|kg|t|l|km|%|usd|lbp|hrs|days)\s*\)/i.test(headerLabel)) return false;
+    const cleanLabel = headerLabel.replace(/\([^)]*\)/g, ' ').trim();
+    const fullSlug = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    if (!fullSlug) return false;
+    if (isEntityCol(fullSlug, tableKey)) return true;
+    if (NON_ENTITY_COLS.has(fullSlug) || HEADER_NON_ENTITY_RE.test(fullSlug)) return false;
+    const parts = cleanLabel.split(/[\/&,+·]+/);
+    for (let i = 0; i < parts.length; i++) {
+      const pslug = parts[i].trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      if (!pslug || NON_ENTITY_COLS.has(pslug) || HEADER_NON_ENTITY_RE.test(pslug)) {
+        if (pslug === 'unit' && isEntityCol('unit', tableKey)) return true;
+        continue;
+      }
+      if (isEntityCol(pslug, tableKey)) return true;
+      const words = pslug.split('_').filter(Boolean);
+      if (words.length >= 2 && isEntityCol(words[words.length - 1], tableKey)) return true;
+    }
+    return false;
+  }
+
+  function capField(colKey, val, tableKey) {
+    if (typeof val !== 'string' || !val || !isEntityCol(colKey, tableKey)) return val;
+    return capitalizeEntityName(val);
+  }
+
+  function polishRowInPlace(row, tableKey) {
+    if (!row || typeof row !== 'object') return row;
+    const keys = Object.keys(row);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!isEntityCol(k, tableKey)) continue;
+      const v = row[k];
+      if (typeof v === 'string' && v) {
+        const c = capitalizeEntityName(v);
+        if (c !== v) row[k] = c;
+      }
+    }
+    return row;
+  }
+
+  function polishRowCopy(row, tableKey) {
+    if (!row || typeof row !== 'object') return row;
+    let clone = null;
+    const keys = Object.keys(row);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!isEntityCol(k, tableKey)) continue;
+      const v = row[k];
+      if (typeof v === 'string' && v) {
+        const c = capitalizeEntityName(v);
+        if (c !== v) {
+          if (!clone) clone = Object.assign({}, row);
+          clone[k] = c;
+        }
+      }
+    }
+    return clone || row;
+  }
+
+  window.MFG_CAP = {
+    name: capitalizeEntityName,
+    field: capField,
+    isEntityCol: isEntityCol,
+    isEntityHeader: isEntityHeader,
+    polishRowInPlace: polishRowInPlace,
+    polishRowCopy: polishRowCopy
+  };
 })();

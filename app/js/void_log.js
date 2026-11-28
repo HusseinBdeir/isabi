@@ -602,6 +602,17 @@
         const n = parseMoneyNumber(sv);
         if (n !== null) return fmtNum(n);
       }
+      if (!isCellField) return capVoidVal(k, sv, crKey || '');
+      const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+      if (capOn) {
+        if (typeof capOn.isEntityHeader === 'function') {
+          if (capOn.isEntityHeader(lbl, crKey || '')) return capOn.name(sv);
+        } else {
+          const segs = String(lbl || '').split(/[\s/&,-]+/).map(x => x.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')).filter(Boolean);
+          const matchCol = segs.find(seg => capOn.isEntityCol(seg, crKey || ''));
+          if (matchCol) return capVoidVal(matchCol, sv, crKey || '');
+        }
+      }
       return sv;
     };
 
@@ -747,15 +758,27 @@
     return String(raw || '').slice(0, 10);
   }
 
+  function capVoidVal(colKey, val, tblKey) {
+    const s = String(val == null ? '' : val).trim();
+    if (!s || typeof window === 'undefined' || !window.MFG_CAP) return s;
+    return window.MFG_CAP.field(colKey, s, tblKey);
+  }
+
   function buildRecordSummary(rec, crKey) {
     if (!rec || typeof rec !== 'object') return String(crKey || 'Record');
     const parts = [];
     const primaryRef = rec.name || rec.ticket_no || rec.invoice_no || rec.voucher_no || rec.plate || rec.code || '';
-    if (primaryRef) parts.push(String(primaryRef).trim());
+    if (primaryRef) parts.push(capVoidVal(rec.name ? 'name' : 'code', primaryRef, crKey));
     const party = rec.customer || rec.supplier || rec.staff || rec.driver || rec.equipment || rec.party || rec.counterparty || '';
-    if (party && String(party).trim() !== String(primaryRef).trim()) parts.push(String(party).trim());
+    if (party && String(party).trim() !== String(primaryRef).trim()) {
+      const partyCol = rec.customer ? 'customer' : (rec.supplier ? 'supplier' : (rec.staff ? 'staff' : (rec.driver ? 'driver' : (rec.equipment ? 'equipment' : 'counterparty'))));
+      parts.push(capVoidVal(partyCol, party, crKey));
+    }
     const detail = rec.product || rec.category || rec.item || rec.role || rec.region || rec.subject || rec.description || rec.notes || '';
-    if (detail && parts.length < 2) parts.push(String(detail).trim());
+    if (detail && parts.length < 2) {
+      const detCol = rec.product ? 'product' : (rec.category ? 'category' : (rec.item ? 'item' : (rec.role ? 'role' : (rec.region ? 'region' : 'notes'))));
+      parts.push(capVoidVal(detCol, detail, crKey));
+    }
     if (!parts.length && rec.id) parts.push(String(rec.id).trim());
     return parts.join(' · ').slice(0, 140) || 'Voided record';
   }
@@ -775,29 +798,29 @@
     let partyName = '';
     let partyRelKey = '';
     const partyCandidates = [
-      ['customers', rec.customer],
-      ['suppliers', rec.supplier],
-      ['staff_members', rec.staff],
-      ['drivers', rec.driver],
-      ['equipment', rec.equipment],
-      ['', rec.counterparty || s.counterparty],
-      ['', rec.member || rec.tenant || rec.buyer || rec.carrier || rec.client || rec.party || rec.outlet]
+      ['customers', 'customer', rec.customer],
+      ['suppliers', 'supplier', rec.supplier],
+      ['staff_members', 'staff', rec.staff],
+      ['drivers', 'driver', rec.driver],
+      ['equipment', 'equipment', rec.equipment],
+      ['', 'counterparty', rec.counterparty || s.counterparty],
+      ['', 'party', rec.member || rec.tenant || rec.buyer || rec.carrier || rec.client || rec.party || rec.outlet]
     ];
-    for (const [rk, val] of partyCandidates) {
+    for (const [rk, ck, val] of partyCandidates) {
       const sv = String(val || '').trim();
       if (sv) {
-        partyName = sv;
+        partyName = capVoidVal(ck || 'counterparty', sv, crKey);
         partyRelKey = rk;
         break;
       }
     }
     if (!partyName && rec.site) {
-      partyName = String(rec.site).trim();
+      partyName = capVoidVal('site', rec.site, crKey);
       partyRelKey = 'sites';
     }
 
     const tktNo = String(rec.ticket_no || rec.invoice_no || rec.voucher_no || '').trim();
-    const rawName = String(rec.name || rec.plate || rec.code || '').trim();
+    const rawName = capVoidVal(rec.name ? 'name' : 'code', rec.name || rec.plate || rec.code || '', crKey);
     let refCode = '';
     if (tktNo) {
       const cleanTkt = tktNo.startsWith('#') ? tktNo : `#${tktNo}`;
@@ -820,14 +843,14 @@
     } else {
       const qtyVal = rec.qty != null && rec.qty !== '' ? `${rec.qty}${rec.uom ? ' ' + rec.uom : ''}` : '';
       const bits = [
-        rec.product,
+        capVoidVal('product', rec.product, crKey),
         qtyVal,
-        rec.site && norm(rec.site) !== norm(partyName) ? rec.site : '',
-        rec.category,
-        rec.item,
+        rec.site && norm(rec.site) !== norm(partyName) ? capVoidVal('site', rec.site, crKey) : '',
+        capVoidVal('category', rec.category, crKey),
+        capVoidVal('item', rec.item, crKey),
         rec.method,
-        rec.role,
-        rec.unit,
+        capVoidVal('role', rec.role, crKey),
+        capVoidVal(/^(?:hsp_|re_)/i.test(String(crKey || '')) ? 'unit_name' : 'unit', rec.unit, crKey),
         rec.season,
         rec.subject,
         rec.description,
@@ -918,6 +941,8 @@
         ? L('System Sync', 'مزامنة النظام', 'Synchro système')
         : L('Supervisor', 'المشرف', 'Superviseur');
       actorKey = originGroup === 'system' ? 'sync::generic' : 'Supervisor';
+    } else {
+      actorDisplay = capVoidVal('staff', actorDisplay, '') || actorDisplay;
     }
 
     return { systemKind, originGroup, actorDisplay, actorKey, twinIds, twinDiff };
@@ -1508,7 +1533,10 @@
           company: coEff || 'Shared',
           industry: meta.industry,
           date: effectiveRecordDate(r, snap) || String(r.due_date || (ed && ed.date) || '').slice(0, 10),
-          summary: String([pid, r.counterparty || snap.counterparty || (ed && ed.counterparty) || r.customer || r.supplier || r.tenant || r.entity || r.outlet || r.notes || ''].filter(Boolean).join(' · ')).slice(0, 140),
+          summary: String([pid, (() => {
+            const rp = r.counterparty || snap.counterparty || (ed && ed.counterparty) || r.customer || r.supplier || r.tenant || r.entity || r.outlet || r.property || r.buyer || r.member || r.client || r.carrier || r.asset || r.item || r.name || r.partner || r.contractor || r.operator || r.lender || r.borrower || '';
+            return rp ? capVoidVal('counterparty', rp, bucket) : (disp.partyName || r.notes || '');
+          })()].filter(Boolean).join(' · ')).slice(0, 140),
           refCode: disp.refCode || pid,
           partyName: disp.partyName,
           partyRelKey: disp.partyRelKey,
@@ -1587,7 +1615,7 @@
         company: meta.company || 'Shared',
         industry: meta.industry,
         date: effectiveRecordDate(ed, snap),
-        summary: String([pid, snap.counterparty || ed.counterparty || ''].filter(Boolean).join(' · ')).slice(0, 140),
+        summary: String([pid, capVoidVal('counterparty', snap.counterparty || ed.counterparty || disp.partyName || '', tblKeyEff)].filter(Boolean).join(' · ')).slice(0, 140),
         refCode: disp.refCode || pid,
         partyName: disp.partyName,
         partyRelKey: disp.partyRelKey,
@@ -1649,12 +1677,12 @@
           company: co || 'La Una',
           industry: 'Hospitality & Resorts',
           date: String(pv.day || '').slice(0, 10),
-          summary: `${ticketLabel} · ${pv.summary || 'Gate Till Sale'}`,
+          summary: `${ticketLabel} · ${capVoidVal('item_name', String(pv.summary || 'Gate Till Sale'), 'pos_till')}`,
           refCode: ticketLabel,
-          partyName: String(pv.user_name || co || 'Gate Till'),
+          partyName: capVoidVal('staff', String(pv.user_name || co || 'Gate Till'), 'pos_till'),
           partyRelKey: '',
           partyInRegistry: false,
-          detailLine: String(pv.summary || 'Gate Till Sale').slice(0, 110),
+          detailLine: capVoidVal('item_name', String(pv.summary || 'Gate Till Sale').slice(0, 110), 'pos_till'),
           amountUsd: posAmtUsd,
           amountMasked: false,
           origAmountUsd: null,
@@ -1664,8 +1692,8 @@
           fieldDiffs: [],
           timeline: [],
           preVoidSearchText: '',
-          voidedBy: byRaw,
-          actorDisplay: byRaw,
+          voidedBy: capVoidVal('staff', byRaw, 'pos_till'),
+          actorDisplay: capVoidVal('staff', byRaw, 'pos_till'),
           actorKey: byRaw,
           voidedAt: voidedAtRaw,
           voidedDayIso: extractVoidedDayIso(voidedAtRaw),
@@ -3444,9 +3472,9 @@
         hits.push({
           tbl,
           id: rid,
-          label: row.name || row.ticket_no || row.invoice_no || row.staff || rid,
+          label: capVoidVal(row.name ? 'name' : 'code', row.name || row.ticket_no || row.invoice_no || row.staff || rid, tbl) || rid,
           date: formatDateDMY(row.date || row.start_date || ''),
-          party: row.customer || row.supplier || row.staff || row.party || '',
+          party: capVoidVal(row.customer ? 'customer' : (row.supplier ? 'supplier' : (row.staff ? 'staff' : 'party')), row.customer || row.supplier || row.staff || row.party || '', tbl),
           amtUsd: amt,
           amtMasked
         });
@@ -3501,11 +3529,11 @@
     const detailRows = [];
 
     detailRows.push(['Record ID', entry.id]);
-    detailRows.push(['Entity', entry.company]);
+    detailRows.push(['Entity', capVoidVal('entity', entry.company, entry.crKey || '')]);
     detailRows.push(['Industry', entry.industry]);
     detailRows.push(['Module', entry.moduleLabel]);
     detailRows.push(['Record Date', formatDateDMY(entry.date)]);
-    detailRows.push(['Voided By', entry.voidedBy]);
+    detailRows.push(['Voided By', entry.actorDisplay || entry.voidedBy]);
     detailRows.push(['Voided At', formatStampShort(entry.voidedAt)]);
     if (entry.noteUpdatedBy) detailRows.push(['Note Updated By', `${entry.noteUpdatedBy} (${formatStampShort(entry.noteUpdatedAt)})`]);
 
@@ -3516,7 +3544,17 @@
         const val = snapCells[i];
         if (val !== undefined && val !== '') {
           const hStr = String(h || `Field ${i + 1}`);
-          const disp = (hidePayField && moneyFieldRe.test(hStr)) ? tr('Confidential') : String(val);
+          const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+          let rawDisp = String(val);
+          if (typeof val === 'string' && val) {
+            if (capOn && typeof capOn.isEntityHeader === 'function' && capOn.isEntityHeader(hStr, entry.crKey || '')) {
+              rawDisp = capOn.name(val);
+            } else {
+              const hk = hStr.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+              rawDisp = capVoidVal(hk, val, entry.crKey || '');
+            }
+          }
+          const disp = (hidePayField && moneyFieldRe.test(hStr)) ? tr('Confidential') : rawDisp;
           detailRows.push([hStr, disp]);
         }
       });
@@ -3527,15 +3565,20 @@
         if (v === undefined || v === null || v === '' || typeof v === 'object') return;
         const lbl = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         const isDateField = /^(date|rep_date|set_date|start_date|end_date|due_date|day)$/i.test(k);
+        const rawDisp = (typeof v === 'string') ? capVoidVal(k, v, entry.crKey) : String(v);
         const disp = (hidePayField && moneyFieldRe.test(k))
           ? tr('Confidential')
-          : (isDateField ? formatDateDMY(v) : String(v));
+          : (isDateField ? formatDateDMY(v) : rawDisp);
         detailRows.push([lbl, disp]);
       });
     }
 
     if (Array.isArray(raw.lines) && raw.lines.length) {
-      const linesSummary = raw.lines.map(l => `${l.qty || 1}x ${l.name || l.category || l.sku || 'Item'} (${l.cur || 'USD'} ${l.price || 0})`).join('; ');
+      const linesSummary = raw.lines.map(l => {
+        const rawLineLbl = l.name || l.category || l.sku || 'Item';
+        const lineLbl = (l.name || l.category) ? capVoidVal(l.name ? 'item_name' : 'category', rawLineLbl, 'pos_till') : rawLineLbl;
+        return `${l.qty || 1}x ${lineLbl} (${l.cur || 'USD'} ${l.price || 0})`;
+      }).join('; ');
       detailRows.push(['Till Lines', linesSummary]);
     }
 
@@ -3811,13 +3854,13 @@
       lines.push([
         formatStampShort(e.voidedAt),
         formatDateDMY(e.date),
-        e.company || '',
+        capVoidVal('entity', e.company || '', e.crKey || ''),
         e.industry || '',
         e.moduleLabel || '',
         e.id || '',
         e.summary || '',
         amtStr,
-        e.voidedBy || '',
+        e.actorDisplay || e.voidedBy || '',
         originLbl,
         e.voidReason || '',
         preVoidCol

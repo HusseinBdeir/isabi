@@ -3179,6 +3179,14 @@
   }
 
   function cellValue(r, c, tableKey, rel) {
+    const raw = _cellValueRaw(r, c, tableKey, rel);
+    if (typeof raw === 'string' && raw && tableKey !== 'uoms' && window.MFG_CAP) {
+      return window.MFG_CAP.field(c, raw, tableKey);
+    }
+    return raw;
+  }
+
+  function _cellValueRaw(r, c, tableKey, rel) {
     if (!r) return null;
     if (c === 'set_date') return r.set_date || r.rep_date || r.date || null;
     if (c === 'tx_date') return r.date || null;

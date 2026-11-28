@@ -14,6 +14,11 @@
   let _txIndexCacheVal = null;
   let _lastDayModel = null;
 
+  function capField(colKey, val, tblKey) {
+    const s = val == null ? '' : String(val);
+    return (s && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.field(colKey, s, tblKey || '') : s;
+  }
+
   function txDateOf(r) {
     return String((r && r.date) || '').slice(0, 10);
   }
@@ -2068,7 +2073,7 @@
         group: 'agreements', kindCls: 'rule', kindLbl: 'Tax Invoice',
         isAfterHours: false, isRepShifted: hasRepShift(vi), repDate: repDateOf(vi), txDate: targetDate, time: '',
         ref: vi.invoice_no ? `#${vi.invoice_no}` : compactRef(vi.name, vi.id, 'VAT'),
-        party: vi.customer || 'Customer', detail: `${vi.tickets_count || 0} tickets · Tax ${ctx.fmtUSD(Number(vi.vat_amount || 0), 0)}`,
+        party: capField('customer', vi.customer || 'Customer', 'vat_invoices'), detail: `${vi.tickets_count || 0} tickets · Tax ${ctx.fmtUSD(Number(vi.vat_amount || 0), 0)}`,
         qtyTxt: '11% Tax', amount: round2(Number(vi.total_ttc || 0)),
         inflow: true, tier: 1, sortKey: '98_' + String(vi.invoice_no || '')
       });
@@ -2079,7 +2084,7 @@
         group: 'agreements', kindCls: 'rule', kindLbl: 'Credit',
         isAfterHours: false, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef(ct.name, ct.id, 'CR'),
-        party: ct.customer || 'Customer', detail: 'Credit Policy',
+        party: capField('customer', ct.customer || 'Customer', 'credit_terms'), detail: 'Credit Policy',
         qtyTxt: `${ct.credit_days || 0} days`, amount: null,
         inflow: false, tier: 1, sortKey: '97_' + String(ct.id || '')
       });
@@ -2091,7 +2096,7 @@
         group: 'agreements', kindCls: 'rule', kindLbl: 'Partner Split',
         isAfterHours: false, isRepShifted: hasRepShift(jv), repDate: repDateOf(jv), txDate: targetDate, time: '',
         ref: compactRef(jv.name, jv.id, 'JV'),
-        party: jv.partner || 'Joint Venture Partner', detail: [jv.site, jv.basis].filter(Boolean).join(' · '),
+        party: capField('partner', jv.partner || 'Joint Venture Partner', 'jv_distributions'), detail: [capField('site', jv.site, 'jv_distributions'), jv.basis].filter(Boolean).join(' · '),
         qtyTxt: 'Partner Share', amount: amt,
         inflow: false, tier: 1, sortKey: '96_' + String(jv.id || '')
       });
@@ -2108,7 +2113,7 @@
         group: 'sales', kindCls: sgn < 0 ? 'crit' : 'sales', kindLbl: sgn < 0 ? 'Return' : 'Sale',
         isAfterHours: isAh, isOvertime: Boolean(s.overtime), isRepShifted: hasRepShift(s), isTurnaround: Boolean(taStamp && taStamp.turnaround_flagged), turnaroundStamp: taStamp, repDate: repDateOf(s), txDate: txDateOf(s), time: String(s.time || '').slice(0, 5),
         ref: s.ticket_no ? `#${s.ticket_no}` : compactRef(s.name, s.id, 'S'),
-        party: s.customer || 'Walk-in', detail: [s.product, s.site, s.method].filter(Boolean).join(' · '),
+        party: capField('customer', s.customer || 'Walk-in', 'sales_tickets'), detail: [capField('product', s.product, 'sales_tickets'), capField('site', s.site, 'sales_tickets'), s.method].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: amt >= 0, tier: 2,
         sortKey: String(s.time || '12:00').padStart(5, '0') + '_' + String(s.ticket_no || '').padStart(8, '0')
       });
@@ -2124,7 +2129,7 @@
         group: 'raw', kindCls: 'raw', kindLbl: 'Material',
         isAfterHours: isAh, isOvertime: Boolean(r.overtime), isPendingPrice: Boolean(r.price_pending), isRepShifted: hasRepShift(r), isTurnaround: Boolean(taStamp && taStamp.turnaround_flagged), turnaroundStamp: taStamp, repDate: repDateOf(r), txDate: txDateOf(r), time: String(r.time || '').slice(0, 5),
         ref: r.ticket_no ? `#${r.ticket_no}` : compactRef(r.name, r.id, 'R'),
-        party: r.site_owner || r.truck_owner || r.site || 'Material Source', detail: [r.product, r.site, r.truck].filter(Boolean).join(' · '),
+        party: capField('supplier', r.site_owner || r.truck_owner || r.site || 'Material Source', 'raw_purchases'), detail: [capField('product', r.product, 'raw_purchases'), capField('site', r.site, 'raw_purchases'), capField('truck', r.truck, 'raw_purchases')].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: false, tier: 2,
         sortKey: String(r.time || '12:00').padStart(5, '0') + '_' + String(r.ticket_no || '').padStart(8, '0')
       });
@@ -2132,6 +2137,8 @@
     (turnaroundDigest.unpairedFlaggedVisits || []).forEach(v => {
       const onSiteLbl = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && ctx.STATE && ctx.STATE.lang && ctx.STATE.lang !== 'en') ? window.MFG_I18N.t('On site now') : 'On site now';
       const tWin = `${v.arrivalHHMM}${v.departureHHMM ? ' to ' + v.departureHHMM : ' (' + onSiteLbl + ')'}`;
+      const capVisitSite = capField('site', v.siteName || 'Verified Gate', 'sites');
+      const capVisitEq = capField('equipment', v.equipment, 'equipment');
       stream.push({
         rkey: '', rid: '', company: v.company || 'WTC',
         group: 'fuel_maint', kindCls: 'warn', kindLbl: 'Site Wait',
@@ -2144,12 +2151,12 @@
           turnaround_flagged: true,
           on_site_now: v.on_site_now,
           max_site_wait_min: v.maxSiteWaitMin,
-          gate_name: v.siteName
+          gate_name: capVisitSite
         },
         repDate: '', txDate: v.arrivalDate || targetDate, time: v.arrivalHHMM || '',
-        ref: v.equipment || 'GPS',
-        party: v.siteName || 'Verified Gate',
-        detail: [v.equipment, tWin].filter(Boolean).join(' · '),
+        ref: capVisitEq || 'GPS',
+        party: capVisitSite,
+        detail: [capVisitEq, tWin].filter(Boolean).join(' · '),
         qtyTxt: `${ctx.fmtNum(v.durationMin, 0)} min`, amount: null, inflow: false, tier: 5,
         sortKey: String(v.arrivalHHMM || '12:00').padStart(5, '0') + '_' + String(v.id || '')
       });
@@ -2160,7 +2167,7 @@
         group: 'external', kindCls: 'ext', kindLbl: ex.isOut ? 'External Out' : 'External In',
         isAfterHours: false, isRepShifted: hasRepShift(ex.row), repDate: repDateOf(ex.row), txDate: txDateOf(ex.row) || targetDate, time: '',
         ref: compactRef(ex.row.name, ex.id, 'EXT'),
-        party: ex.counterparty, detail: ex.notes || ex.kind,
+        party: capField('counterparty', ex.counterparty, 'external_movements'), detail: ex.notes || ex.kind,
         qtyTxt: ex.lbp ? fmtCompactLbp(ex.lbp) : 'USD', amount: ex.isOut ? -ex.eqAmt : ex.eqAmt,
         inflow: !ex.isOut, tier: 3,
         sortKey: String(Math.round(ex.eqAmt)).padStart(9, '0') + '_' + String(ex.id || '')
@@ -2184,7 +2191,7 @@
         group: 'fx_loans', kindCls: 'loan', kindLbl: ln.badge,
         isAfterHours: false, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef('', ln.id, 'LN'),
-        party: ln.party, detail: ln.notes || (ln.lbp ? fmtCompactLbp(ln.lbp) : 'Treasury Loan'),
+        party: capField('counterparty', ln.party, ln.rkey || 'loans'), detail: ln.notes || (ln.lbp ? fmtCompactLbp(ln.lbp) : 'Treasury Loan'),
         qtyTxt: ln.lbp ? fmtCompactLbp(ln.lbp) : 'USD', amount: ln.isInflow ? ln.eqAmt : -ln.eqAmt,
         inflow: ln.isInflow, tier: 3,
         sortKey: String(Math.round(ln.eqAmt)).padStart(9, '0') + '_' + String(ln.id || '')
@@ -2198,7 +2205,7 @@
         group: 'ar_ap', kindCls: 'cash', kindLbl: 'Customer Receipt',
         isAfterHours: false, isRepShifted: hasRepShift(r), repDate: repDateOf(r), txDate: txDateOf(r), time: '',
         ref: compactRef(r.reference || r.name, r.id, 'RC'),
-        party: r.customer || 'Customer', detail: `${r.method || 'Cash'} Receipt${Number(r.discount || 0) > 0 ? ' · Discount ' + ctx.fmtUSD(r.discount, 0) : ''}`,
+        party: capField('customer', r.customer || 'Customer', 'receipts'), detail: `${r.method || 'Cash'} Receipt${Number(r.discount || 0) > 0 ? ' · Discount ' + ctx.fmtUSD(r.discount, 0) : ''}`,
         qtyTxt: r.method || 'Cash', amount: amt, inflow: true, tier: 3,
         sortKey: String(Math.round(Math.abs(amt))).padStart(9, '0') + '_' + String(r.id || '')
       });
@@ -2211,7 +2218,7 @@
         group: 'ar_ap', kindCls: 'pay', kindLbl: 'Supplier Payment',
         isAfterHours: false, isRepShifted: hasRepShift(s), repDate: repDateOf(s), txDate: txDateOf(s), time: '',
         ref: compactRef(s.invoice || s.reference || s.name, s.id, 'ST'),
-        party: s.supplier || 'Supplier', detail: `${s.method || 'Cash'} Settlement${Number(s.discount || 0) > 0 ? ' · Discount ' + ctx.fmtUSD(s.discount, 2) : ''}`,
+        party: capField('supplier', s.supplier || 'Supplier', 'settlements'), detail: `${s.method || 'Cash'} Settlement${Number(s.discount || 0) > 0 ? ' · Discount ' + ctx.fmtUSD(s.discount, 2) : ''}`,
         qtyTxt: s.method || 'Cash', amount: amt, inflow: false, tier: 3,
         sortKey: String(Math.round(Math.abs(amt))).padStart(9, '0') + '_' + String(s.id || '')
       });
@@ -2225,7 +2232,7 @@
         group: 'expenses', kindCls: 'exp', kindLbl: ctx.isPendingPriceExpense(x) ? 'Pending' : 'Expense',
         isAfterHours: false, isPendingPrice: Boolean(ctx.isPendingPriceExpense(x)), isRepShifted: hasRepShift(x), repDate: repDateOf(x), txDate: txDateOf(x), time: '',
         ref: x.invoice ? `#${x.invoice}` : compactRef(x.reference || x.name, x.id, 'EX'),
-        party: x.supplier || x.category || 'Expense', detail: [x.category, x.subcategory, x.equipment].filter(Boolean).join(' · '),
+        party: capField(x.supplier ? 'supplier' : 'category', x.supplier || x.category || 'Expense', 'expenses'), detail: [capField('category', x.category, 'expenses'), capField('subcategory', x.subcategory, 'expenses'), capField('equipment', x.equipment, 'expenses')].filter(Boolean).join(' · '),
         qtyTxt: Number(x.qty || 0) > 1 ? `${ctx.fmtNum(Number(x.qty), 0)} qty` : (x.method || 'Cash'),
         amount: amt, inflow: false, tier: 4,
         sortKey: String(Math.round(Math.abs(amt))).padStart(9, '0') + '_' + String(x.id || '')
@@ -2237,27 +2244,27 @@
         group: 'expenses', kindCls: 'exp', kindLbl: 'Stock',
         isAfterHours: false, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef(wm.name, wm.id, 'WH'),
-        party: wm.item_name || 'Warehouse Item', detail: [wm.warehouse_location, wm.target_equipment].filter(Boolean).join(' · '),
+        party: capField('item_name', wm.item_name || 'Warehouse Item', 'warehouse_movements'), detail: [capField('warehouse_location', wm.warehouse_location, 'warehouse_movements'), capField('target_equipment', wm.target_equipment, 'warehouse_movements')].filter(Boolean).join(' · '),
         qtyTxt: `${wm.qty_delta || wm.qty || 0} ${wm.uom || ''}`.trim(), amount: null, inflow: false, tier: 4,
         sortKey: '50_' + String(wm.id || '')
       });
     });
     dayFuels.forEach(fl => {
       const q = Number(fl.litres || 0);
-      const itemStr = String(fl.item || fl.fuel_type || 'Diesel');
+      const itemStr = capField('item', String(fl.item || fl.fuel_type || 'Diesel'), 'fuel_intakes');
       const unitStr = /grease/i.test(itemStr) ? 'kg' : 'L';
       stream.push({
         rkey: 'fuel_intakes', rid: fl.id, company: fl.company || 'WTC',
         group: 'fuel_maint', kindCls: 'fuel', kindLbl: 'Fuel',
         isAfterHours: false, isRepShifted: hasRepShift(fl), repDate: repDateOf(fl), txDate: txDateOf(fl), time: '',
         ref: fl.ticket_no ? `#${fl.ticket_no}` : compactRef(fl.name, fl.id, 'FL'),
-        party: fl.equipment || 'Plant Tank', detail: [itemStr, fl.driver].filter(Boolean).join(' · '),
+        party: capField('equipment', fl.equipment || 'Plant Tank', 'fuel_intakes'), detail: [itemStr, capField('driver', fl.driver, 'fuel_intakes')].filter(Boolean).join(' · '),
         qtyTxt: `${ctx.fmtNum(q, q % 1 ? 1 : 0)} ${unitStr}`, amount: null, inflow: false, tier: 5,
         sortKey: String(Math.round(q)).padStart(7, '0') + '_' + String(fl.id || '')
       });
     });
     dayMalfs.forEach(mf => {
-      const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+      const mfItem = capField('item', String(mf.item || 'Diesel').trim() || 'Diesel', 'fuel_malfunctions');
       const mfUom = String(mf.uom || (/grease|تشحيم|مشحمة/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
       const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
       const isDieselMf = /diesel|mazout/i.test(mfItem);
@@ -2266,7 +2273,7 @@
         group: 'fuel_maint', kindCls: 'maint', kindLbl: isDieselMf ? 'Tank Variance' : 'Stock Variance',
         isAfterHours: false, isException: true, isRepShifted: hasRepShift(mf), repDate: repDateOf(mf), txDate: targetDate, time: '',
         ref: mf.ticket_no ? `#${mf.ticket_no}` : compactRef(mf.name, mf.id, 'MF'),
-        party: `${mfItem} · ${mf.discrepancy_type || 'Malfunction'}`, detail: safeNotes(ctx, mf.notes) || mf.equipment || (isDieselMf ? 'Diesel Tank' : (mf.category || 'Inventory')),
+        party: `${mfItem} · ${mf.discrepancy_type || 'Malfunction'}`, detail: safeNotes(ctx, mf.notes) || capField('equipment', mf.equipment, 'fuel_malfunctions') || (isDieselMf ? 'Diesel Tank' : (capField('category', mf.category, 'fuel_malfunctions') || 'Inventory')),
         qtyTxt: `${ctx.fmtNum(mfQty, mfQty % 1 ? 1 : 0)} ${mfUom}`, amount: null, inflow: false, tier: 5,
         sortKey: '90_' + String(mf.id || '')
       });
@@ -2277,7 +2284,7 @@
         group: 'fuel_maint', kindCls: 'maint', kindLbl: 'Oil Log',
         isAfterHours: false, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef(ol.name, ol.id, 'OIL'),
-        party: ol.equipment || 'Equipment', detail: [ol.oil_type, ol.service_action].filter(Boolean).join(' · '),
+        party: capField('equipment', ol.equipment || 'Equipment', 'equipment_oil_logs'), detail: [capField('oil_type', ol.oil_type, 'equipment_oil_logs'), ol.service_action].filter(Boolean).join(' · '),
         qtyTxt: `${ctx.fmtNum(Number(ol.qty || 0), 0)} L`, amount: Number(ol.cost_usd || 0) || null, inflow: false, tier: 5,
         sortKey: '85_' + String(ol.id || '')
       });
@@ -2288,7 +2295,7 @@
         group: 'fuel_maint', kindCls: 'maint', kindLbl: 'Repair',
         isAfterHours: false, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef(rp.name, rp.id, 'RP'),
-        party: rp.equipment || 'Equipment', detail: [rp.repair_source, safeNotes(ctx, rp.notes)].filter(Boolean).join(' · '),
+        party: capField('equipment', rp.equipment || 'Equipment', 'equipment_repairs'), detail: [rp.repair_source, safeNotes(ctx, rp.notes)].filter(Boolean).join(' · '),
         qtyTxt: 'Maintenance', amount: Number(rp.total_cost || rp.cost || 0) || null, inflow: false, tier: 5,
         sortKey: '84_' + String(rp.id || '')
       });
@@ -2299,7 +2306,7 @@
         group: 'fuel_maint', kindCls: /grave|crit/i.test(String(df.severity || '')) ? 'crit' : 'maint', kindLbl: 'Defect',
         isAfterHours: false, isException: true, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef(df.name, df.id, 'DF'),
-        party: df.equipment || 'Equipment', detail: [df.severity, df.part_name, safeNotes(ctx, df.description || df.notes)].filter(Boolean).join(' · '),
+        party: capField('equipment', df.equipment || 'Equipment', 'equipment_defects'), detail: [df.severity, capField('part_name', df.part_name, 'equipment_defects'), safeNotes(ctx, df.description || df.notes)].filter(Boolean).join(' · '),
         qtyTxt: df.status || 'Open', amount: null, inflow: false, tier: 5,
         sortKey: '83_' + String(df.id || '')
       });
@@ -2310,7 +2317,7 @@
         group: 'fuel_maint', kindCls: 'fuel', kindLbl: 'New Unit',
         isAfterHours: false, isRepShifted: false, repDate: '', txDate: targetDate, time: '',
         ref: compactRef(ce.equipment, ce.id, 'EQ'),
-        party: ce.equipment || 'Truck', detail: [ce.ownership, ce.supplier].filter(Boolean).join(' · '),
+        party: capField('equipment', ce.equipment || 'Truck', 'company_equipment'), detail: [ce.ownership, capField('supplier', ce.supplier, 'company_equipment')].filter(Boolean).join(' · '),
         qtyTxt: ce.status || 'Active', amount: null, inflow: false, tier: 5,
         sortKey: '80_' + String(ce.id || '')
       });
@@ -2876,7 +2883,7 @@
         <div class="dops-substrip dops-sales-top-strip">
           ${renderMiniSparkBars(ctx, dm)}
           <div class="dops-mix-pills">
-            ${soldGrades.slice(0, 2).map(g => `<span class="dops-micro-pill" data-dops-lens="comm:grades"><b>${esc(g.name)}</b> ${fmtNum(g.salesM3, 0)}m³ · ${fmtUSD(g.salesTtc, 0)}</span>`).join('')}
+            ${soldGrades.slice(0, 2).map(g => `<span class="dops-micro-pill" data-dops-lens="comm:grades"><b>${esc(capField('product', g.name, 'products'))}</b> ${fmtNum(g.salesM3, 0)}m³ · ${fmtUSD(g.salesTtc, 0)}</span>`).join('')}
             ${soldGrades.length > 2 ? `<span class="dops-micro-pill" data-dops-lens="comm:grades">+${soldGrades.length - 2} grade${soldGrades.length - 2 === 1 ? '' : 's'}</span>` : ''}
             <span class="dops-micro-pill" data-dops-open-drawer="sales"><span>Delivered</span> <b>${fmtNum(dm.salesSum.deliveryLoads)}</b> &#183; <span>Picked Up</span> <b>${fmtNum(dm.salesSum.pickupLoads)}</b>${dm.salesSum.otLoads > 0 ? ` &#183; <b>${dm.salesSum.otLoads}</b> <span>Overtime</span>` : ''}</span>
           </div>
@@ -2895,8 +2902,8 @@
               <tbody>
                 ${rows.map(r => {
                   const pct = Math.min(100, Math.max(0, Math.round((Math.abs(r.ttc) / maxTtc) * 100)));
-                  const siteTxt = r.sites && r.sites.length ? r.sites.slice(0, 2).join(', ') : '';
-                  const prodTxt = r.products && r.products.length ? r.products.join(', ') : (r.collected > 0 ? 'Receivables Collection' : '-');
+                  const siteTxt = r.sites && r.sites.length ? r.sites.slice(0, 2).map(sNm => capField('site', sNm, 'sales_tickets')).join(', ') : '';
+                  const prodTxt = r.products && r.products.length ? r.products.map(pNm => capField('product', pNm, 'sales_tickets')).join(', ') : (r.collected > 0 ? 'Receivables Collection' : '-');
                   const isCash = r.cashTtc > 0 && r.creditTtc === 0;
                   const rateTxt = r.unitPrices && r.unitPrices.length ? `@${fmtUSD(r.unitPrices[0], 1)}` : '';
                   const expKey = `cust:${r.key}`;
@@ -2961,7 +2968,7 @@
                               ${t.overtime ? `<span class="dops-ot-badge" data-ui-tip="Overtime dispatch">${ic('overtime')}</span>` : ''}
                             </div>
                           </td>
-                          <td class="dops-trunc">${esc(t.product || '-')} · <b>${fmtNum(m3, m3 % 1 ? 1 : 0)}m³</b>${t.truck ? ` · ${esc(t.truck)}` : ''}${t.driver ? ` <small style="color:var(--muted)">(${esc(t.driver)})</small>` : ''}</td>
+                          <td class="dops-trunc">${esc(capField('product', t.product || '-', 'sales_tickets'))} · <b>${fmtNum(m3, m3 % 1 ? 1 : 0)}m³</b>${t.truck ? ` · ${esc(capField('truck', t.truck, 'sales_tickets'))}` : ''}${t.driver ? ` <small style="color:var(--muted)">(${esc(capField('driver', t.driver, 'sales_tickets'))})</small>` : ''}</td>
                           <td class="r"><strong>${fmtUSD(rowTtc, 0)}</strong> <small style="color:var(--muted)">${ctx.isCashSaleTicket(t) ? 'Cash' : 'Credit'}</small></td>
                         </tr>
                       `;
@@ -3042,24 +3049,25 @@
                 ${showRules.map(pr => {
                   const info = describePriceRule(ctx, pr);
                   const dLbl = String(pr.start_date || pr.date || '').slice(5, 10);
+                  const ruleLoc = capField(pr.product ? 'product' : 'site', pr.product || pr.site || '-', 'price_rules');
                   return `
                     <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(pr.id || ''))}">
                       <td class="dops-trunc"><span class="dops-kind rule">${esc(info.badge)}</span> <strong>${esc(info.party)}</strong>${!todayRules.length && dLbl ? ` <small style="color:var(--muted)">${esc(dLbl)}</small>` : ''}</td>
-                      <td class="dops-trunc">${esc(pr.product || pr.site || '-')}</td>
+                      <td class="dops-trunc">${esc(ruleLoc)}</td>
                       <td class="r"><strong>${esc(info.rateTxt)}</strong></td>
                     </tr>
                   `;
                 }).join('') || `<tr><td colspan="3" class="dops-empty">No price agreements created on this date or trailing 7 days.</td></tr>`}
                 ${dm.dayCreditTerms.map(ct => `
                   <tr class="rrow" data-rkey="credit_terms" data-rid="${esc(String(ct.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind rule">Credit</span> <strong>${esc(ct.customer || '-')}</strong></td>
+                    <td class="dops-trunc"><span class="dops-kind rule">Credit</span> <strong>${esc(capField('customer', ct.customer || '-', 'credit_terms'))}</strong></td>
                     <td>Net Terms</td>
                     <td class="r"><strong>${fmtNum(ct.credit_days || 0)} Days</strong></td>
                   </tr>
                 `).join('')}
                 ${dm.dayOtRates.map(ot => `
                   <tr class="rrow" data-rkey="overtime_rates" data-rid="${esc(String(ot.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind rule">Overtime Rate</span> <strong>${esc(ot.region || 'Zone')}</strong></td>
+                    <td class="dops-trunc"><span class="dops-kind rule">Overtime Rate</span> <strong>${esc(capField('region', ot.region || 'Zone', 'overtime_rates'))}</strong></td>
                     <td>Driver Trip</td>
                     <td class="r"><strong>${fmtUSD(Number(ot.amount || 0), 2)}</strong></td>
                   </tr>
@@ -3100,7 +3108,7 @@
                   const stCls = r.status === 'Below Rate' ? 'crit' : (r.status === 'Lapsed' ? 'maint' : (r.status === 'Agreed' ? 'cash' : 'pay'));
                   return `
                     <tr class="rrow" data-rkey="${r.ruleId && r.status === 'Agreed' ? 'price_rules' : 'sales_tickets'}" data-rid="${esc(String((r.ruleId && r.status === 'Agreed' ? r.ruleId : r.sampleTicketId) || ''))}">
-                      <td class="dops-trunc"><strong>${esc(r.customer)}</strong> <small class="dops-cell-sub">${esc(r.product)} (${r.loads} loads)</small></td>
+                      <td class="dops-trunc"><strong>${esc(capField('customer', r.customer, 'sales_tickets'))}</strong> <small class="dops-cell-sub">${esc(capField('product', r.product, 'sales_tickets'))} (${r.loads} loads)</small></td>
                       <td class="r">${r.agreedRate != null ? fmtUSD(r.agreedRate, 1) : 'Spot'} / <strong>${fmtUSD(r.billedAvg, 1)}</strong></td>
                       <td class="r"><span class="dops-kind ${stCls}">${r.status === 'Below Rate' ? `-${fmtUSD(r.shortfall, 0)}` : esc(r.status)}</span></td>
                     </tr>
@@ -3145,7 +3153,7 @@
               <div class="dops-event-item is-new-rule" data-dops-inspect-rkey="vat_invoices" data-dops-inspect-rid="${esc(String(vi.id || ''))}">
                 <div class="dops-event-left">
                   <span class="dops-kind rule">Tax Invoice #${esc(String(vi.invoice_no || ''))}</span>
-                  <div class="dops-event-txt"><strong>${esc(vi.customer || '-')}</strong> <span>· ${fmtNum(vi.tickets_count || 0)} tickets · Tax ${fmtUSD(vi.vat_amount || 0, 0)}</span></div>
+                  <div class="dops-event-txt"><strong>${esc(capField('customer', vi.customer || '-', 'vat_invoices'))}</strong> <span>· ${fmtNum(vi.tickets_count || 0)} tickets · Tax ${fmtUSD(vi.vat_amount || 0, 0)}</span></div>
                 </div>
                 <span class="dops-event-right">${fmtUSD(vi.total_ttc || 0, 0)}</span>
               </div>
@@ -3154,7 +3162,7 @@
               <div class="dops-event-item" data-dops-inspect-rkey="jv_distributions" data-dops-inspect-rid="${esc(String(jv.id || ''))}">
                 <div class="dops-event-left">
                   <span class="dops-kind raw">Partner Split</span>
-                  <div class="dops-event-txt"><strong>${esc(jv.partner || '-')}</strong> <span>· ${esc(jv.site || '')}</span></div>
+                  <div class="dops-event-txt"><strong>${esc(capField('partner', jv.partner || '-', 'jv_distributions'))}</strong> <span>· ${esc(capField('site', jv.site || '', 'jv_distributions'))}</span></div>
                 </div>
                 <span class="dops-event-right">${fmtUSD(jv.amount || jv.total || 0, 0)}</span>
               </div>
@@ -3208,8 +3216,8 @@
             <tbody>
               ${effBelow.filter(ev => matchesQuickSearch(qNorm, [ev.ticket && ev.ticket.customer, ev.ticket && ev.ticket.product])).map(ev => `
                 <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(String(ev.ticket.id || ''))}">
-                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind crit">Below Rate</span><strong>${esc(ev.ticket.customer || '-')}</strong>${renderRepBadge(ctx, txDateOf(ev.ticket), repDateOf(ev.ticket))}</div></td>
-                  <td class="dops-trunc">${esc(ev.ticket.product || '')} · ${fmtUSD(ev.soldPrice, 1)} vs ${fmtUSD(ev.agreedPrice, 1)}</td>
+                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind crit">Below Rate</span><strong>${esc(capField('customer', ev.ticket.customer || '-', 'sales_tickets'))}</strong>${renderRepBadge(ctx, txDateOf(ev.ticket), repDateOf(ev.ticket))}</div></td>
+                  <td class="dops-trunc">${esc(capField('product', ev.ticket.product || '', 'sales_tickets'))} · ${fmtUSD(ev.soldPrice, 1)} vs ${fmtUSD(ev.agreedPrice, 1)}</td>
                   <td class="r"><strong style="color:var(--crit)">-${fmtUSD(ev.shortfall, 0)}</strong></td>
                 </tr>
               `).join('')}
@@ -3233,15 +3241,15 @@
                     <td class="dops-trunc">
                       <div class="dops-grp-head">
                         <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
-                        <strong>${esc(q.site)}</strong>
+                        <strong>${esc(capField('site', q.site, 'raw_purchases'))}</strong>
                         ${repBadge}
                         ${renderTurnaroundBadgeHtml(ctx, null, q)}
                       </div>
                       <small class="dops-cell-sub dops-sub-pad">Source · ${relLink('suppliers', q.supplier, q.supplier, true)}</small>
                     </td>
                     <td class="dops-trunc">
-                      <strong>${esc(q.product)}</strong> · ${fmtNum(q.loads)} loads (${fmtNum(q.m3, 0)}m³)
-                      <small class="dops-cell-sub">Own ${fmtNum(q.ownLoads)} · Haulers ${fmtNum(q.haulerLoads)}${q.haulersTxt ? ` (${esc(q.haulersTxt)})` : ''}</small>
+                      <strong>${esc(capField('product', q.product, 'raw_purchases'))}</strong> · ${fmtNum(q.loads)} loads (${fmtNum(q.m3, 0)}m³)
+                      <small class="dops-cell-sub">Own ${fmtNum(q.ownLoads)} · Haulers ${fmtNum(q.haulerLoads)}${q.haulersTxt ? ` (${esc(String(q.haulersTxt).split(',').map(h => capField('supplier', h.trim(), 'raw_purchases')).join(', '))})` : ''}</small>
                     </td>
                     <td class="r">
                       <strong>${fmtUSD(q.totalCost, 0)}</strong>
@@ -3253,7 +3261,9 @@
                     const haul = Number(t.trans_cost || 0);
                     const tot = ctx.round2(Number(t.total != null ? t.total : (mat + haul)));
                     const m3 = Number(ctx.ticketMeters(t) || 0);
-                    const haulerTag = t.transport_by === 'Company fleet' ? `Own ${t.truck || ''}` : `${t.truck || ''} (${t.truck_owner || t.driver || 'Hauler'})`;
+                    const capTruck = t.truck ? capField('truck', t.truck, 'raw_purchases') : '';
+                    const capHaulerOwner = t.truck_owner ? capField('truck_owner', t.truck_owner, 'raw_purchases') : (t.driver ? capField('driver', t.driver, 'raw_purchases') : 'Hauler');
+                    const haulerTag = t.transport_by === 'Company fleet' ? `Own ${capTruck}` : `${capTruck} (${capHaulerOwner})`;
                     const tStamp = window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getTicketTurnaroundStamp === 'function' ? window.MFG_TELEMATICS.getTicketTurnaroundStamp('raw_purchases', t) : null;
                     return `
                       <tr class="rrow dops-subrow" data-rkey="raw_purchases" data-rid="${esc(String(t.id || ''))}">
@@ -3408,15 +3418,15 @@
               <tbody>
                 ${items.map(it => `
                   <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(it.expense_id || ''))}">
-                    <td class="dops-trunc"><strong>${esc(it.item_name || it.subcategory || 'Item')}</strong> <small class="dops-cell-sub">${esc(it.category || '')}</small></td>
-                    <td class="dops-trunc">${esc(it.target_equipment || it.warehouse_location || 'Plant')} · ×${fmtNum(it.qty || 1, 0)}</td>
+                    <td class="dops-trunc"><strong>${esc(capField(it.item_name ? 'item_name' : 'subcategory', it.item_name || it.subcategory || 'Item', 'expenses'))}</strong> <small class="dops-cell-sub">${esc(capField('category', it.category || '', 'expenses'))}</small></td>
+                    <td class="dops-trunc">${esc(capField(it.target_equipment ? 'target_equipment' : 'warehouse_location', it.target_equipment || it.warehouse_location || 'Plant', 'expenses'))} · ×${fmtNum(it.qty || 1, 0)}</td>
                     <td class="r"><strong>${fmtUSD(it.line_total || 0, 0)}</strong></td>
                   </tr>
                 `).join('')}
                 ${wh.map(wm => `
                   <tr class="rrow" data-rkey="warehouse_movements" data-rid="${esc(String(wm.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind fuel">Stock</span> <strong>${esc(wm.item_name || 'Warehouse Item')}</strong></td>
-                    <td class="dops-trunc">${esc([wm.warehouse_location, wm.target_equipment].filter(Boolean).join(' · '))}</td>
+                    <td class="dops-trunc"><span class="dops-kind fuel">Stock</span> <strong>${esc(capField('item_name', wm.item_name || 'Warehouse Item', 'warehouse_movements'))}</strong></td>
+                    <td class="dops-trunc">${esc([capField('warehouse_location', wm.warehouse_location, 'warehouse_movements'), capField('target_equipment', wm.target_equipment, 'warehouse_movements')].filter(Boolean).join(' · '))}</td>
                     <td class="r">${fmtNum(wm.qty_delta || wm.qty || 0, 0)} ${esc(wm.uom || '')}</td>
                   </tr>
                 `).join('')}
@@ -4148,7 +4158,7 @@
               <tbody>
                 ${renderPanel5TurnaroundRows()}
                 ${malfFiltered.map(mf => {
-                  const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+                  const mfItem = capField('item', String(mf.item || 'Diesel').trim() || 'Diesel', 'fuel_malfunctions');
                   const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
                   const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
                   return `
@@ -4161,22 +4171,22 @@
                 }).join('')}
                 ${repFiltered.map(rp => `
                   <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
-                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind maint">Repair</span><strong>${esc(rp.equipment || '-')}</strong>${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</div></td>
+                    <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind maint">Repair</span><strong>${esc(capField('equipment', rp.equipment || '-', 'equipment_repairs'))}</strong>${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</div></td>
                     <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
                     <td class="r">${(perms && perms.canExp) ? `<strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                   </tr>
                 `).join('')}
                 ${oilFiltered.map(ol => `
                   <tr class="rrow" data-rkey="equipment_oil_logs" data-rid="${esc(String(ol.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind maint">Oil</span> <strong>${esc(ol.equipment || '-')}</strong></td>
-                    <td class="dops-trunc">${esc([ol.oil_type, ol.service_action].filter(Boolean).join(' · '))}</td>
+                    <td class="dops-trunc"><span class="dops-kind maint">Oil</span> <strong>${esc(capField('equipment', ol.equipment || '-', 'equipment_oil_logs'))}</strong></td>
+                    <td class="dops-trunc">${esc([capField('oil_type', ol.oil_type, 'equipment_oil_logs'), ol.service_action].filter(Boolean).join(' · '))}</td>
                     <td class="r"><strong>${fmtNum(ol.qty || 0, 0)} L</strong></td>
                   </tr>
                 `).join('')}
                 ${defFiltered.map(df => `
                   <tr class="rrow" data-rkey="equipment_defects" data-rid="${esc(String(df.id || ''))}">
-                    <td class="dops-trunc"><span class="dops-kind crit">Defect</span> <strong>${esc(df.equipment || '-')}</strong></td>
-                    <td class="dops-trunc">${esc([df.severity, df.part_name, safeNotes(ctx, df.description || df.notes)].filter(Boolean).join(' · '))}</td>
+                    <td class="dops-trunc"><span class="dops-kind crit">Defect</span> <strong>${esc(capField('equipment', df.equipment || '-', 'equipment_defects'))}</strong></td>
+                    <td class="dops-trunc">${esc([df.severity, capField('part_name', df.part_name, 'equipment_defects'), safeNotes(ctx, df.description || df.notes)].filter(Boolean).join(' · '))}</td>
                     <td class="r">${esc(df.status || 'Open')}</td>
                   </tr>
                 `).join('')}
@@ -4224,7 +4234,7 @@
               <tbody>
                 ${renderPanel5TurnaroundRows()}
                 ${malfFiltered.map(mf => {
-                  const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+                  const mfItem = capField('item', String(mf.item || 'Diesel').trim() || 'Diesel', 'fuel_malfunctions');
                   const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
                   const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
                   return `
@@ -4244,17 +4254,17 @@
                   const odoTag = fu.odoDelta > 0 ? ` <span class="dops-odo-tag">+${fmtNum(fu.odoDelta, 0)} km</span>` : (fu.maxOdo > 0 ? ` <span class="dops-odo-tag">${fmtNum(fu.maxOdo, 0)}</span>` : '');
                   const subFills = isExp ? (fu.fills || []).filter(fl => qFilter !== 'rep_shifted' || hasRepShift(fl)) : [];
                   return `
-                    <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(fu.fillsCount)} fuel ${fu.fillsCount === 1 ? 'entry' : 'entries'} for ${esc(fu.equipment)}">
+                    <tr class="dops-group-row${isExp ? ' is-expanded' : ''}" data-dops-expand="${esc(expKey)}" tabindex="0" data-ui-tip="Click to ${isExp ? 'collapse' : 'expand'} ${fmtNum(fu.fillsCount)} fuel ${fu.fillsCount === 1 ? 'entry' : 'entries'} for ${esc(capField('equipment', fu.equipment, 'fuel_intakes'))}">
                       <td class="dops-trunc">
                         <div class="dops-grp-head">
                           <span class="dops-exp-chev">${ic(isExp ? 'chevron_down' : 'chevron_right')}</span>
                           ${!isSingleCo ? `${coBadge(fu.company)} ` : ''}${fu.equipment !== 'Plant Tank' ? relLink('equipment', fu.equipment, fu.equipment, true) : `<strong>Plant Tank</strong>`}
                           ${repBadge}
                         </div>
-                        ${fu.category ? `<small class="dops-cell-sub dops-sub-pad">${esc(fu.category)}</small>` : ''}
+                        ${fu.category ? `<small class="dops-cell-sub dops-sub-pad">${esc(capField('category', fu.category, 'fuel_intakes'))}</small>` : ''}
                       </td>
                       <td class="dops-trunc">
-                        ${fu.drivers.length ? `<strong>${esc(fu.drivers.slice(0, 2).join(', '))}</strong>` : `<span style="color:var(--muted)">Plant Issue</span>`}${odoTag}
+                        ${fu.drivers.length ? `<strong>${esc(fu.drivers.slice(0, 2).map(d => capField('driver', d, 'fuel_intakes')).join(', '))}</strong>` : `<span style="color:var(--muted)">Plant Issue</span>`}${odoTag}
                         <small class="dops-cell-sub"><b>${fmtNum(fu.fillsCount)}</b> ${fu.fillsCount === 1 ? 'fill' : 'fills'}</small>
                       </td>
                       <td class="r">
@@ -4275,13 +4285,13 @@
                           <td class="dops-trunc">
                             <div class="dops-sub-cell">
                               <span class="dops-sub-indent"></span>
-                              <strong class="mono">${fl.ticket_no ? `#${esc(String(fl.ticket_no))}` : esc(fl.item || 'Diesel')}</strong>
+                              <strong class="mono">${fl.ticket_no ? `#${esc(String(fl.ticket_no))}` : esc(capField('item', fl.item || fl.fuel_type || 'Diesel', 'fuel_intakes'))}</strong>
                               ${fl.time ? `<small class="dops-time-tag">${esc(String(fl.time).slice(0, 5))}</small>` : ''}
                               <button type="button" class="tkt-print-mini dops-print-mini" data-print-ticket="fuel" data-print-id="${esc(String(fl.id || ''))}" data-ui-tip="Print Fuel Slip">${ic('printer')}</button>
                               ${renderRepBadge(ctx, txDateOf(fl), repDateOf(fl))}
                             </div>
                           </td>
-                          <td class="dops-trunc">${esc(fl.driver || fl.item || 'Diesel')}${dlt > 0 ? ` · +${fmtNum(dlt, 0)}km` : (curOdo > 0 ? ` · ${fmtNum(curOdo, 0)}` : '')}</td>
+                          <td class="dops-trunc">${esc(fl.driver ? capField('driver', fl.driver, 'fuel_intakes') : capField('item', fl.item || fl.fuel_type || 'Diesel', 'fuel_intakes'))}${dlt > 0 ? ` · +${fmtNum(dlt, 0)}km` : (curOdo > 0 ? ` · ${fmtNum(curOdo, 0)}` : '')}</td>
                           <td class="r"><strong>${isRef ? '+' : ''}${fmtNum(fl.litres || 0, 0)} ${uom}</strong></td>
                         </tr>
                       `;
@@ -4326,7 +4336,7 @@
             <tbody>
               ${renderPanel5TurnaroundRows()}
               ${malfFiltered.map(mf => {
-                const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+                const mfItem = capField('item', String(mf.item || 'Diesel').trim() || 'Diesel', 'fuel_malfunctions');
                 const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
                 const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
                 return `
@@ -4339,7 +4349,7 @@
               }).join('')}
               ${repFiltered.map(rp => `
                 <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
-                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind maint">Repair</span><strong>${esc(rp.equipment || '-')}</strong>${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</div></td>
+                  <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind maint">Repair</span><strong>${esc(capField('equipment', rp.equipment || '-', 'equipment_repairs'))}</strong>${renderRepBadge(ctx, txDateOf(rp), repDateOf(rp))}</div></td>
                   <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
                   <td class="r">${(perms && perms.canExp) ? `<strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                 </tr>
@@ -4355,14 +4365,14 @@
                   <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(String(fl.id || ''))}">
                     <td class="dops-trunc">
                       <div class="dops-grp-head">
-                        ${!isSingleCo ? `${coBadge(fl.company)} ` : ''}<strong>${esc(fl.equipment || 'Plant Tank')}</strong>
+                        ${!isSingleCo ? `${coBadge(fl.company)} ` : ''}<strong>${esc(capField('equipment', fl.equipment || 'Plant Tank', 'fuel_intakes'))}</strong>
                         <button type="button" class="tkt-print-mini dops-print-mini" data-print-ticket="fuel" data-print-id="${esc(String(fl.id || ''))}" data-ui-tip="Print Fuel Slip">${ic('printer')}</button>
                         ${renderRepBadge(ctx, txDateOf(fl), repDateOf(fl))}
                       </div>
-                      ${fl.equipment_category ? `<small class="dops-cell-sub">${esc(fl.equipment_category)}</small>` : ''}
+                      ${fl.equipment_category ? `<small class="dops-cell-sub">${esc(capField('category', fl.equipment_category, 'fuel_intakes'))}</small>` : ''}
                     </td>
                     <td class="dops-trunc">
-                      ${fl.driver ? `<strong>${esc(fl.driver)}</strong>` : `<span style="color:var(--muted)">${esc(fl.item || 'Diesel')}</span>`}${odoTag}
+                      ${fl.driver ? `<strong>${esc(capField('driver', fl.driver, 'fuel_intakes'))}</strong>` : `<span style="color:var(--muted)">${esc(capField('item', fl.item || fl.fuel_type || 'Diesel', 'fuel_intakes'))}</span>`}${odoTag}
                     </td>
                     <td class="r"><strong style="color:${isRefill ? 'var(--good)' : 'var(--ink)'}">${isRefill ? '+' : ''}${fmtNum(fl.litres || 0, 0)} ${uom}</strong></td>
                   </tr>

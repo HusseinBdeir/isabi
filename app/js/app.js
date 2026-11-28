@@ -51,7 +51,8 @@
       const kn = _nbNorm(k);
       const vn = _nbNorm(v);
       if (kn && vn) canonMap.set(kn, vn);
-      const vs = String(v == null ? '' : v).trim();
+      const vsRaw = String(v == null ? '' : v).trim();
+      const vs = (vsRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(vsRaw) : vsRaw;
       if (vs) {
         if (kn) displayMap.set(kn, vs);
         if (vn && !displayMap.has(vn)) displayMap.set(vn, vs);
@@ -5064,10 +5065,12 @@
     };
     const onlyBal = Boolean(opts.onlyBalances);
     const skipHyd = Boolean(opts.skipHydratedFields);
+    const deltaAcc = Object.create(null);
     const addK = (fk, val) => {
       if (!val) return;
-      k[fk] = round2(Number(k[fk] || 0) + val);
+      deltaAcc[fk] = (deltaAcc[fk] || 0) + val;
     };
+    const curK = fk => Number(k[fk] || 0) + (deltaAcc[fk] || 0);
 
     forEachCashCustomDelta('sales_tickets', matchCo, (s, dir) => {
       const sgn = ticketSign(s);
@@ -5179,11 +5182,11 @@
         addK('ar_balance', -amt);
         const ck = norm(r.customer || '');
         const cEntry = ck ? custSeed60ByNorm.get(ck) : null;
-        if (amt > 0 && cEntry && cEntry.ar_60_plus > 0 && Number(k.ar_60_plus || 0) > 0) {
-          const cut60 = Math.min(cEntry.ar_60_plus, Number(k.ar_60_plus || 0), amt);
+        if (amt > 0 && cEntry && cEntry.ar_60_plus > 0 && curK('ar_60_plus') > 0) {
+          const cut60 = Math.min(cEntry.ar_60_plus, curK('ar_60_plus'), amt);
           cEntry.ar_60_plus = round2(cEntry.ar_60_plus - cut60);
           addK('ar_60_plus', -cut60);
-          const cutOv = Math.min(cEntry.ar_overdue, Math.max(0, Number(k.ar_overdue || 0)), amt);
+          const cutOv = Math.min(cEntry.ar_overdue, Math.max(0, curK('ar_overdue')), amt);
           cEntry.ar_overdue = round2(cEntry.ar_overdue - cutOv);
           addK('ar_overdue', -cutOv);
         } else if (amt < 0 && cEntry) {
@@ -5223,6 +5226,10 @@
       addK('operating_profit', -amt);
     });
 
+    for (const fk of Object.keys(deltaAcc)) {
+      const dv = deltaAcc[fk];
+      if (Math.abs(dv) > 1e-9) k[fk] = round2(Number(k[fk] || 0) + dv);
+    }
     return k;
   }
 
@@ -11292,7 +11299,13 @@
 
   function resolveColTokens(r, colKey, view) {
     if (!r || !colKey) return [];
-    if (colKey === 'raw_parties') return [r.site_owner, r.truck_owner].map(x => String(x || '').trim()).filter(Boolean);
+    if (colKey === 'raw_parties') {
+      const capRp = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+      return [r.site_owner, r.truck_owner].map(x => {
+        const s = String(x || '').trim();
+        return (s && capRp) ? capRp.field('supplier', s, 'raw_purchases') : s;
+      }).filter(Boolean);
+    }
     if (colKey === 'trucks_list' || colKey === 'drivers_list') {
       const rel = hubRelForCell();
       const se = rel && rel.suppByName ? rel.suppByName[norm(r.name)] : null;
@@ -11300,11 +11313,15 @@
         ? (se && se.trucks && se.trucks.size ? Array.from(se.trucks) : (Array.isArray(r.trucks) ? r.trucks : []))
         : (se && se.drivers && se.drivers.size ? Array.from(se.drivers) : (Array.isArray(r.drivers) ? r.drivers : []));
       if (setOrArr && setOrArr.length) {
-        return setOrArr.map(x => String(x || '').trim()).filter(Boolean);
+        const capTd = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+        return setOrArr.map(x => {
+          const s = String(x || '').trim();
+          return (s && capTd && colKey === 'drivers_list') ? capTd.field('driver', s, 'suppliers') : s;
+        }).filter(Boolean);
       }
     }
     const raw = resolveColVal(r, colKey, view);
-    const disp = normalizeColDisplayVal(raw, colKey);
+    const disp = normalizeColDisplayVal(raw, colKey, view);
     if (!disp || disp === '—') return [];
     return disp
       .replace(/\s*\(\+\d+\)\s*$/, '')
@@ -11331,19 +11348,22 @@
     return isNumericColKey(k);
   }
 
-  function normalizeColDisplayVal(rawVal, colKey) {
+  function normalizeColDisplayVal(rawVal, colKey, viewOrTbl) {
     if (rawVal == null || rawVal === '') return '';
     if (isBooleanColKey(colKey, rawVal)) {
       if (rawVal === true || rawVal === 1 || rawVal === '1' || /^yes|true$/i.test(String(rawVal))) return 'Yes';
       if (rawVal === false || rawVal === 0 || rawVal === '0' || /^no|false$/i.test(String(rawVal))) return 'No';
     }
-    return String(rawVal).trim();
+    const s = String(rawVal).trim();
+    const effTbl = typeof viewToTableKey === 'function' ? viewToTableKey(viewOrTbl) : String(viewOrTbl || '');
+    const tblHint = /^(?:uoms|uom|reg_uoms|reg_uom|reg_catalog_uoms)$/i.test(effTbl) ? 'uoms' : effTbl;
+    return (s && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.field(colKey, s, tblHint) : s;
   }
 
   function matchColFilterValue(rawVal, specRaw, colKey, r, view) {
     const spec = String(specRaw == null ? '' : specRaw).trim();
     if (!spec) return true;
-    const disp = normalizeColDisplayVal(rawVal, colKey);
+    const disp = normalizeColDisplayVal(rawVal, colKey, view);
     if (spec === '__nonempty__') {
       if (MULTI_TOKEN_COLS.has(colKey) && r) return resolveColTokens(r, colKey, view).length > 0;
       if (!disp || disp === '—') return false;
@@ -12049,7 +12069,7 @@
         continue;
       }
       const raw = resolveColVal(r, colKey, view);
-      const disp = normalizeColDisplayVal(raw, colKey);
+      const disp = normalizeColDisplayVal(raw, colKey, view);
       if (!disp || disp === '—') {
         emptyCnt++;
         continue;
@@ -22544,12 +22564,23 @@
       return true;
     }).length;
   }
+  const REL_LINK_CAP_KEYS = new Set([
+    'customers', 'suppliers', 'sites', 'regions', 'staff_members', 'staff_roles',
+    'drivers', 'equipment', 'products', 'items', 'expense_categories',
+    'expense_subcategories', 'jv_partnerships'
+  ]);
   function relLink(targetKey, val, label, bold) {
-    const v = String(val == null ? '' : val).trim();
-    if (!v || v === '—' || v === '(no site on ticket)' || v === '(Unspecified)' || v === 'Company fleet') {
-      return bold ? `<strong>${esc(label || v || '—')}</strong>` : esc(label || v || '—');
+    let v = String(val == null ? '' : val).trim();
+    if (!v || v === '—' || v === '(no site on ticket)' || v === '(Unspecified)' || /^company fleet$/i.test(v)) {
+      const sentinelLbl = /^company fleet$/i.test(v) ? 'Company Fleet' : v;
+      const lblOut = label != null && label !== '' ? String(label) : (sentinelLbl || '—');
+      return bold ? `<strong>${esc(lblOut)}</strong>` : esc(lblOut);
     }
-    const txt = esc(label || v);
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP && REL_LINK_CAP_KEYS.has(targetKey)) ? window.MFG_CAP : null;
+    if (capOn) v = capOn.name(v);
+    let lbl = label != null && label !== '' ? String(label) : v;
+    if (capOn && label != null && label !== '') lbl = capOn.name(lbl);
+    const txt = esc(lbl || v);
     const inner = bold ? `<strong>${txt}</strong>` : txt;
     return `<span class="rel-link" data-rel-key="${esc(targetKey)}" data-rel-val="${esc(v)}" data-ui-tip="Click to open 360° Record · Shift+Click to filter table by ${esc(v)}">${inner}<span class="rel-arr">↗</span></span>`;
   }
@@ -23262,6 +23293,24 @@
     }
     return dropped;
   }
+  function preserveRawEntityStrings(crKey, nextRow, prevRawRow, explicitKeys) {
+    if (!nextRow || !prevRawRow || typeof window === 'undefined' || !window.MFG_CAP) return nextRow;
+    const tblKey = crKey === 'uom' ? 'uoms' : String(crKey || '');
+    const capCheck = window.MFG_CAP;
+    const expSet = explicitKeys instanceof Set
+      ? explicitKeys
+      : (Array.isArray(explicitKeys) ? new Set(explicitKeys) : (explicitKeys && typeof explicitKeys === 'object' ? new Set(Object.keys(explicitKeys)) : null));
+    Object.keys(prevRawRow).forEach(fk => {
+      if (expSet && expSet.has(fk)) return;
+      const pv = prevRawRow[fk];
+      const nv = nextRow[fk];
+      if (typeof pv === 'string' && pv && typeof nv === 'string' && capCheck.field(fk, pv, tblKey) === nv) {
+        nextRow[fk] = pv;
+      }
+    });
+    return nextRow;
+  }
+
   function splitChronoSaveIntoNewEntry(crKey, savedRow, editOrig, extraApiPosts, hint) {
     const plan = describeChronoKeptPeriod(crKey, savedRow, editOrig, hint);
     if (!plan) return null;
@@ -23279,14 +23328,21 @@
     };
     // 1. The row keeps its id and gets its old values back
     const seedIdx = list.findIndex(x => x && String(x.id) === origId);
-    if (seedIdx >= 0 && list[seedIdx] !== savedRow) restored = overwrite(list[seedIdx], restored);
-    else if (seedIdx >= 0) list[seedIdx] = restored;
-    else list.push(restored);
     if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
     const custom = STATE.customRecords[crKey];
     const cIdx = custom.findIndex(x => x && String(x.id) === origId);
+    const rawPrevCustom = (cIdx >= 0 && custom[cIdx]) ? Object.assign({}, custom[cIdx]) : null;
+    if (rawPrevCustom) {
+      preserveRawEntityStrings(crKey, restored, rawPrevCustom, ['id']);
+    }
+    if (seedIdx >= 0 && list[seedIdx] !== savedRow) restored = overwrite(list[seedIdx], restored);
+    else if (seedIdx >= 0) list[seedIdx] = restored;
+    else list.push(restored);
     if (cIdx >= 0 && custom[cIdx] !== savedRow) overwrite(custom[cIdx], restored);
     else if (cIdx >= 0) custom[cIdx] = Object.assign({}, restored);
+    if (rawPrevCustom) {
+      preserveRawEntityStrings(crKey, savedRow, rawPrevCustom, ['id', 'start_date', 'end_date', 'date', 'rep_date', 'entered_by', 'entered_by_email', 'created_at']);
+    }
     // 2. The values being saved become a new entry
     Object.keys(savedRow).forEach(k => { if (CHRONO_NEW_ENTRY_DROP_RE.test(k)) delete savedRow[k]; });
     ['wb_index', 'wb_end_date', 'wb_total'].forEach(k => { delete savedRow[k]; });
@@ -23416,13 +23472,15 @@
       peerRow.modified_at = clampRowStampIso(peerRow, peerStampIso);
       if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
       const cIdx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === String(peerRow.id));
+      const peerPayload = Object.assign({}, peerRow);
       if (cIdx >= 0) {
-        Object.assign(STATE.customRecords[tk][cIdx], peerRow);
+        preserveRawEntityStrings(tk, peerPayload, STATE.customRecords[tk][cIdx], ['start_date', 'end_date', '_explicitEnd', '_auto_closed_by_id', 'modified_at']);
+        Object.assign(STATE.customRecords[tk][cIdx], peerPayload);
         if (!('_prev_end_date' in peerRow)) delete STATE.customRecords[tk][cIdx]._prev_end_date;
       } else {
-        STATE.customRecords[tk].push(Object.assign({}, peerRow));
+        STATE.customRecords[tk].push(peerPayload);
       }
-      if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, peerRow]);
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, cIdx >= 0 ? STATE.customRecords[tk][cIdx] : peerPayload]);
     };
 
     const touchedPeers = [];
@@ -40902,11 +40960,14 @@
     });
     customItems.forEach(r => {
       if (!r || r.voided) return;
-      const nm = String(r.name || r.item_name || '').trim();
+      const nmRaw = String(r.name || r.item_name || '').trim();
+      const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
       if (nm && !byKey.has(norm(nm))) {
-        if (!r.subcategory) r.subcategory = inferItemCatalogSubcategory(nm, r.category, '');
-        SEED.records.items.push(r);
-        byKey.set(norm(nm), r);
+        const pol = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(r, 'items') : r;
+        const seedItem = (pol === r) ? Object.assign({}, r) : pol;
+        if (!seedItem.subcategory) seedItem.subcategory = inferItemCatalogSubcategory(nm, seedItem.category, '');
+        SEED.records.items.push(seedItem);
+        byKey.set(norm(nm), seedItem);
       }
     });
     CANONICAL_ITEMS_SEED.forEach(seedRow => {
@@ -40944,7 +41005,8 @@
       histCostAgg.set(k, cur);
     });
     const autoInferFromRow = (rawName, uomRaw, catRaw, subRaw, costRaw, locRaw, minRaw, isExplicitStockOrRepair = false) => {
-      const nm = String(rawName || '').trim();
+      const nmRaw = String(rawName || '').trim();
+      const nm = (nmRaw && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
       if (!nm) return;
       if (!isExplicitStockOrRepair && !isCandFast(nm, catRaw)) return;
       if (isExplicitStockOrRepair && isTransportRentalItemName(nm, catRaw)) return;
@@ -41063,9 +41125,10 @@
       entered_at: nowStamp(),
       voided: false
     };
+    if (typeof window !== 'undefined' && window.MFG_CAP) window.MFG_CAP.polishRowInPlace(itemRec, 'items');
     if (!Array.isArray(STATE.customRecords.items)) STATE.customRecords.items = [];
     STATE.customRecords.items.unshift(itemRec);
-    if (SEED.records && Array.isArray(SEED.records.items)) SEED.records.items.unshift(itemRec);
+    if (SEED.records && Array.isArray(SEED.records.items)) SEED.records.items.unshift(Object.assign({}, itemRec));
     return itemRec;
   }
 
@@ -41144,7 +41207,8 @@
     }
 
     const upsertSeedRole = (rawName, catHint, payHint, eqHint, notesHint) => {
-      const nm = String(rawName || '').trim();
+      const nmRaw = String(rawName || '').trim();
+      const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
       const k = norm(nm);
       if (!k || voidedKeys.has(k)) return;
       const cat = inferRoleCategory(nm, catHint) || 'Site & Operations';
@@ -41192,20 +41256,22 @@
 
     customList.forEach(r => {
       if (!r || r.voided) return;
-      const nm = String(r.name || r.role || '').trim();
+      const nmRaw = String(r.name || r.role || '').trim();
+      const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
       const k = norm(nm);
       if (!k) return;
-      const rawCat = String(r.role_category || r.category || '').trim();
+      const rPol = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(r, 'staff_roles') : r;
+      const rawCat = String(rPol.role_category || rPol.category || '').trim();
       const cat = (rawCat ? (inferRoleCategory('', rawCat) || rawCat) : inferRoleCategory(nm, '')) || 'Site & Operations';
       const existing = byKey.get(k);
       if (existing) {
-        Object.assign(existing, r, { name: nm, role: nm, role_category: cat, category: cat, id: existing.id || r.id, voided: false });
+        Object.assign(existing, rPol, { name: nm, role: nm, role_category: cat, category: cat, id: existing.id || r.id, voided: false });
       } else {
         const clone = Object.assign({
           pay_basis: 'Monthly',
           operates_equipment: /driver|operat|loader|excavat|bulldozer|crusher/i.test(nm) ? 'Yes' : 'No',
           notes: ''
-        }, r, { name: nm, role: nm, role_category: cat, category: cat, voided: false });
+        }, rPol, { name: nm, role: nm, role_category: cat, category: cat, voided: false });
         rec.staff_roles.unshift(clone);
         byKey.set(k, clone);
       }
@@ -41236,7 +41302,8 @@
   }
 
   function ensureRoleInRegistry(roleRaw, catHintRaw, eqHintRaw) {
-    const nm = String(roleRaw || '').trim();
+    const nmRaw = String(roleRaw || '').trim();
+    const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
     if (!nm) return null;
     const existing = resolveStaffRole(nm);
     if (existing) return existing;
@@ -43743,7 +43810,8 @@
     const discovered = new Map();
     const touchName = (rawName, patch) => {
       if (skipName(rawName)) return;
-      const nm = String(rawName).trim();
+      const nmRaw = String(rawName).trim();
+      const nm = (nmRaw && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
       const rawK = norm(nm);
       const co = (patch && patch.company) ? canonCompany(patch.company) : '';
       if (splitNames.has(rawK) && !co) return;
@@ -43769,8 +43837,8 @@
       }
       if (co && !cur.company) cur.company = co;
       if (patch) {
-        if (patch.father_name && !cur.father_name) cur.father_name = patch.father_name;
-        if (patch.role) cur.role = patch.role;
+        if (patch.father_name && !cur.father_name) cur.father_name = window.MFG_CAP ? window.MFG_CAP.name(patch.father_name) : patch.father_name;
+        if (patch.role) cur.role = window.MFG_CAP ? window.MFG_CAP.name(patch.role) : patch.role;
         if (patch.phone) cur.phone = patch.phone;
         if (patch.default_equipment && !cur.default_equipment) cur.default_equipment = patch.default_equipment;
         if (patch.isCoDriver) cur.isCoDriver = true;
@@ -43870,18 +43938,20 @@
 
     customList.forEach(r => {
       if (!r || r.voided) return;
-      const nm = String(r.name || r.staff || '').trim();
+      const nmRaw = String(r.name || r.staff || '').trim();
+      const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
       const k = staffEntryKey(norm(nm), r.company);
       if (!k) return;
-      const cat = resolveRoleCategory(r.role, r.role_category || r.worker_category || 'Site & Operations') || 'Site & Operations';
+      const rPol = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(r, 'staff_members') : r;
+      const cat = resolveRoleCategory(rPol.role, rPol.role_category || rPol.worker_category || 'Site & Operations') || 'Site & Operations';
       const byIdHit = r.id != null ? byId.get(String(r.id)) : null;
       const existing = byIdHit || (isInactiveSm(r) ? null : byKey.get(k));
       if (existing) {
-        Object.assign(existing, r, { name: nm, staff: nm, role_category: cat, worker_category: cat, id: existing.id || r.id });
+        Object.assign(existing, rPol, { name: nm, staff: nm, role_category: cat, worker_category: cat, id: existing.id || r.id });
         if (existing.id != null) byId.set(String(existing.id), existing);
         if (!isInactiveSm(existing) && !byKey.has(k)) byKey.set(k, existing);
       } else {
-        const clone = Object.assign({ role_category: cat, worker_category: cat, role: '', phone: '', default_equipment: '', reference: '', notes: '' }, r, { name: nm, staff: nm, role_category: cat, worker_category: cat, voided: false });
+        const clone = Object.assign({ role_category: cat, worker_category: cat, role: '', phone: '', default_equipment: '', reference: '', notes: '' }, rPol, { name: nm, staff: nm, role_category: cat, worker_category: cat, voided: false });
         rec.staff_members.unshift(clone);
         if (clone.id != null) byId.set(String(clone.id), clone);
         if (!isInactiveSm(clone)) byKey.set(k, clone);
@@ -66377,7 +66447,8 @@
   }
 
   function applyChronoWindowOverlays(baseArr, customArr, wfBucket) {
-    let list = (Array.isArray(baseArr) ? baseArr : []).map(r => Object.assign({}, r));
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+    let list = (Array.isArray(baseArr) ? baseArr : []).map(r => capOn ? capOn.polishRowCopy(Object.assign({}, r), wfBucket || '') : Object.assign({}, r));
     const cust = Array.isArray(customArr) ? customArr : [];
     const rawBucketArr = (wfBucket && typeof getIndustryCustomRowsStore === 'function')
       ? (getIndustryCustomRowsStore()[wfBucket] || [])
@@ -66402,9 +66473,10 @@
         return;
       }
       if (cidUp) voidedIds.delete(cidUp);
+      const caPol = capOn ? capOn.polishRowCopy(ca, wfBucket || ca._customBucket || '') : ca;
       const idx = cidUp ? list.findIndex(x => x && String(x.id || x.code || '').trim().toUpperCase() === cidUp) : -1;
-      if (idx >= 0) list[idx] = Object.assign({}, list[idx], ca, { id: list[idx].id || effId });
-      else list.unshift(Object.assign({}, ca, upgId ? { id: upgId } : {}));
+      if (idx >= 0) list[idx] = Object.assign({}, list[idx], caPol, { id: list[idx].id || effId });
+      else list.unshift(Object.assign({}, caPol, upgId ? { id: upgId } : {}));
     });
     if (voidedIds.size) {
       list = list.filter(x => x && !voidedIds.has(String(x.id || x.code || '').trim().toUpperCase()));
@@ -70896,7 +70968,7 @@
       { id: 'MEM-2026-006', company: 'La Una', member: 'Gourmet Circle VIP (12 Cards)', unit: 'Private Cellar Locker #L-03', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 18000, paid_usd: 18000, balance_usd: 0, due_date: '2026-02-01', status: 'Paid in Full', notes: 'Corporate dining & private cellar membership' },
       { id: 'MEM-2026-007', company: 'Platinum', member: 'Levant Executive Group', unit: 'Penthouse Suite #PT-01', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 42000, paid_usd: 34000, balance_usd: 8000, due_date: '2026-09-01', status: 'Overdue Arrears', notes: 'Remaining corporate hospitality retainer balance' }
     ]);
-    const mergedMemRows = _filterVoidedDomainRows('hsp_memberships', mergeCustomOverSeededRows(membershipRows, getIndustryCustomRows('hsp_memberships')));
+    const mergedMemRows = _filterVoidedDomainRows('hsp_memberships', mergeCustomOverSeededRows(membershipRows, getIndustryCustomRows('hsp_memberships'), 'hsp_memberships'));
     const scopedMemRows = mergedMemRows.filter(r => activeNames.has(r.company) && hspPm.matchSpan(r.start_date, r.end_date));
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
 
@@ -70960,18 +71032,20 @@
       { id: 'NRG-004', date: '2026-09-26', company: 'Voile', asset: 'Volvo Penta 350kVA Beach Club Gen', tank_level_l: 2940, refill_l: 2000, run_hours: 15.0, diesel_used_l: 345, l_per_hr: 23.0, rated_l_hr: 24.0, kwh_gen: 1410, solar_offset_pct: 34, status: 'Normal Burn', notes: 'Sound system, deck chillers & desalination plant balanced' },
       { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
     ]);
-    const mergedNrgRows = _filterVoidedDomainRows('hsp_energy', mergeCustomOverSeededRows(energyRows, getIndustryCustomRows('hsp_energy')));
+    const mergedNrgRows = _filterVoidedDomainRows('hsp_energy', mergeCustomOverSeededRows(energyRows, getIndustryCustomRows('hsp_energy'), 'hsp_energy'));
     const scopedNrgRows = mergedNrgRows.filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
     energyRows.length = 0; energyRows.push(...scopedNrgRows);
 
-    const maintRows = pickHsp('maintRows', [
+    const baseMaintRows = pickHsp('maintRows', [
       { id: 'MNT-HSP-01', date: '2026-09-28', company: 'Palms', asset: 'Caterpillar 650kVA Gen #1', zone: 'Power House', type: 'Corrective · Fuel Injector Calibration', priority: 'Urgent', downtime_hrs: 2.5, cost_usd: 680, vendor: 'jounieh marine & power', status: 'Open Work Order', notes: 'Triggered by 44.0 L/hr generator burn spike alert' },
       { id: 'MNT-HSP-02', date: '2026-09-27', company: 'Blanca', asset: 'Infinity Pool Filtration & Salt Chlorinator', zone: 'Main Pool Deck', type: 'Preventive · Membrane & Pump Service', priority: 'Standard', downtime_hrs: 0, cost_usd: 420, vendor: 'aqua-tech lebanon', status: 'Completed', notes: 'Overnight backwash & dosing pump calibration' },
       { id: 'MNT-HSP-03', date: '2026-09-26', company: 'La Una', asset: 'Walk-In Cold Room #2 Compressor', zone: 'Main Commissary', type: 'Preventive · Refrigerant & Thermostat Check', priority: 'High', downtime_hrs: 0.5, cost_usd: 310, vendor: 'frio-serv commercial', status: 'Completed', notes: 'Held -2.0°C steady under full weekend load' },
       { id: 'MNT-HSP-04', date: '2026-09-25', company: 'Blanca', asset: 'Chalet Block B Split HVAC Units (8 Units)', zone: 'Chalet Village', type: 'Preventive · Coil Deep Clean & Gas Top-Up', priority: 'Standard', downtime_hrs: 1.0, cost_usd: 540, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'End-of-September guest turnover HVAC service' },
       { id: 'MNT-HSP-05', date: '2026-09-24', company: 'Voile', asset: 'Reverse Osmosis Desalination Skid (80m³/day)', zone: 'Utility Plant', type: 'Corrective · High-Pressure Seal Replacement', priority: 'High', downtime_hrs: 3.0, cost_usd: 890, vendor: 'aqua-tech lebanon', status: 'Open Work Order', notes: 'Scheduled Tuesday morning between guest check-outs' },
       { id: 'MNT-HSP-06', date: '2026-09-23', company: 'Platinum', asset: 'Ballroom Acoustic Dimmers & Chiller AHU #3', zone: 'Grand Ballroom', type: 'Preventive · Pre-Gala Inspection', priority: 'Standard', downtime_hrs: 0, cost_usd: 390, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'Verified 100% ahead of corporate gala season' }
-    ]).filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
+    ]);
+    const maintRows = _filterVoidedDomainRows('hsp_maintenance', mergeCustomOverSeededRows(baseMaintRows, getIndustryCustomRows('hsp_maintenance'), 'hsp_maintenance'))
+      .filter(r => activeNames.has(r.company) && hspPm.matchDate(r.date));
 
     const matchSearch = row => {
       if (!q) return true;
@@ -72281,6 +72355,7 @@
       const origNet = round2(Number(rowObj.net_usd || 0) || 0);
       const origVat = round2(Number(rowObj.vat_usd || 0) || 0);
       const origTtc = round2(Number(rowObj.ttc_usd || 0) || 0);
+      const capTrdCell = (col, v) => (v && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.field(col, v, 'trd_sales') : v;
       const out = Object.assign({}, rowObj);
       let netEdited = false, vatEdited = false, ttcEdited = false;
       for (let ci = 0; ci < ev.headers.length; ci++) {
@@ -72291,9 +72366,19 @@
         if (hdr.includes('date')) {
           if (/^\d{4}-\d{2}-\d{2}/.test(cell)) out.date = cell.slice(0, 10);
         } else if (hdr.includes('customer')) {
-          if (cell) out.customer = cell;
+          if (cell) out.customer = capTrdCell('customer', cell);
         } else if (hdr.includes('entity') || hdr.includes('company')) {
           if (cell) out.company = cell;
+        } else if (hdr.includes('item') || hdr.includes('product') || hdr.includes('truck')) {
+          if (cell) out.item = capTrdCell('item', cell);
+        } else if (hdr.includes('supplier') || hdr.includes('oem')) {
+          if (cell) out.supplier = capTrdCell('supplier', cell);
+        } else if (hdr.includes('driver')) {
+          if (cell) out.driver = capTrdCell('driver', cell);
+        } else if (hdr.includes('site') || hdr.includes('warehouse')) {
+          if (cell) out.site = capTrdCell('site', cell);
+        } else if (hdr.includes('category')) {
+          if (cell) out.category = capTrdCell('category', cell);
         } else if (hdr.includes('payment') || hdr.includes('term')) {
           if (cell) out.payment_term = cell;
         } else if (hdr.includes('net') && !hdr.includes('margin')) {
@@ -72521,7 +72606,7 @@
           rawReceivableRows.unshift({
             id: rr.id || ('AR-' + rid),
             company: rCo,
-            customer: custName,
+            customer: (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.field('customer', custName, 'trd_receivables') : custName,
             invoiced_ttc: 0,
             settled_usd: cashPart,
             gross_ar_usd: 0,
@@ -72623,9 +72708,10 @@
       { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
       { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
       { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc' }
-    ]), getIndustryCustomRows('trd_purchases')).map(rawR => {
+    ]), getIndustryCustomRows('trd_purchases'), 'trd_purchases').map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_purchases', rawR.id) || getIndustryWorkflowPatch('trd_imports', rawR.id);
-      const r = wp ? Object.assign({}, rawR, wp) : rawR;
+      const rMerged = wp ? Object.assign({}, rawR, wp) : rawR;
+      const r = (wp && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(rMerged, 'trd_purchases') : rMerged;
       const fob_usd = Number(r.fob_usd || 0);
       const landed_add_usd = Number(r.landed_add_usd != null ? r.landed_add_usd : (r.duty_freight_usd || 0));
       const total_landed_usd = Number(r.total_landed_usd != null ? r.total_landed_usd : (r.cif_usd != null ? r.cif_usd : round2(fob_usd + landed_add_usd)));
@@ -72686,7 +72772,7 @@
       { id: 'SU-SH-007', company: 'Shacman', model: 'Shacman L3000 4x2 Municipal Water Tanker', family: 'L3000 Series', chassis_vin: 'LZGJLDR44PX019312', engine_no: 'ISD245-50-440198', year: 2026, warehouse: 'Workshop', fob_usd: 46800, landed_add_usd: 4200, landed_cost_usd: 51000, list_price_usd: 69500, status: 'In PDI', buyer: 'Pre-Delivery Inspection Bay 2' },
       { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2025, warehouse: 'Al Ghazieh', fob_usd: 29500, landed_add_usd: 3100, landed_cost_usd: 32600, list_price_usd: 42900, status: 'In Showroom', buyer: 'Available (Al-Ghazieh Branch)' },
       { id: 'SU-KA-002', company: 'Korri Auto', model: 'Hydraulic Lowbed Recovery Trailer 60T', family: 'Heavy Trailers', chassis_vin: 'TRL60TLB2026KA009', engine_no: 'HYD-AXLE-BPW-3AX', year: 2026, warehouse: 'Al Ghazieh', fob_usd: 34200, landed_add_usd: 3600, landed_cost_usd: 37800, list_price_usd: 49500, status: 'Reserved', buyer: 'South Coast Auto Fleet' }
-    ]), getIndustryCustomRows('trd_trucks')).map(rawR => {
+    ]), getIndustryCustomRows('trd_trucks'), 'trd_trucks').map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_trucks', rawR.id);
       const r = wp ? Object.assign({}, rawR, wp) : rawR;
       const landed_cost_usd = round2(Number(r.landed_cost_usd ?? r.landed_usd ?? 0));
@@ -72710,7 +72796,7 @@
       { id: 'SVC-SH-2026-079', date: '2026-10-23', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019274', model: 'Shacman M3000 6x4 Mixer 10m³', job_type: '1,000-Hour First Service & PTO Calibration', bay: 'Bchamoun Service Pit', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 940, labor_usd: 260, claim_recovery_usd: 1200, status: 'Completed' },
       { id: 'SVC-KA-2026-064', date: '2026-10-29', company: 'Korri Auto', chassis_vin: 'WDB9066571P391042', model: 'Heavy Fleet Tyre & Brake Overhaul', job_type: 'Customer Workshop Job & Alignment', bay: 'Al-Ghazieh Service Bay', technician: 'bilal S. (Al-Ghazieh)', parts_cost_usd: 1120, labor_usd: 280, claim_recovery_usd: 1400, status: 'Completed' },
       { id: 'WAR-KA-2026-065', date: '2026-10-30', company: 'Korri Auto', chassis_vin: 'TRL60TLB2026KA009', model: 'Hydraulic Lowbed 60T Valve Block', job_type: 'Supplier Warranty Replacement', bay: 'Al-Ghazieh Service Bay', technician: 'Bilal S. (Al-Ghazieh)', parts_cost_usd: 540, labor_usd: 120, claim_recovery_usd: 660, status: 'Open Claim' }
-    ]), getIndustryCustomRows('trd_warranty')).map(rawR => {
+    ]), getIndustryCustomRows('trd_warranty'), 'trd_warranty').map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_warranty', rawR.id);
       return wp ? Object.assign({}, rawR, wp) : rawR;
     }), { applyPatch: false });
@@ -72736,13 +72822,13 @@
     });
 
     // 10. Stock Movements & Inter-Company Transfers
-    const rawMovementRows = _filterVoidedDomainRows('trd_movements', pickTrd('movementRows', [
+    const rawMovementRows = _filterVoidedDomainRows('trd_movements', mergeCustomOverSeededRows(pickTrd('movementRows', [
       { id: 'IC-TRD-2026-011', date: '2026-10-29', company: 'Shacman', type: 'Inter-Company Transfer', from_wh: 'Bchamoun Yard (Shacman)', to_wh: 'Al Ghazieh (Korri Auto)', item_code: '612600081335', item_name: 'Weichai WP12 Injector & Filter Overhaul Pack', qty: 8, unit_cost_usd: 285, total_usd: 2280, status: 'Mirrored IC Transfer' },
       { id: 'IC-TRD-2026-012', date: '2026-10-27', company: 'Korri Auto', type: 'Inter-Company Transfer', from_wh: 'Al Ghazieh (Korri Auto)', to_wh: 'Workshop (Shacman)', item_code: 'TYR-31580R225', item_name: '315/80R22.5 18PR Heavy Radial Tyres (PDI Mount)', qty: 12, unit_cost_usd: 270, total_usd: 3240, status: 'Mirrored IC Transfer' },
       { id: 'MOV-SH-2026-104', date: '2026-10-30', company: 'Shacman', type: 'Warehouse Transfer', from_wh: 'Bonded Yard', to_wh: 'Main Showroom', item_code: 'LZGJLDR44PX019301', item_name: 'Shacman F3000 6x4 Dump Truck 340HP', qty: 1, unit_cost_usd: 69200, total_usd: 69200, status: 'Posted' },
       { id: 'MOV-SH-2026-103', date: '2026-10-28', company: 'Shacman', type: 'Workshop Issue', from_wh: 'Bchamoun Yard', to_wh: 'Workshop Bay 1', item_code: '12JS200T-1701', item_name: 'Fast 12-Speed Synchronizer Assembly', qty: 2, unit_cost_usd: 1120, total_usd: 2240, status: 'Issued to Job' },
       { id: 'MOV-KA-2026-089', date: '2026-10-30', company: 'Korri Auto', type: 'Customer Dispatch', from_wh: 'Al Ghazieh', to_wh: 'Customer Delivery', item_code: 'FLT-LF9009', item_name: 'Fleetguard LF9009 Heavy Filter Service Pack', qty: 40, unit_cost_usd: 48, total_usd: 1920, status: 'Dispatched' }
-    ]));
+    ]), getIndustryCustomRows('trd_movements'), 'trd_movements'));
 
     // 11. Parallel Stock & P&L Reconciliation (1,077 Stock Position rows & 268 Monthly P&L rows)
     const rawReconRows = pickTrd('reconRows', [
@@ -74809,23 +74895,23 @@
         date: String(r.date || '').slice(0, 10)
       });
     });
-    const mProperties = _filterVoidedDomainRows('re_properties', mergeCustomOverSeededRows(properties, getIndustryCustomRows('re_properties')));
+    const mProperties = _filterVoidedDomainRows('re_properties', mergeCustomOverSeededRows(properties, getIndustryCustomRows('re_properties'), 're_properties'));
     properties.length = 0; properties.push(...mProperties);
     const mLeases = applyChronoWindowOverlays(leases, getIndustryCustomRows('re_leases'), 're_leases');
     leases.length = 0; leases.push(...mLeases);
-    const mInvoices = mergeCustomOverSeededRows(invoices, getIndustryCustomRows('re_invoicing'));
+    const mInvoices = mergeCustomOverSeededRows(invoices, getIndustryCustomRows('re_invoicing'), 're_invoicing');
     invoices.length = 0; invoices.push(...mInvoices);
-    const mReceipts = mergeCustomOverSeededRows(receipts, getIndustryCustomRows('re_receipts'));
+    const mReceipts = mergeCustomOverSeededRows(receipts, getIndustryCustomRows('re_receipts'), 're_receipts');
     receipts.length = 0; receipts.push(...mReceipts);
-    const mSales = _filterVoidedDomainRows('re_sales', mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales')));
+    const mSales = _filterVoidedDomainRows('re_sales', mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales'), 're_sales'));
     sales.length = 0; sales.push(...mSales);
-    const mInstalments = _filterVoidedDomainRows('re_instalments', mergeCustomOverSeededRows(instalments, getIndustryCustomRows('re_instalments')));
+    const mInstalments = _filterVoidedDomainRows('re_instalments', mergeCustomOverSeededRows(instalments, getIndustryCustomRows('re_instalments'), 're_instalments'));
     instalments.length = 0; instalments.push(...mInstalments);
-    const mUnits = _filterVoidedDomainRows('re_units', mergeCustomOverSeededRows(units, getIndustryCustomRows('re_units')));
+    const mUnits = _filterVoidedDomainRows('re_units', mergeCustomOverSeededRows(units, getIndustryCustomRows('re_units'), 're_units'));
     units.length = 0; units.push(...mUnits);
-    const mWorkorders = _filterVoidedDomainRows(['re_workorders', 're_maintenance'], mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders')));
+    const mWorkorders = _filterVoidedDomainRows(['re_workorders', 're_maintenance'], mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders'), 're_workorders'));
     workorders.length = 0; workorders.push(...mWorkorders);
-    const mRecharges = _filterVoidedDomainRows('re_recharges', mergeCustomOverSeededRows(recharges, getIndustryCustomRows('re_recharges')));
+    const mRecharges = _filterVoidedDomainRows('re_recharges', mergeCustomOverSeededRows(recharges, getIndustryCustomRows('re_recharges'), 're_recharges'));
     recharges.length = 0; recharges.push(...mRecharges);
     const voidedReInv = _rawVoidedDomainIds('re_invoicing');
     const voidedReRct = _rawVoidedDomainIds('re_receipts');
@@ -76476,10 +76562,12 @@
       { id: 'AGR-MGF-MED-2025', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2025-01-01', end_date: '2025-12-31', new_bus_pct: 10.0, renewal_pct: 10.0, override_bonus_pct: 1.5, prior_rate_pct: 9.5, backfill_status: 'Auto-Closed at 2025-12-31', status: 'Closed Window' }
     ]);
 
+    const capIns = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
     const customInsPols = getIndustryCustomRows('ins_policies');
     let customPolOnlyCount = 0;
     let customEndOnlyCount = 0;
-    customInsPols.forEach(rawCp => {
+    customInsPols.forEach(rawCp0 => {
+      const rawCp = capIns ? capIns.polishRowCopy(rawCp0, 'ins_policies') : rawCp0;
       const gwpN = Number(rawCp.gross_prem_usd != null ? rawCp.gross_prem_usd : (rawCp.gwp_usd || 0));
       const commN = Number(rawCp.gross_comm_usd != null ? rawCp.gross_comm_usd : (rawCp.comm_usd != null ? rawCp.comm_usd : (rawCp.net_comm_usd || round2(gwpN * 0.15))));
       const discN = Number(rawCp.discount_usd || 0);
@@ -76499,8 +76587,12 @@
         policy_fee_usd: Number(rawCp.policy_fee_usd || 0),
         net_payable_4017_usd: pay4017N
       }, rawCp, {
-        client: rawCp.client || rawCp.insured || 'Policyholder',
-        insured: rawCp.insured || rawCp.client || 'Policyholder',
+        client: capIns ? capIns.field('client', rawCp.client || rawCp.insured || 'Policyholder', 'ins_policies') : (rawCp.client || rawCp.insured || 'Policyholder'),
+        insured: capIns ? capIns.field('insured', rawCp.insured || rawCp.client || 'Policyholder', 'ins_policies') : (rawCp.insured || rawCp.client || 'Policyholder'),
+        carrier: capIns ? capIns.field('carrier', rawCp.carrier || 'MedGulf', 'ins_policies') : (rawCp.carrier || 'MedGulf'),
+        line: capIns ? capIns.field('line', rawCp.line || 'MOT · Motor', 'ins_policies') : (rawCp.line || 'MOT · Motor'),
+        producer: rawCp.producer ? (capIns ? capIns.field('producer', rawCp.producer, 'ins_policies') : rawCp.producer) : rawCp.producer,
+        product: rawCp.product ? (capIns ? capIns.field('product', rawCp.product, 'ins_policies') : rawCp.product) : rawCp.product,
         gross_prem_usd: gwpN,
         gwp_usd: gwpN,
         gross_comm_usd: commN,
@@ -76587,7 +76679,7 @@
     const seededInsBillingIds = new Set(billing.map(r => (r && r.id) ? String(r.id).trim().toUpperCase() : '').filter(Boolean));
     const custInsBill = getIndustryCustomRows('ins_billing');
     if (custInsBill.length) {
-      const mBilling = mergeCustomOverSeededRows(billing, custInsBill);
+      const mBilling = mergeCustomOverSeededRows(billing, custInsBill, 'ins_billing');
       billing.length = 0; billing.push(...mBilling);
     }
     const voidedInsBill = _rawVoidedDomainIds('ins_billing');
@@ -76597,7 +76689,8 @@
       const ridUp = String(r.id || '').trim().toUpperCase();
       if (ridUp && voidedInsBill.has(ridUp)) return;
       const p = getIndustryWorkflowPatch('ins_billing', r.id);
-      const cur = p ? Object.assign({}, r, p) : Object.assign({}, r);
+      const pPol = (p && capIns) ? capIns.polishRowCopy(p, 'ins_billing') : p;
+      const cur = pPol ? Object.assign({}, r, pPol) : Object.assign({}, r);
       if (cur.voided || cur.voided_at) return;
       const billedRaw = cur.client_billed_4112_usd != null ? Number(cur.client_billed_4112_usd) : Number(cur.gross_prem_usd || 0);
       const colN = Number(cur.collected_usd != null ? cur.collected_usd : (cur.paid_usd || 0));
@@ -76649,11 +76742,11 @@
           rem = round2(rem - take);
         });
       });
-    const mItems = _filterVoidedDomainRows('ins_items', mergeCustomOverSeededRows(items, getIndustryCustomRows('ins_items')));
+    const mItems = _filterVoidedDomainRows('ins_items', mergeCustomOverSeededRows(items, getIndustryCustomRows('ins_items'), 'ins_items'));
     items.length = 0; items.push(...mItems);
-    const mClaims = _filterVoidedDomainRows('ins_claims', mergeCustomOverSeededRows(claims, getIndustryCustomRows('ins_claims')));
+    const mClaims = _filterVoidedDomainRows('ins_claims', mergeCustomOverSeededRows(claims, getIndustryCustomRows('ins_claims'), 'ins_claims'));
     claims.length = 0; claims.push(...mClaims);
-    const mRemit = _filterVoidedDomainRows('ins_remittances', mergeCustomOverSeededRows(remittances, getIndustryCustomRows('ins_remittances')));
+    const mRemit = _filterVoidedDomainRows('ins_remittances', mergeCustomOverSeededRows(remittances, getIndustryCustomRows('ins_remittances'), 'ins_remittances'));
     remittances.length = 0; remittances.push(...mRemit);
     const customInsAgr = getIndustryCustomRows('ins_agreements');
     const rawInsAgr = (typeof getIndustryCustomRowsStore === 'function' ? (getIndustryCustomRowsStore().ins_agreements || []) : []);
@@ -76673,9 +76766,10 @@
         return;
       }
       if (cidUp) voidedInsAgrIds.delete(cidUp);
+      const caPol = capIns ? capIns.polishRowCopy(ca, 'ins_agreements') : Object.assign({}, ca);
       const exAgrIdx = agreements.findIndex(a => a && String(a.id || '').trim().toUpperCase() === cidUp);
-      if (exAgrIdx >= 0) agreements[exAgrIdx] = Object.assign({}, agreements[exAgrIdx], ca);
-      else agreements.unshift(Object.assign({}, ca));
+      if (exAgrIdx >= 0) agreements[exAgrIdx] = Object.assign({}, agreements[exAgrIdx], caPol);
+      else agreements.unshift(caPol);
     });
     if (voidedInsAgrIds.size) {
       for (let ai = agreements.length - 1; ai >= 0; ai--) {
@@ -85722,8 +85816,16 @@
           )) {
             return;
           }
-          if (String(val) !== curRawCells[idx]) {
-            setDomainCellTextPreservingBadge(tds[idx], val);
+          let dispVal = String(val);
+          if (idx > 0 && dispVal && typeof window !== 'undefined' && window.MFG_CAP) {
+            const rawHdr = (Array.isArray(curHeaders) && curHeaders[idx]) || '';
+            const isEnt = typeof window.MFG_CAP.isEntityHeader === 'function'
+              ? window.MFG_CAP.isEntityHeader(rawHdr, domTblKey || STATE.view)
+              : window.MFG_CAP.isEntityCol(String(rawHdr).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''), domTblKey || STATE.view);
+            if (isEnt) dispVal = window.MFG_CAP.name(dispVal);
+          }
+          if (dispVal !== curRawCells[idx]) {
+            setDomainCellTextPreservingBadge(tds[idx], dispVal);
           }
         });
       }
@@ -85862,9 +85964,38 @@
     return Array.isArray(arr) ? arr.filter(r => r && !r.voided) : [];
   }
 
-  function mergeCustomOverSeededRows(seededArr, customArr) {
+  const _UNPACKED_SEED_ROW_SET = new WeakSet();
+  const _UNPACKED_SEED_POLISH_CACHE = new Map();
+  function _getSeedPolishBucketCache(bucketKey) {
+    let wm = _UNPACKED_SEED_POLISH_CACHE.get(bucketKey);
+    if (!wm) {
+      wm = new WeakMap();
+      _UNPACKED_SEED_POLISH_CACHE.set(bucketKey, wm);
+    }
+    return wm;
+  }
+
+  function mergeCustomOverSeededRows(seededArr, customArr, bucketHint) {
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+    const defBucket = bucketHint || '';
     const custList = Array.isArray(customArr) ? customArr : [];
-    const baseList = Array.isArray(seededArr) ? seededArr.slice() : [];
+    let defWm = (capOn && defBucket) ? _getSeedPolishBucketCache(defBucket) : null;
+    const baseList = Array.isArray(seededArr)
+      ? (capOn ? seededArr.map(sr => {
+          if (!sr || typeof sr !== 'object') return sr;
+          const b = sr._customBucket || defBucket;
+          if (_UNPACKED_SEED_ROW_SET.has(sr)) {
+            const wm = (b === defBucket && defWm) ? defWm : _getSeedPolishBucketCache(b);
+            let cached = wm.get(sr);
+            if (cached === undefined) {
+              cached = capOn.polishRowCopy(sr, b);
+              wm.set(sr, cached);
+            }
+            return cached;
+          }
+          return capOn.polishRowCopy(sr, b);
+        }) : seededArr.slice())
+      : [];
     if (!custList.length) return baseList;
     const prepend = [];
     custList.forEach(cr => {
@@ -85873,12 +86004,13 @@
       const upgId = resolveLegacyIndustryId(rawId);
       const effId = upgId || rawId;
       const cid = effId.toUpperCase();
-      if (!cid) { prepend.push(cr); return; }
+      const crPol = capOn ? capOn.polishRowCopy(cr, cr._customBucket || defBucket) : cr;
+      if (!cid) { prepend.push(crPol); return; }
       const idx = baseList.findIndex(sr => sr && String(sr.id || sr.code || '').trim().toUpperCase() === cid);
       if (idx >= 0) {
-        baseList[idx] = Object.assign({}, baseList[idx], cr, { id: baseList[idx].id || effId });
+        baseList[idx] = Object.assign({}, baseList[idx], crPol, { id: baseList[idx].id || effId });
       } else {
-        prepend.push(upgId ? Object.assign({}, cr, { id: upgId }) : cr);
+        prepend.push(upgId ? Object.assign({}, crPol, { id: upgId }) : crPol);
       }
     });
     return prepend.concat(baseList);
@@ -85941,7 +86073,8 @@
       const upg = resolveLegacyIndustryId(cleanId);
       if (upg) hit = store[`WF::${bucket}::${upg}`];
     }
-    return (hit && typeof hit === 'object' && !hit.voided) ? hit : null;
+    if (!hit || typeof hit !== 'object' || hit.voided) return null;
+    return (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(hit, String(bucket)) : hit;
   }
 
   function upgradeLegacyIndustryStores() {
@@ -86093,7 +86226,8 @@
     const store = getIndustryRowEditStore();
     const key = `WF::${bucket}::${String(rowId).trim()}`;
     const prev = (store[key] && typeof store[key] === 'object') ? store[key] : {};
-    const next = Object.assign({}, prev, patch, {
+    const polPatch = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(patch, bucket) : patch;
+    const next = Object.assign({}, prev, polPatch, {
       _revBumped: false,
       updated_at: new Date().toISOString()
     });
@@ -86122,12 +86256,15 @@
     const prevRev = prevRow ? Number(prevRow.rev || 1) : 0;
     const nextRev = Math.max(prevRev + 1, Number(rowObj.rev || 1));
     const tsIso = rowObj.updated_at || rowObj.updatedAt || nowIso;
+    const capRowIn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+    const rowObjPol = (prevRow && capRowIn) ? preserveRawEntityStrings(bucket, capRowIn.polishRowCopy(rowObj, bucket), prevRow) : rowObj;
     const rec = Object.assign(
       { _customBucket: bucket, _createdAt: nowIso, voided: false },
       prevRow || {},
-      rowObj,
+      rowObjPol,
       { _customBucket: bucket, rev: nextRev, updated_at: tsIso, updatedAt: tsIso }
     );
+    if (!prevRow && capRowIn) capRowIn.polishRowInPlace(rec, bucket);
     if (prevRow) {
       _mergePreVoidAuditMeta(rec, prevRow, rowObj);
       if (!(opts && opts.skipEditTrail) && !rec.voided) {
@@ -88420,12 +88557,14 @@
     return syncedCount;
   }
 
-  function freqRankCandidates(colHint, candidates) {
+  function freqRankCandidates(colHint, candidates, opts) {
     const uniq = [];
     const seen = new Set();
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP && !(opts && opts.rawCase)) ? window.MFG_CAP : null;
     (candidates || []).forEach(v => {
-      const s = String(v == null ? '' : v).trim();
-      if (!s) return;
+      const sRaw = String(v == null ? '' : v).trim();
+      if (!sRaw) return;
+      const s = (capOn && capOn.isEntityCol(colHint || 'name', '')) ? capOn.name(sRaw) : sRaw;
       const k = s.toLowerCase();
       if (!seen.has(k)) { seen.add(k); uniq.push(s); }
     });
@@ -91735,6 +91874,7 @@
           ...(isEditMode ? { modified_by: curSeat.full_name || curSeat.name || curSeat.email || 'Owner', rev: Math.max(2, Number((prefill && prefill.rev) || 1) + 1) } : {}),
           ...domNearCopyLink
         };
+        if (typeof window !== 'undefined' && window.MFG_CAP) window.MFG_CAP.polishRowInPlace(rcptRec, 'receipts');
         if (!STATE.customRecords.receipts) STATE.customRecords.receipts = [];
         const crArr = STATE.customRecords.receipts;
         const prevRctCrSnap = JSON.parse(JSON.stringify(crArr));
@@ -92128,6 +92268,7 @@
           _custom: true,
           ...domNearCopyLink
         };
+        if (typeof window !== 'undefined' && window.MFG_CAP) window.MFG_CAP.polishRowInPlace(extRec, 'external_movements');
         if (!STATE.customRecords.external_movements) STATE.customRecords.external_movements = [];
         const crArr = STATE.customRecords.external_movements;
         const prevExtCrSnap = JSON.parse(JSON.stringify(crArr));
@@ -105860,6 +106001,7 @@
             autoCloseDate: cState.closeDate,
             status: cState.ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
           });
+          if (typeof window !== 'undefined' && window.MFG_CAP) window.MFG_CAP.polishRowInPlace(upd, fk);
           const prevDeferDomChrono = _deferIndustryDomainServerPost;
           let syncedCnt = 0;
           let cleanedEditKey = false;
@@ -106022,9 +106164,30 @@
           if (drawerSplit) toast(chronoKeptPeriodToastText(drawerSplit.kept), 'ok');
           return;
         }
-        const nextCells = inputs.map((el, idx) => lockedNumericIndices.has(idx) ? String(origCellsForSave[idx] ?? cells[idx] ?? '').trim() : el.value.trim());
         const store = getIndustryRowEditStore();
         const prevEntry = store[editKey] || {};
+        const nextCells = inputs.map((el, idx) => {
+          if (lockedNumericIndices.has(idx)) return String(origCellsForSave[idx] ?? cells[idx] ?? '').trim();
+          let v = el.value.trim();
+          if (idx === 0) return String((Array.isArray(prevEntry.cells) && prevEntry.cells[0] != null ? prevEntry.cells[0] : (origCellsForSave[0] ?? v)) || '').trim();
+          const initVal = String(el.dataset.initVal || '').trim();
+          const prevRawCell = (Array.isArray(prevEntry.cells) && prevEntry.cells[idx] != null) ? String(prevEntry.cells[idx]).trim() : '';
+          if (v && v === initVal) {
+            if (prevRawCell && typeof window !== 'undefined' && window.MFG_CAP && window.MFG_CAP.name(prevRawCell) === v) {
+              return prevRawCell;
+            }
+            return v;
+          }
+          if (v && typeof window !== 'undefined' && window.MFG_CAP) {
+            const rawHdr = (Array.isArray(headers) && headers[idx]) || '';
+            const tblHint = domainTblKey || STATE.view || '';
+            const isEnt = typeof window.MFG_CAP.isEntityHeader === 'function'
+              ? window.MFG_CAP.isEntityHeader(rawHdr, tblHint)
+              : window.MFG_CAP.isEntityCol(String(rawHdr).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''), tblHint);
+            if (isEnt) v = window.MFG_CAP.name(v);
+          }
+          return v;
+        });
         const nowIso = new Date().toISOString();
         const nextStoreEntry = {
           ind,
@@ -137715,6 +137878,19 @@
     FORM_UI.postAttempted = false;
     syncFormValidationUI([], false);
     hideEntryUnsavedPrompt();
+    if (typeof window !== 'undefined' && window.MFG_CAP && record) {
+      window.MFG_CAP.polishRowInPlace(record, crKey === 'uom' ? 'uoms' : crKey);
+      if (isEditingExisting || isUpdatingPending || record._updatingExistingId) {
+        const prevEditId = String(record.id || (editCtx && editCtx.id) || '').trim();
+        const prevEditCr = (editCtx && editCtx.crKey) || crKey;
+        const prevRawEntry = (prevEditId && Array.isArray(STATE.customRecords[prevEditCr]))
+          ? STATE.customRecords[prevEditCr].find(x => x && String(x.id) === prevEditId)
+          : null;
+        if (prevRawEntry) preserveRawEntityStrings(crKey, record, prevRawEntry);
+      }
+      if (Array.isArray(record._staged_expense_items)) record._staged_expense_items.forEach(it => window.MFG_CAP.polishRowInPlace(it, 'expense_items'));
+      if (Array.isArray(record._staged_repair_items)) record._staged_repair_items.forEach(it => window.MFG_CAP.polishRowInPlace(it, 'repair_items'));
+    }
 
     STATE.saving = true;
     const sBtn = $('dynSaveModalBtn');
@@ -138048,13 +138224,14 @@
             if (dr.phone) seedExisting.phone = dr.phone;
             if (dr.truck) seedExisting.truck = dr.truck;
           } else {
+            const drvNmCap = (typeof window !== 'undefined' && window.MFG_CAP && dr.name) ? window.MFG_CAP.name(dr.name) : dr.name;
             STATE.customRecords.drivers.unshift({
               id: uid('dr'),
               date: record.date,
               rep_date: record.rep_date,
               company: record.company,
-              name: dr.name,
-              driver: dr.name,
+              name: drvNmCap,
+              driver: drvNmCap,
               truck_owner: record.name,
               truck: dr.truck || '',
               phone: dr.phone || '',
@@ -148604,7 +148781,7 @@
     expense_ref: 'expenses', repair_ref: 'equipment_repairs'
   };
 
-  function inspectorValue(key, v) {
+  function inspectorValue(key, v, tableKey) {
     if (v == null || v === '') return '—';
     if (typeof v === 'boolean') return v ? 'Yes' : 'No';
     if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
@@ -148624,7 +148801,9 @@
     if (key === 'site_category') return formatSiteCategoryLabel(v);
     if (key === 'effective_to') return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? fmtDateDMY(v) : String(v);
     if (/date|last_sale|last_purchase/i.test(key)) return fmtDateDMY(v);
-    return String(v);
+    const s = String(v);
+    const tblK = tableKey !== undefined ? String(tableKey || '') : ((STATE && STATE.activeInspectorCtx && STATE.activeInspectorCtx.key) || '');
+    return (s && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.field(key, s, tblK) : s;
   }
 
   function resolveInspectorRecord(key, idOrName) {
@@ -148659,40 +148838,47 @@
       return hit;
     }
 
+    const qDisp = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.field('name', q, key) : q;
     // Synthesize a rich 360° master record if a lookup name exists in transactions or semantic summaries
     if (key === 'customers') {
       const ci = customerInfo(q);
-      if (ci) return Object.assign({ id: q, name: ci.Customer || q, official_name: ci.Customer || q, method: ci.method || 'Credit', vat_registered: ci['VAT Registered'] === 'Yes' }, ci);
-      return { id: q, name: q, official_name: q, method: 'Credit', vat_registered: false };
+      if (ci) {
+        const custNm = (window.MFG_CAP && (ci.Customer || qDisp)) ? window.MFG_CAP.name(ci.Customer || qDisp) : (ci.Customer || qDisp);
+        return Object.assign({ method: ci.method || 'Credit', vat_registered: ci['VAT Registered'] === 'Yes' }, ci, { id: q, name: custNm, official_name: custNm });
+      }
+      return { id: q, name: qDisp, official_name: qDisp, method: 'Credit', vat_registered: false };
     }
     if (key === 'suppliers') {
       const si = supplierInfo(q);
-      if (si) return Object.assign({ id: q, name: si.Supplier || q, official_name: si.Supplier || q, iva: !!si.iva, is_truck_owner: !!si.is_truck_owner }, si);
-      return { id: q, name: q, official_name: q };
+      if (si) {
+        const supNm = (window.MFG_CAP && (si.Supplier || qDisp)) ? window.MFG_CAP.name(si.Supplier || qDisp) : (si.Supplier || qDisp);
+        return Object.assign({ iva: !!si.iva, is_truck_owner: !!si.is_truck_owner }, si, { id: q, name: supNm, official_name: supNm });
+      }
+      return { id: q, name: qDisp, official_name: qDisp };
     }
-    if (key === 'products') return { id: q, name: q, type: 'Material', uom: 'm³', list_price: listPrice(q) };
+    if (key === 'products') return { id: q, name: qDisp, type: 'Material', uom: 'm³', list_price: listPrice(q) };
     if (key === 'items') {
       const catIt = resolveCatalogItem(q);
       if (catIt) return catIt;
       const whMeta = getWarehouseIndex().byKey[norm(q)];
-      return { id: q, name: q, item_name: q, category: (whMeta && whMeta.category) || 'Spare Parts', uom: (whMeta && whMeta.uom) || 'Piece', default_cost: (whMeta && whMeta.avgUnitCost) || 0, default_location: (whMeta && whMeta.location) || 'WTC Main Warehouse', min_stock: (whMeta && whMeta.min_stock) || 0 };
+      return { id: q, name: qDisp, item_name: qDisp, category: (whMeta && whMeta.category) || 'Spare Parts', uom: (whMeta && whMeta.uom) || 'Piece', default_cost: (whMeta && whMeta.avgUnitCost) || 0, default_location: (whMeta && whMeta.location) || 'WTC Main Warehouse', min_stock: (whMeta && whMeta.min_stock) || 0 };
     }
     if (key === 'sites') {
       const defCat = (STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery'))) ? 'customer' : 'supplier';
-      return { id: q, name: q, site_category: defCat, region: 'Lebanon', is_jv: false };
+      return { id: q, name: qDisp, site_category: defCat, region: 'Lebanon', is_jv: false };
     }
-    if (key === 'equipment') return { id: q, name: q, plate_no: q, type: 'Truck', ownership: 'Third-Party' };
-    if (key === 'drivers') return { id: q, name: q };
-    if (key === 'staff_members') return { id: q, name: q, staff: q, role: '', role_category: 'Site & Operations', worker_category: 'Site & Operations' };
+    if (key === 'equipment') return { id: q, name: qDisp, plate_no: q, type: 'Truck', ownership: 'Third-Party' };
+    if (key === 'drivers') return { id: q, name: qDisp };
+    if (key === 'staff_members') return { id: q, name: qDisp, staff: qDisp, role: '', role_category: 'Site & Operations', worker_category: 'Site & Operations' };
     if (key === 'staff_roles') {
       const cat = resolveRoleCategory(q, '');
-      return { id: q, name: q, role: q, role_category: cat || 'Site & Operations', category: cat || 'Site & Operations', pay_basis: 'Monthly', operates_equipment: /driver|operat|loader|excavat|bulldozer|crusher/i.test(q) ? 'Yes' : 'No' };
+      return { id: q, name: qDisp, role: qDisp, role_category: cat || 'Site & Operations', category: cat || 'Site & Operations', pay_basis: 'Monthly', operates_equipment: /driver|operat|loader|excavat|bulldozer|crusher/i.test(q) ? 'Yes' : 'No' };
     }
-    if (key === 'staff_assignments') return { id: q, name: q, staff: q, role: '', role_category: '', status: 'Current' };
-    if (key === 'employments') return { id: q, name: q, staff: q, type: 'Regular', status: 'Active' };
-    if (key === 'expense_categories') return { id: q, name: q };
-    if (key === 'expense_subcategories') return { id: q, name: q };
-    if (key === 'regions') return { id: q, name: q };
+    if (key === 'staff_assignments') return { id: q, name: qDisp, staff: qDisp, role: '', role_category: '', status: 'Current' };
+    if (key === 'employments') return { id: q, name: qDisp, staff: qDisp, type: 'Regular', status: 'Active' };
+    if (key === 'expense_categories') return { id: q, name: qDisp };
+    if (key === 'expense_subcategories') return { id: q, name: qDisp };
+    if (key === 'regions') return { id: q, name: qDisp };
     return null;
   }
 
@@ -151966,7 +152152,7 @@
       if (isInspectorSchemaFieldBlocked(key, k, row)) return '';
       const fDef = schemaByKey.get(k);
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
-      const formatted = inspectorValue(k, v);
+      const formatted = inspectorValue(k, v, key);
       const isEmpty = formatted === '—';
       const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') || (k === 'role' && key === 'currencies') || (k === 'item' && key === 'recurring_expenses') || (k === 'category' && key === 'fuel_malfunctions') ? null : (k === 'item' && key === 'fuel_malfunctions' ? (resolveCatalogItem(v) ? 'items' : 'products') : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : ((k === 'truck_owner' || (k === 'supplier' && (key === 'equipment' || key === 'company_equipment'))) ? resolveTruckOwnerTarget(v, row) : INSPECT_LOOKUP_FIELD_TARGET[k]))));
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
@@ -152077,6 +152263,9 @@
     if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
     else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
     else if (/date/.test(c) && v) txt = fmtDateDMY(v);
+    else if (typeof v === 'string' && v && txt !== '-' && sg.targetKey !== 'uoms' && !(sg.targetKey === 'price_rules' && c === 'unit') && typeof window !== 'undefined' && window.MFG_CAP) {
+      txt = window.MFG_CAP.field(c, txt, sg.targetKey || '');
+    }
     return { v, txt, isMoney, isNum };
   }
 
@@ -154861,12 +155050,14 @@
 
     const app = isAppRecord(row);
     const isAhRow = row && (row.after_hours === true || row.after_hours === 1 || row.after_hours === '1' || row.after_hours === 'true');
+    const capOnInsp = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
     if (tc) {
       $('inspectorEyebrow').textContent = `TABLE ROW DETAILS · ${tc.tableTitle.toUpperCase()} · ${(tc.company || row.company || COMPANY_BU_MATCH[STATE.company] || 'ISABI').toUpperCase()}`;
-      $('inspectorTitle').textContent = tc.subjectTitle;
+      $('inspectorTitle').textContent = (capOnInsp && tc.subjectTitle) ? capOnInsp.field('name', tc.subjectTitle, key) : tc.subjectTitle;
     } else {
       $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}${isAhRow ? " · YESTERDAY'S AFTER-HOURS" : ''}`;
-      $('inspectorTitle').textContent = row.name || row.ticket_no || row.invoice_no || row.staff || String(idOrName);
+      const rawInspT = row.name || row.ticket_no || row.invoice_no || row.staff || String(idOrName);
+      $('inspectorTitle').textContent = (capOnInsp && (row.name || row.staff) && rawInspT === (row.name || row.staff)) ? capOnInsp.field('name', rawInspT, key) : rawInspT;
     }
 
     const fastMod = Boolean(window.__fastInspectorModifyTest);
@@ -157068,7 +157259,10 @@
         let changedCount = 0;
         const isBoundedEqSub = Boolean(isEquipInspect && effToDate);
         Object.entries(pendingUpdates).forEach(([fk, rawNextVal]) => {
-          let nextVal = rawNextVal;
+          let nextVal = (typeof window !== 'undefined' && window.MFG_CAP && typeof rawNextVal === 'string' && rawNextVal)
+            ? window.MFG_CAP.field(fk, rawNextVal, key)
+            : rawNextVal;
+          if (nextVal !== rawNextVal) pendingUpdates[fk] = nextVal;
           if (key !== 'equipment' && ['truck', 'equipment', 'target_equipment'].includes(fk) && nextVal) {
             const canonEq = resolveCanonicalEquipmentName(nextVal, row.company || 'WTC', false, null, false);
             if (canonEq) {
@@ -157818,8 +158012,13 @@
                 if (tk === 'staff_members') it.worker_category = rCat;
                 if (it.id) {
                   const ci = STATE.customRecords[tk].findIndex(x => x && String(x.id) === String(it.id));
-                  if (ci >= 0) Object.assign(STATE.customRecords[tk][ci], it);
-                  else STATE.customRecords[tk].push(Object.assign({}, it));
+                  if (ci >= 0) {
+                    STATE.customRecords[tk][ci].role_category = rCat;
+                    if (tk === 'staff_members') STATE.customRecords[tk][ci].worker_category = rCat;
+                  } else {
+                    const cloneIt = Object.assign({}, it);
+                    STATE.customRecords[tk].push(cloneIt);
+                  }
                 }
               }
             });
@@ -157863,14 +158062,10 @@
           const effSiteInd = (origRowSnap && origRowSnap._industry) || row._industry || getActiveIndustry();
           row.source = row.source || 'app';
           if (effSiteInd && effSiteInd !== 'Manufacturing' && !row._industry) row._industry = effSiteInd;
-          if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
-          const preCrIdx = STATE.customRecords.sites.findIndex(x => x && String(x.id) === String(row.id));
-          if (preCrIdx >= 0) Object.assign(STATE.customRecords.sites[preCrIdx], row);
-          else STATE.customRecords.sites.unshift(row);
           if (SEED && SEED.records && Array.isArray(SEED.records.sites)) {
             const preSdIdx = SEED.records.sites.findIndex(x => x && String(x.id) === String(row.id));
             if (preSdIdx >= 0) Object.assign(SEED.records.sites[preSdIdx], row);
-            else SEED.records.sites.unshift(row);
+            else SEED.records.sites.unshift(Object.assign({}, row));
           }
           const canFullMutateInspSitePin = allowInspFullGeoPinEdit && !isSaveWordOnly && !isInspPinOnlySeat;
           canInitFillInspSitePin = Boolean(allowInspInitialSitePinFill && key === 'sites');
@@ -158060,8 +158255,15 @@
           if (targetEqRow !== row) {
             if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
             const eqIdx = STATE.customRecords.equipment.findIndex(x => String(x.id) === String(targetEqRow.id));
-            if (eqIdx >= 0) Object.assign(STATE.customRecords.equipment[eqIdx], targetEqRow);
-            else STATE.customRecords.equipment.unshift(Object.assign({}, targetEqRow));
+            if (eqIdx >= 0) {
+              const eqRaw = STATE.customRecords.equipment[eqIdx];
+              if ('adj_windows' in targetEqRow) eqRaw.adj_windows = targetEqRow.adj_windows;
+              ['capacity', 'supplier', 'default_driver', 'plate_no'].forEach(ek => {
+                if (ek in pendingUpdates) eqRaw[ek] = targetEqRow[ek];
+              });
+            } else {
+              STATE.customRecords.equipment.unshift(Object.assign({}, targetEqRow));
+            }
           }
         }
         const isEffInspTbl = isEffectiveSeriesTable(key, row);
@@ -158082,8 +158284,36 @@
         delete row._inspSiteCascadePosts;
         if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
         const cIdx = STATE.customRecords[key].findIndex(x => String(x.id) === String(row.id));
-        if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
-        else STATE.customRecords[key].unshift(Object.assign({}, row));
+        const preservedRawFields = {};
+        const omittedKeys = new Set();
+        if (cIdx >= 0) {
+          const rawTarget = STATE.customRecords[key][cIdx];
+          const capCheck = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+          if (origRowSnap && typeof origRowSnap === 'object') {
+            Object.keys(origRowSnap).forEach(ok => {
+              if (!(ok in row)) delete rawTarget[ok];
+            });
+          }
+          Object.keys(row).forEach(fk => {
+            const wasExplicit = Object.prototype.hasOwnProperty.call(pendingUpdates, fk);
+            const changedVsSnap = !origRowSnap || row[fk] !== origRowSnap[fk];
+            if (!wasExplicit) {
+              if ((fk === 'Customer' && !('name' in pendingUpdates) && rawTarget.Customer === undefined) ||
+                  (fk === 'Supplier' && !('name' in pendingUpdates) && rawTarget.Supplier === undefined) ||
+                  (fk === 'region' && !('address' in pendingUpdates || 'location' in pendingUpdates || 'region' in pendingUpdates) && rawTarget.region === undefined)) {
+                omittedKeys.add(fk);
+                return;
+              }
+              if (capCheck && typeof rawTarget[fk] === 'string' && rawTarget[fk] && typeof row[fk] === 'string' &&
+                  capCheck.field(fk, rawTarget[fk], key) === row[fk]) {
+                preservedRawFields[fk] = rawTarget[fk];
+                return;
+              }
+            }
+            if (!wasExplicit && !changedVsSnap) return;
+            rawTarget[fk] = row[fk];
+          });
+        } else STATE.customRecords[key].unshift(Object.assign({}, row));
         const hrInspExtraPosts = [];
         const hrChangedKeys = (key === 'staff_members' || key === 'employments' || key === 'freelance_entries')
           ? Object.keys(pendingUpdates).filter(k => _HR_SYNC_COMPLIANCE_COLS.includes(k))
@@ -158159,9 +158389,21 @@
               if (SEED.records && Array.isArray(SEED.records[key])) SEED.records[key].forEach(syncInspPreVoid);
             }
           }
+          const curCustomTarget = Array.isArray(STATE.customRecords[key])
+            ? STATE.customRecords[key].find(x => x && String(x.id) === String(row.id))
+            : null;
+          if (curCustomTarget) {
+            Object.keys(preservedRawFields).forEach(pk => { if (!(pk in pendingUpdates)) curCustomTarget[pk] = preservedRawFields[pk]; });
+            omittedKeys.forEach(ok => { delete curCustomTarget[ok]; });
+            if (row.modified_at) curCustomTarget.modified_at = row.modified_at;
+          } else if (keptPeriodInsp && row) {
+            Object.keys(preservedRawFields).forEach(pk => { if (!(pk in pendingUpdates)) row[pk] = preservedRawFields[pk]; });
+            omittedKeys.forEach(ok => { delete row[ok]; });
+          }
           saveLocalAuthAndRecords();
           renderApp();
-          const mainPostRes = await postRecordToLocalApi(key, row);
+          const postPayload = curCustomTarget || row;
+          const mainPostRes = await postRecordToLocalApi(key, postPayload);
           const restoreInspOnReject = async (failRes, compensateMain, extraRes) => {
             await rollbackRecordListOnServer(extraRes && extraRes.postedResults);
             if (compensateMain && mainPostRes && mainPostRes.ok) {
@@ -160323,6 +160565,7 @@
           _preserveClosedEffectiveDates(existingById, r);
           if (k === 'attendance') _syncAssignAttendanceRecord(existingById, r);
           else Object.assign(existingById, r);
+          if (typeof window !== 'undefined' && window.MFG_CAP && k !== 'uoms') window.MFG_CAP.polishRowInPlace(existingById, k);
           if (!r.admin_overrides && existingById.admin_overrides) delete existingById.admin_overrides;
           touched = true;
           return;
@@ -160334,11 +160577,16 @@
             if (!isAppRecord(existingByName) && k === 'equipment') _syncReopenedAdjWindows(existingByName.adj_windows, r.adj_windows);
             _preserveClosedEffectiveDates(existingByName, r);
             Object.assign(existingByName, r, { id: existingByName.id || r.id });
+            if (typeof window !== 'undefined' && window.MFG_CAP && k !== 'uoms') window.MFG_CAP.polishRowInPlace(existingByName, k);
             touched = true;
             return;
           }
         }
-        if (rid) { list.push(r); touched = true; }
+        if (rid) {
+          const projR = (typeof window !== 'undefined' && window.MFG_CAP && k !== 'uoms') ? window.MFG_CAP.polishRowCopy(r, k) : r;
+          list.push(projR);
+          touched = true;
+        }
       });
       // Second pass, once every entry has taken its same-day workbook copy and every voided row has left the list:
       // a ticket keyed the next morning is the workbook ticket of that number dated on its Reporting Date. It leaves
@@ -168354,7 +168602,8 @@
 
   async function saveSeatEditorForm(opts) {
     if (!isOwner()) return false;
-    const name = val('nu_name');
+    const rawName = val('nu_name');
+    const name = (typeof window !== 'undefined' && window.MFG_CAP && rawName) ? window.MFG_CAP.name(rawName) : rawName;
     const email = norm(val('nu_email'));
     const pin = val('nu_pin');
     const role = val('nu_role') || 'Entry';
@@ -172335,8 +172584,9 @@
     if (mNewBtn) mNewBtn.hidden = !canEnterAny(user);
 
     const avEl = $('railUserAvatar'), nmEl = $('railUserName'), rlEl = $('activeRoleBadge'), scEl = $('railRlsScope');
-    if (avEl) avEl.textContent = getInitials(user.full_name);
-    if (nmEl) { nmEl.textContent = user.full_name; nmEl.setAttribute('data-full-text', user.full_name); nmEl.removeAttribute('title'); }
+    const dispUserName = (typeof window !== 'undefined' && window.MFG_CAP && user.full_name) ? window.MFG_CAP.name(user.full_name) : user.full_name;
+    if (avEl) avEl.textContent = getInitials(dispUserName);
+    if (nmEl) { nmEl.textContent = dispUserName; nmEl.setAttribute('data-full-text', dispUserName); nmEl.removeAttribute('title'); }
     if (rlEl) { rlEl.textContent = user.role; rlEl.setAttribute('data-full-text', user.role); rlEl.removeAttribute('title'); }
     if (scEl) {
       const shortNames = allowedNames.map(n => n.replace(/BBConstruction/g, 'BBC').replace(/Lions Transport/g, 'Lions'));
@@ -178122,7 +178372,19 @@
   function buildIndustryKioskThermalDraft(activeInd, kMode) {
     recalcIndustryKioskLive(activeInd, kMode);
     const numV = id => { const el = $(id); const v = el ? parseFloat(el.value) : 0; return Number.isFinite(v) ? v : 0; };
-    const strV = id => { const el = $(id); return el ? String(el.value || '').trim() : ''; };
+    const IK_CAP_COLS = {
+      ik_client: 'client', ik_carrier: 'carrier', ik_line: 'line', ik_peril: 'peril',
+      ik_property: 'property', ik_tenant: 'tenant', ik_unit: 'unit_name',
+      ik_category: 'category', ik_vendor: 'vendor', ik_customer: 'customer',
+      ik_item: 'item', ik_supplier: 'supplier', ik_wh: 'warehouse', ik_model: 'model',
+      ik_outlet: 'outlet', ik_guest: 'guest', ik_store: 'store', ik_group: 'item_group',
+      ik_asset: 'asset', ik_to: 'customer', ik_lender: 'lender', ik_partner: 'partner'
+    };
+    const strV = id => {
+      const el = $(id);
+      const s = el ? String(el.value || '').trim() : '';
+      return (s && IK_CAP_COLS[id] && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(s) : s;
+    };
     const co = strV('ik_company') || defaultEntryCompany() || 'Bdeir Holding';
     const dt = strV('ik_date') || todayISO();
     const recId = strV('ik_id') || 'DOM-841';
@@ -178815,8 +179077,12 @@
   function buildDraftThermalRecordFromForm(calcRes) {
     const kMode = STATE.activeKiosk || 'sales';
     const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    const capDraft = (d, tKey) => {
+      if (d && typeof window !== 'undefined' && window.MFG_CAP) window.MFG_CAP.polishRowInPlace(d, tKey);
+      return d;
+    };
     if (activeInd !== 'Manufacturing' && kMode !== 'attendance') {
-      return buildIndustryKioskThermalDraft(activeInd, kMode);
+      return capDraft(buildIndustryKioskThermalDraft(activeInd, kMode), 'sales_tickets');
     }
     const company = val('f_company') || defaultEntryCompany();
     const date = val('f_date') || todayISO();
@@ -178843,7 +179109,7 @@
         : ((effCalc && effCalc.tr != null)
             ? round2(effCalc.tr)
             : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(isTruckUom ? tp : qty * tp)));
-      return {
+      return capDraft({
         id: 'DRAFT-RAW',
         company,
         date,
@@ -178869,7 +179135,7 @@
         method: val('f_method') || 'Credit',
         entered_by: who.full_name,
         notes
-      };
+      }, 'raw_purchases');
     }
 
     if (kMode === 'fuel') {
@@ -178879,7 +179145,7 @@
         const signed = round2(num('f_qty') || 0);
         const mCls = classifyMalfunctionItem(val('f_malf_item') || 'Diesel');
         const mUom = normalizeMalfUom(val('f_malf_uom') || mCls.uom || 'L');
-        return {
+        return capDraft({
           id: 'DRAFT-FUEL-MALF',
           company,
           date,
@@ -178895,12 +179161,12 @@
           location: mCls.isDiesel ? 'Main Plant Tank' : `${company} Warehouse`,
           entered_by: who.full_name,
           notes
-        };
+        }, 'fuel_malfunctions');
       }
       if (STATE.kioskFuelSubmode === 'refill') {
         const qty = num('f_qty') || 1000;
         const amt = num('f_amount') || 0;
-        return {
+        return capDraft({
           id: 'DRAFT-FUEL-REFILL',
           company,
           date,
@@ -178917,13 +179183,13 @@
           unit_cost: qty > 0 ? round2(amt / qty) : 0,
           entered_by: who.full_name,
           notes
-        };
+        }, 'fuel_intakes');
       }
       const eqDraftName = val('f_truck');
       const mType = val('f_metertype') || (eqDraftName ? equipMeterSpec(eqDraftName, company).type : 'odometer');
       const mVal = val('f_meter') ? num('f_meter') : null;
       const fType = val('f_fueltype') || 'Diesel';
-      return {
+      return capDraft({
         id: 'DRAFT-FUEL',
         company,
         date,
@@ -178940,7 +179206,7 @@
         meter_delta: calcRes && calcRes.delta != null ? calcRes.delta : null,
         entered_by: who.full_name,
         notes
-      };
+      }, 'fuel_intakes');
     }
 
     // Default: Sales Dispatch Kiosk
@@ -178966,7 +179232,7 @@
     const vatReg = !!(ci && (ci['VAT Registered'] === 'Yes' || ci.vat_registered));
     const vat = vatReg ? round2(net * getVatFraction(val('f_date') || todayISO())) : 0;
     const ttc = round2(net + vat);
-    return {
+    return capDraft({
       id: 'DRAFT-SALES',
       company,
       date,
@@ -178996,7 +179262,7 @@
       vat_invoice: vatReg ? val('f_vatinvoice') : '',
       entered_by: who.full_name,
       notes
-    };
+    }, 'sales_tickets');
   }
 
   function updateKioskLiveThermalPreview(calcRes) {
@@ -179047,6 +179313,18 @@
     }
     FORM_UI.postAttempted = false;
     syncFormValidationUI([], false);
+    if (typeof window !== 'undefined' && window.MFG_CAP && record) {
+      window.MFG_CAP.polishRowInPlace(record, crKey === 'uom' ? 'uoms' : crKey);
+      if (record._updatingExistingId) {
+        const prevEditId = String(record.id || '').trim();
+        const prevRawEntry = (prevEditId && Array.isArray(STATE.customRecords[crKey]))
+          ? STATE.customRecords[crKey].find(x => x && String(x.id) === prevEditId)
+          : null;
+        if (prevRawEntry) preserveRawEntityStrings(crKey, record, prevRawEntry);
+      }
+      if (Array.isArray(record._staged_expense_items)) record._staged_expense_items.forEach(it => window.MFG_CAP.polishRowInPlace(it, 'expense_items'));
+      if (Array.isArray(record._staged_repair_items)) record._staged_repair_items.forEach(it => window.MFG_CAP.polishRowInPlace(it, 'repair_items'));
+    }
 
     STATE.saving = true;
     const btnPrint = $('kioskPostAndPrintBtn');
@@ -192502,7 +192780,8 @@
         const draftRaw = Object.prototype.hasOwnProperty.call(FATHER_BACKFILL_STATE.draftEdits, row.staffId)
           ? FATHER_BACKFILL_STATE.draftEdits[row.staffId]
           : row.proposedFather;
-        const cleanedFather = cleanFatherName(draftRaw || '');
+        const cleanedFatherRaw = cleanFatherName(draftRaw || '');
+        const cleanedFather = (typeof window !== 'undefined' && window.MFG_CAP && cleanedFatherRaw) ? window.MFG_CAP.name(cleanedFatherRaw) : cleanedFatherRaw;
         if (!cleanedFather) continue;
         const acceptedProposal = Boolean(row.proposedFather)
           && staffNameKey(cleanedFather) === staffNameKey(row.proposedFather);
@@ -193323,7 +193602,8 @@
       };
     }
     const opAllowedCos = allowedCompanyNames(operatorUser);
-    const rawName = String((spec && (spec.name || spec.fullName || spec.staff)) || '').trim().replace(/\s+/g, ' ');
+    const rawNameIn = String((spec && (spec.name || spec.fullName || spec.staff)) || '').trim().replace(/\s+/g, ' ');
+    const rawName = (typeof window !== 'undefined' && window.MFG_CAP && rawNameIn) ? window.MFG_CAP.name(rawNameIn) : rawNameIn;
     if (!rawName || rawName.length < 2) {
       return { ok: false, reason: 'invalid-name', error: 'Enter the new staff member\'s full name (at least 2 characters).' };
     }
@@ -193385,7 +193665,8 @@
       } catch (_) { dirHit = null; }
       if (dirHit) sameNameActive = { staff: String(dirHit.name || rawName).trim(), company: dirHit.company || canonicalCo, role: dirHit.role || '', since: '' };
     }
-    const cleanFather = cleanFatherName((spec && (spec.fatherName || spec.father_name)) || '');
+    const cleanFatherRaw = cleanFatherName((spec && (spec.fatherName || spec.father_name)) || '');
+    const cleanFather = (typeof window !== 'undefined' && window.MFG_CAP && cleanFatherRaw) ? window.MFG_CAP.name(cleanFatherRaw) : cleanFatherRaw;
     if (sameNameActive) {
       return {
         ok: false,
@@ -193400,16 +193681,19 @@
     }
 
     const rankedRoles = getFrequencyRankedRolesForEnrol(canonicalCo);
-    const cleanRole = String((spec && (spec.role || spec.roleTitle)) || '').trim() || rankedRoles[0] || 'General Labour';
+    const cleanRoleRaw = String((spec && (spec.role || spec.roleTitle)) || '').trim() || rankedRoles[0] || 'General Labour';
+    const cleanRole = (typeof window !== 'undefined' && window.MFG_CAP && cleanRoleRaw) ? window.MFG_CAP.name(cleanRoleRaw) : cleanRoleRaw;
     const roleCat = resolveRoleCategory(cleanRole, 'Site & Operations') || 'Site & Operations';
     const cleanPhone = String((spec && spec.phone) || '').trim();
     const cleanFullAr = String((spec && (spec.fullNameArabic || spec.full_name_ar)) || '').trim();
     const cleanFatherAr = String((spec && (spec.fatherNameArabic || spec.father_name_ar)) || '').trim();
-    const cleanMother = String((spec && (spec.motherName || spec.mother_name)) || '').trim();
+    const cleanMotherRaw = String((spec && (spec.motherName || spec.mother_name)) || '').trim();
+    const cleanMother = (typeof window !== 'undefined' && window.MFG_CAP && cleanMotherRaw) ? window.MFG_CAP.name(cleanMotherRaw) : cleanMotherRaw;
     const cleanMotherAr = String((spec && (spec.motherNameArabic || spec.mother_name_ar)) || '').trim();
     const cleanIsoOpt = v => { const s = String(v || '').trim(); return (s && isValidStrictIsoCalendarDate(s)) ? s : ''; };
     const cleanDob = cleanIsoOpt(spec && spec.dob);
-    const cleanNat = String((spec && (spec.nationality || spec.nationalityLatin)) || '').trim();
+    const cleanNatRaw = String((spec && (spec.nationality || spec.nationalityLatin)) || '').trim();
+    const cleanNat = (typeof window !== 'undefined' && window.MFG_CAP && cleanNatRaw) ? window.MFG_CAP.name(cleanNatRaw) : cleanNatRaw;
     const cleanNatAr = String((spec && (spec.nationalityArabic || spec.nationality_ar)) || '').trim();
     const cleanRef = String((spec && spec.reference) || '').trim();
     const cleanDocKind = String((spec && (spec.idDocKind || spec.id_doc_kind)) || '').trim();
@@ -193482,7 +193766,8 @@
       || SEED.records.staff_members.find(r => isSmActive(r) && norm(r.name || r.staff) === targetKey && norm(r.company || '') === norm(canonicalCo));
     const createdNewSm = !smRec;
     const preSmSnap = smRec ? _cloneSameNameSnapRow(smRec) : null;
-    const cleanName = (smRec && (smRec.name || smRec.staff)) ? String(smRec.name || smRec.staff).trim() : rawName;
+    const cleanNameRaw = (smRec && (smRec.name || smRec.staff)) ? String(smRec.name || smRec.staff).trim() : rawName;
+    const cleanName = (typeof window !== 'undefined' && window.MFG_CAP && cleanNameRaw) ? window.MFG_CAP.name(cleanNameRaw) : cleanNameRaw;
     if (smRec) {
       smRec.company = canonicalCo;
       smRec.status = smRec.status || 'Active';
@@ -220722,7 +221007,80 @@
       if (document.hidden) clearActivePointerDown();
     });
     document.addEventListener('contextmenu', clearActivePointerDown, true);
-    document.addEventListener('focusout', () => {
+    const STAFF_ENROL_LATIN_IDS = new Set([
+      'nu_name', 'exp_qc_name', 'sfeNewStaffName', 'sfeNewStaffFather', 'sfeNewStaffMother', 'sfeNewStaffNat', 'sfeNewStaffRole'
+    ]);
+    const FORM_COL_ALIASES = {
+      truckowner: 'truck_owner',
+      siteowner: 'site_owner',
+      site_region: 'region'
+    };
+    const KIOSK_IND_COL_MAP = {
+      client: 'client', carrier: 'carrier', line: 'line', peril: 'peril',
+      property: 'property', tenant: 'tenant', unit: 'unit_name',
+      category: 'category', vendor: 'vendor', customer: 'customer',
+      item: 'item', supplier: 'supplier', wh: 'warehouse', model: 'model',
+      outlet: 'outlet', guest: 'guest', store: 'store', group: 'item_group',
+      asset: 'asset', to: 'customer', lender: 'lender', partner: 'partner'
+    };
+    const isEntityNameInputEl = el => {
+      if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled) return false;
+      const tp = String(el.type || 'text').toLowerCase();
+      if (tp !== 'text' && tp !== 'search' ? true : (tp === 'search')) return false;
+      const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+      if (!capOn) return false;
+      if (STAFF_ENROL_LATIN_IDS.has(el.id) || el.hasAttribute('data-fb-staff-id')) return true;
+      if (el.classList && (el.classList.contains('exp-line-item-name') || el.classList.contains('rep-line-item-name'))) return true;
+      if (el.getAttribute('data-exp-item-field') === 'item_name' || el.getAttribute('data-rep-item-field') === 'item_name'
+        || el.getAttribute('data-exi-field') === 'item_name' || el.getAttribute('data-repi-field') === 'item_name') return true;
+      if (el.id && el.id.startsWith('ide_') && el.closest && el.closest('#indDomainEntryModal')) {
+        const ideRaw = el.id.slice(4);
+        const ideAliases = {
+          cat: 'category', from: 'customer', to: 'customer', group: 'item_group',
+          tier: 'tier_unit_scope', unit: 'unit_name', wh: 'warehouse'
+        };
+        const ideCol = ideAliases[ideRaw] || ideRaw;
+        return capOn.isEntityCol(ideCol, '');
+      }
+      if (el.id && el.id.startsWith('f_') && el.closest && el.closest('#entryModal, #kioskFormBody')) {
+        const rawCol = el.id.slice(2);
+        const col = FORM_COL_ALIASES[rawCol] || rawCol;
+        const tbl = STATE.modalForm === 'uom' ? 'uoms' : '';
+        return capOn.isEntityCol(col, tbl);
+      }
+      if (el.id && el.id.startsWith('ik_') && el.closest && el.closest('#kioskIndForm')) {
+        const kCol = KIOSK_IND_COL_MAP[el.id.slice(3)];
+        return Boolean(kCol && capOn.isEntityCol(kCol, ''));
+      }
+      if (el.id && el.id.startsWith('insp_edit_') && el.closest && el.closest('#recordInspector')) {
+        const col = el.id.slice(10);
+        const tbl = (STATE && STATE.activeInspectorCtx && STATE.activeInspectorCtx.key) || '';
+        return capOn.isEntityCol(col, tbl);
+      }
+      if (el.hasAttribute('data-ind-edit-idx') && el.closest && el.closest('#recordInspector')) {
+        const idx = Number(el.getAttribute('data-ind-edit-idx'));
+        if (!Number.isFinite(idx) || idx <= 0) return false;
+        const rawHdr = String(el.getAttribute('data-ind-edit-col') || '').trim();
+        const tbl = (STATE.activeInspectorCtx && STATE.activeInspectorCtx.domainTblKey) || STATE.view || '';
+        if (typeof capOn.isEntityHeader === 'function') return Boolean(rawHdr && capOn.isEntityHeader(rawHdr, tbl));
+        const hk = rawHdr.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        return Boolean(hk && capOn.isEntityCol(hk, tbl));
+      }
+      return false;
+    };
+    document.addEventListener('focusin', ev => {
+      const el = ev.target;
+      if (!isEntityNameInputEl(el)) return;
+      if (el.getAttribute('autocapitalize') !== 'words') el.setAttribute('autocapitalize', 'words');
+      el.dataset.capEntryVal = el.value;
+    });
+    document.addEventListener('focusout', ev => {
+      const el = ev.target;
+      if (isEntityNameInputEl(el) && el.dataset.capEntryVal !== undefined && el.value !== el.dataset.capEntryVal && typeof window !== 'undefined' && window.MFG_CAP) {
+        const next = window.MFG_CAP.name(el.value);
+        if (next !== el.value) el.value = next;
+        el.dataset.capEntryVal = el.value;
+      }
       if (STATE.renderPending) schedulePendingRenderFlush(160);
     });
 
@@ -220971,10 +221329,20 @@
       SEED._rawIndustryPayload = P;
     }
     const S = P._s || [];
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+    const Scap = capOn ? new Array(S.length) : null;
     const live = { until: P.cutoff_date || P.until || '2026-11-06' };
-    const unpackTable = t => {
-      if (!t || !t.c) return Array.isArray(t) ? t : [];
+    const unpackTable = (t, tblKey) => {
+      if (!t || !t.c) {
+        const rawArr = Array.isArray(t) ? t : [];
+        for (let idx = 0; idx < rawArr.length; idx++) {
+          const r = rawArr[idx];
+          if (r && typeof r === 'object') _UNPACKED_SEED_ROW_SET.add(r);
+        }
+        return rawArr;
+      }
       const cols = t.c, sc = t.sc, rows = t.r || [];
+      const colIsEnt = capOn ? cols.map(c => capOn.isEntityCol(c, tblKey)) : null;
       const out = new Array(rows.length);
       for (let idx = 0; idx < rows.length; idx++) {
         const row = rows[idx];
@@ -220982,9 +221350,24 @@
         for (let i = 0; i < row.length; i++) {
           let v = row[i];
           if (v === null || v === undefined) continue;
-          if (sc[i] && typeof v === 'number') v = S[v];
+          if (sc[i] && typeof v === 'number') {
+            if (colIsEnt && colIsEnt[i]) {
+              let cp = Scap[v];
+              if (cp === undefined) {
+                const rawS = S[v];
+                cp = typeof rawS === 'string' ? capOn.name(rawS) : rawS;
+                Scap[v] = cp;
+              }
+              v = cp;
+            } else {
+              v = S[v];
+            }
+          } else if (colIsEnt && colIsEnt[i] && typeof v === 'string' && v) {
+            v = capOn.name(v);
+          }
           o[cols[i]] = v;
         }
+        _UNPACKED_SEED_ROW_SET.add(o);
         out[idx] = o;
       }
       return out;
@@ -220996,7 +221379,7 @@
         const indKey = dotKey.slice(0, dotIdx);
         const tblKey = dotKey.slice(dotIdx + 1);
         if (!live[indKey]) live[indKey] = {};
-        live[indKey][tblKey] = unpackTable(t);
+        live[indKey][tblKey] = unpackTable(t, tblKey);
       }
     }
     if (P.industries && typeof P.industries === 'object') {
@@ -221004,7 +221387,7 @@
         if (!tables || typeof tables !== 'object') continue;
         if (!live[indKey]) live[indKey] = {};
         for (const [tblKey, t] of Object.entries(tables)) {
-          live[indKey][tblKey] = unpackTable(t);
+          live[indKey][tblKey] = unpackTable(t, tblKey);
         }
       }
     }
@@ -221266,7 +221649,25 @@
         if (!row.kind) row.kind = 'Payment';
         if (row.discount == null) row.discount = 0;
       }
+      if (typeof window !== 'undefined' && window.MFG_CAP) window.MFG_CAP.polishRowInPlace(row, tbl);
       arr.push(row);
+    });
+  }
+
+  function _polishSeedModelsTree(models) {
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+    if (!capOn || !models || typeof models !== 'object') return;
+    const MODEL_ARR_KEYS = ['products', 'customers', 'suppliers', 'sites', 'equipment', 'soa_stream'];
+    Object.values(models).forEach(m => {
+      if (!m || typeof m !== 'object') return;
+      for (let ai = 0; ai < MODEL_ARR_KEYS.length; ai++) {
+        const ak = MODEL_ARR_KEYS[ai];
+        const list = m[ak];
+        if (!Array.isArray(list)) continue;
+        for (let i = 0; i < list.length; i++) {
+          if (list[i] && typeof list[i] === 'object') capOn.polishRowInPlace(list[i], ak);
+        }
+      }
     });
   }
 
@@ -221277,6 +221678,7 @@
     if (!tgt0) return;
     if (P.generated_at && tgt0 === SEED) SEED.generated_at = P.generated_at;
     if (P.models && typeof P.models === 'object' && Object.keys(P.models).length) {
+      _polishSeedModelsTree(P.models);
       tgt0.models = P.models;
       if (tgt0 === SEED) SEED._origModelMasters = null;
     }
@@ -221289,6 +221691,8 @@
       try { applyBioQuarantineToLocal(); } catch (_) {}
     }
     const S = P._s || [];
+    const capOn = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP : null;
+    const Scap = capOn ? new Array(S.length) : null;
     const entries = Object.entries(P.records || {});
     let sliceStart = performance.now();
     for (let ei = 0; ei < entries.length; ei++) {
@@ -221304,6 +221708,7 @@
       }
       if (!t || !t.c) {
         const arr = Array.isArray(t) ? t : [];
+        if (capOn && k !== 'uoms') arr.forEach(r => { if (r && typeof r === 'object') capOn.polishRowInPlace(r, k); });
         curTgt.records[k] = arr;
         const idSet = new Set();
         for (let i = 0; i < arr.length; i++) {
@@ -221314,6 +221719,7 @@
         continue;
       }
       const cols = t.c, sc = t.sc, pf = t.p, hr = t.hr;
+      const colIsEnt = (capOn && k !== 'uoms') ? cols.map(c => capOn.isEntityCol(c, k)) : null;
       const isSales = k === 'sales_tickets', isRaw = k === 'raw_purchases';
       const rows = t.r || [];
       const out = new Array(rows.length);
@@ -221324,7 +221730,21 @@
         for (let i = 0; i < row.length; i++) {
           let v = row[i];
           if (v === null || v === undefined) continue;
-          if (sc[i] && typeof v === 'number') v = S[v];
+          if (sc[i] && typeof v === 'number') {
+            if (colIsEnt && colIsEnt[i]) {
+              let cp = Scap[v];
+              if (cp === undefined) {
+                const rawS = S[v];
+                cp = typeof rawS === 'string' ? capOn.name(rawS) : rawS;
+                Scap[v] = cp;
+              }
+              v = cp;
+            } else {
+              v = S[v];
+            }
+          } else if (colIsEnt && colIsEnt[i] && typeof v === 'string' && v) {
+            v = capOn.name(v);
+          }
           o[cols[i]] = v;
         }
         if (hr && !o.rep_date && o.date) o.rep_date = o.date;
