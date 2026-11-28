@@ -119,6 +119,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_saved_workbook_row_till.mjs", "node"), # a workbook row saved in the app is counted once: till unchanged, no app mark from the entry form
     ("isabi-app", "build/verify_multi_slip_stepper.mjs", "node"),     # Multi-slip 1-of-N stepper queue + 6-vertical cross-module auto-routing
     ("isabi-app", "build/verify_insp_return_and_compound_nav.mjs", "node"), # Back to 360° Inspector return pill + 6-industry compound Ask ISABI hub filter jumps
+    ("isabi-app", "build/verify_table_craft.mjs", "node"),                 # 6-vertical table visual-craft gate (monograms, opacity, alignment, typography, rail clearance)
     # The leader's PC deploys (owner 2026-11-26); these stood before a deploy only on the GitHub runner (2 s together).
     ("isabi", "build/verify_deploy_preflight.py", "python"),         # Edge entry files parse; 0001_schema.sql can run on every deploy
     ("isabi", "build/verify_kiosk_cloud.mjs", "node"),               # tablet kiosk routes: station keys, pos_sales, <site>__att
