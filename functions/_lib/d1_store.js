@@ -45,6 +45,27 @@ import { isWebPushConfigured, sendOverrideRequestPush } from './approval_push.js
 import { attachUserPasskeysMeta, clearStepUpReceipt, verifyPasskeyOverrideAssertion, writeStepUpReceipt } from './webauthn.js';
 import { validateBase64MediaDataUrl } from './gemini.js';
 import { invalidateMapsUsageMemCache, MAPS_QUOTA_RULE_IDS } from './google_maps.js';
+import {
+  ROW_SYNC_AUDIT_AFTER,
+  ROW_SYNC_AUDIT_TARGET,
+  ROW_SYNC_MAX_DELTA_ROWS,
+  ROW_SYNC_SCOPED_SCAN_ROWS,
+  rowAuditReportCounts,
+  beginRowIndexPatch,
+  buildRowDelta,
+  elideTrailsInDoc,
+  ensureRowIndexCurrent,
+  finishRowIndexPatch,
+  noteRowAuditResult,
+  readRowMeta,
+  rehydrateTrails,
+  rowSumsOf,
+  rowSyncElides,
+  rowSyncServing,
+  sessionScopeSig,
+  topEtagsOf,
+  withoutTrail
+} from './row_sync.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -9105,19 +9126,26 @@ export async function readEdgeKvDoc(db, key) {
   if (!list.length) return null;
   let head = null;
   const parts = [];
+  const partStamps = [];
   for (const r of list) {
     if (r.doc_key === key) {
       head = r;
     } else {
       parts.push(String(r.payload_json || ''));
+      partStamps.push(String(r.updated_at || ''));
     }
   }
   if (!head) return null;
   const fullJson = String(head.payload_json || '') + parts.join('');
+  const headStamp = String(head.updated_at || '');
   return {
     payload_json: fullJson,
-    updated_at: String(head.updated_at || ''),
-    rev: Number(head.rev || 1)
+    updated_at: headStamp,
+    rev: Number(head.rev || 1),
+    // Every writer stamps the part rows with the head row's updated_at. A part with another stamp means this read
+    // fell between a save's head row and its parts: the text may still parse and be the old content under the new
+    // stamp. Row sync (row_sync.js) never anchors on such a read.
+    partsInStep: partStamps.every(s => s === headStamp)
   };
 }
 
@@ -9551,6 +9579,25 @@ function expandDeltaMfgPatch(incomingDoc, prevDoc) {
   }
 }
 
+// Whether a company-scoped seat sees one customRecords entry, and one kiosk punch. scopeStoreDocForSession filters
+// with these, and row sync asks them about an entry that is no longer in a seat's document (was it ever the seat's
+// to see?) with only the entry's ROW_VIS_FIELDS in hand (row_sync.js). So they may read nothing of the entry beyond
+// those fields: a rule that needs another field needs it added there too (build/verify_row_sync_edge.mjs checks).
+export function scopedSeatSeesCrRow(session, tableKey, r) {
+  if (!r || typeof r !== 'object') return false;
+  const canonTable = CR_KEY_TO_TABLE[tableKey] || tableKey;
+  if (GLOBAL_RATE_TABLES.has(canonTable)) return true;
+  if (UNIVERSAL_UNIQUE_TABLES.has(canonTable)) return canAccessUniversalGeoRow(session, canonTable, r);
+  const co = String(r.company || '').trim();
+  return Boolean(co && canAccessCompany(session, co));
+}
+
+export function scopedSeatSeesKioskPunch(session, p) {
+  if (!p || typeof p !== 'object') return false;
+  const co = String(p.company || '').trim();
+  return Boolean(co && canAccessCompany(session, co));
+}
+
 function scopeStoreDocForSession(docObj, session) {
   if (!docObj || typeof docObj !== 'object') return docObj;
   const isBuildTicket = Boolean(session && session.build_ticket);
@@ -9630,18 +9677,7 @@ function scopeStoreDocForSession(docObj, session) {
     const scopedCr = {};
     for (const [k, list] of Object.entries(docObj.customRecords)) {
       if (!Array.isArray(list)) continue;
-      const canonTable = CR_KEY_TO_TABLE[k] || k;
-      if (GLOBAL_RATE_TABLES.has(canonTable)) {
-        scopedCr[k] = list.filter(r => Boolean(r && typeof r === 'object'));
-        continue;
-      }
-      const isUniversal = UNIVERSAL_UNIQUE_TABLES.has(canonTable);
-      scopedCr[k] = list.filter(r => {
-        if (!r || typeof r !== 'object') return false;
-        if (isUniversal) return canAccessUniversalGeoRow(session, canonTable, r);
-        const co = String(r.company || '').trim();
-        return Boolean(co && canAccessCompany(session, co));
-      });
+      scopedCr[k] = list.filter(r => scopedSeatSeesCrRow(session, k, r));
     }
     copyDoc.customRecords = scopedCr;
   }
@@ -9676,11 +9712,7 @@ function scopeStoreDocForSession(docObj, session) {
   }
 
   if (Array.isArray(docObj.kioskPunches)) {
-    copyDoc.kioskPunches = docObj.kioskPunches.filter(p => {
-      if (!p || typeof p !== 'object') return false;
-      const co = String(p.company || '').trim();
-      return Boolean(co && canAccessCompany(session, co));
-    });
+    copyDoc.kioskPunches = docObj.kioskPunches.filter(p => scopedSeatSeesKioskPunch(session, p));
   }
 
   if (docObj.sentinelReviews && typeof docObj.sentinelReviews === 'object') {
@@ -10822,6 +10854,147 @@ async function computeSyncDocEtag(docObj) {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
 }
 
+// Row sync and lighter entries (functions/_lib/row_sync.js), applied to one read of the Manufacturing store: the GET
+// answer and the "someone saved before you" answers. A device opts in per request (`rowSync`, `noTrails`); a request
+// without them gets exactly the answer it got before. `storedDoc` is the document as read (its keyed row sets
+// untouched by the overlay), `scopedDoc` the same document scoped for the session.
+//   doc       what to hash and, when `wantDocs`, to send (the scoped document; live entries without edit history
+//             when the device asked for that and the cloud's mode allows it)
+//   fields    extra answer fields (rowSyncV1, rowSync, rowAuditNoted, trailsOnDemand, storeChars)
+//   delta     the partial answer, or null when the device must take the whole document
+//   anchor    { epoch, rev, scope } while partial answers are on and the index describes this read: all a "nothing
+//             changed" answer needs
+// Two steps. shapeMfgStoreRead brings the index in line and decides what travels; completeMfgStoreShape, called
+// only for an answer that carries entries, works out the digests the device checks its copy against and the partial
+// answer. A "nothing changed" answer skips the second step and its pass over every entry.
+async function shapeMfgStoreRead(db, request, session, body, storedDoc, scopedDoc, headRow) {
+  const out = { doc: scopedDoc, fields: {}, delta: null, wantDocs: true, anchor: null, plan: null };
+  const req = (body && body.rowSync && typeof body.rowSync === 'object' && !Array.isArray(body.rowSync)) ? body.rowSync : null;
+  const noTrails = Boolean(body && body.noTrails === true);
+  if ((!req && !noTrails) || !headRow || !scopedDoc || typeof scopedDoc !== 'object') return out;
+  if (isDemoHeader(request) || (session && session.build_ticket)) return out;
+  const seesAll = isOwnerOrFullGroupSession(session);
+  const reqRev = (req && Number.isInteger(req.rev) && req.rev >= 0) ? req.rev : null;
+  let cur = null;
+  let meta = null;
+  let metaKnown = false;
+  try {
+    // A whole-store seat is cut off at the limit on every changed line. Any other seat's lines are read well past
+    // it and the limit is applied later to what the seat is actually sent (completeMfgStoreShape): whether it gets a
+    // partial answer must not depend on how much other companies changed.
+    if (req && headRow.partsInStep !== false) {
+      cur = await ensureRowIndexCurrent(db, storedDoc, headRow, reqRev, seesAll ? ROW_SYNC_MAX_DELTA_ROWS : ROW_SYNC_SCOPED_SCAN_ROWS);
+    }
+  } catch (err) {
+    console.error(`[row-sync] index unavailable: ${String((err && err.message) || err).slice(0, 200)}`);
+    cur = null;
+  }
+  try {
+    meta = (cur && cur.meta) ? cur.meta : await readRowMeta(db);
+    metaKnown = true;
+  } catch (_) {}
+  // The store's switch (store_row_meta.mode) could not be read: answer as before row sync, history included.
+  if (!metaKnown) return out;
+  const elide = noTrails && rowSyncElides(meta);
+  if (elide) {
+    out.doc = elideTrailsInDoc(scopedDoc, (k, r) => k === 'attendance' && attendanceRowTravelsWhole(r));
+    out.fields.trailsOnDemand = true;
+  }
+  // The size of the whole store, every company's entries included: for seats that see the whole store only.
+  if (seesAll) out.fields.storeChars = String(headRow.payload_json || '').length;
+  if (!req || !cur || !cur.meta) return out;
+  try {
+    if (req.auditResult && typeof req.auditResult === 'object') {
+      // One failed comparison switches partial answers off for every device and enough clean ones end the
+      // comparisons, so only a seat that sees the whole store is believed. Any other seat's report is dropped.
+      if (seesAll) {
+        await noteRowAuditResult(db, req.auditResult, cur.meta);
+        if (rowAuditReportCounts(req.auditResult) && String(req.auditResult.epoch || '') === cur.meta.epoch) cur.meta.audit_bad += 1;
+      }
+      // The device keeps handing its result in until it sees this.
+      out.fields.rowAuditNoted = true;
+    }
+  } catch (_) {}
+  if (!rowSyncServing(cur.meta)) return out;
+  // The seat's scope and how its entries are sent (this deploy's rules, history left out or not): a copy made under
+  // another of these is answered with the whole document.
+  const sig = sessionScopeSig(session, [String(DEPLOYED_SHELL_VER || ''), elide ? 1 : 0]);
+  out.anchor = { epoch: cur.meta.epoch, rev: cur.meta.rev, scope: sig };
+  out.plan = { req, reqRev, cur, sig, seesAll, session };
+  return out;
+}
+
+// Step two of shapeMfgStoreRead, for an answer that carries entries (a whole document or a partial answer).
+function completeMfgStoreShape(out) {
+  const plan = out && out.plan;
+  if (!plan) return out;
+  out.plan = null;
+  try {
+    const { req, reqRev, cur, sig, seesAll, session } = plan;
+    const sums = rowSumsOf(out.doc);
+    if (!sums.exact) {
+      // A copy keyed by id cannot stand for a document holding an entry without an id or two with one id.
+      console.error('[row-sync] not offered: a row set holds an entry without an id or a repeated id');
+      out.anchor = null;
+      return out;
+    }
+    const nowEtags = topEtagsOf(out.doc);
+    const canDelta = Boolean(
+      reqRev !== null && cur.changed
+      && String(req.epoch || '') === cur.meta.epoch
+      && String(req.scope || '') === sig
+      && reqRev >= cur.meta.floor_rev && reqRev <= cur.meta.rev
+      && req.topEtags && typeof req.topEtags === 'object' && !Array.isArray(req.topEtags)
+    );
+    const couldSee = seesAll ? null : (kind, table, stub) => (
+      kind === 'kioskPunches' ? scopedSeatSeesKioskPunch(session, stub) : scopedSeatSeesCrRow(session, table, stub)
+    );
+    let delta = canDelta ? buildRowDelta(out.doc, cur.changed, req.topEtags, reqRev, nowEtags, couldSee) : null;
+    // More than the limit of the seat's own entries changed: the whole document is the lighter answer.
+    if (delta && delta.size > ROW_SYNC_MAX_DELTA_ROWS) delta = null;
+    out.fields.rowSyncV1 = true;
+    out.fields.rowSync = {
+      epoch: cur.meta.epoch,
+      rev: cur.meta.rev,
+      scope: sig,
+      sums: sums.sums,
+      topEtags: nowEtags,
+      // Only a seat that sees the whole store is asked to compare (its report is the only one believed).
+      auditAfter: (seesAll && cur.meta.audit_ok < ROW_SYNC_AUDIT_TARGET) ? ROW_SYNC_AUDIT_AFTER : 0
+    };
+    out.delta = delta;
+    out.wantDocs = !delta || (req.audit === true && seesAll);
+  } catch (err) {
+    console.error(`[row-sync] read shaping failed: ${String((err && err.message) || err).slice(0, 200)}`);
+    delete out.fields.rowSyncV1;
+    delete out.fields.rowSync;
+    out.anchor = null;
+    out.delta = null;
+    out.wantDocs = true;
+  }
+  return out;
+}
+
+// The device tells a seeded attendance entry bloated by the shift backfill from a real one by its edit history
+// (isShiftBackfillBloatedSeedAttRow, the same test in isabi-app js/app.js), and throws the bloated ones away. So an
+// attendance entry keeps its history on the way to a device whenever the test would answer differently without it:
+// the device then decides about every entry exactly as it did when all history travelled.
+function attendanceRowTravelsWhole(r) {
+  return isShiftBackfillBloatedSeedAttRow(r) || isShiftBackfillBloatedSeedAttRow(withoutTrail(r));
+}
+
+// The "someone saved before you" answer for the Manufacturing store, whole or partial as the device asked.
+async function mfgConflictReply(db, request, session, body, pKey, storedDoc, headRow, headTs, unreadable) {
+  const scoped = scopeStoreDocForSession(storedDoc, session);
+  const shaped = (headRow && !unreadable) ? completeMfgStoreShape(await shapeMfgStoreRead(db, request, session, body, storedDoc, scoped, headRow)) : null;
+  const resp = { ok: true, conflict: true, deltaSyncV1: true, updatedAt: headTs };
+  if (shaped) Object.assign(resp, shaped.fields);
+  if (shaped && shaped.delta) resp.rowDelta = shaped.delta;
+  if (!shaped || shaped.wantDocs) resp.docs = { [pKey]: shaped ? shaped.doc : scoped };
+  if (unreadable) resp.storeUnreadable = true;
+  return resp;
+}
+
 export async function handleSync(request, env, session, body, _ctx) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Database unavailable' }, 503);
   const isSyncReadOp = request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'));
@@ -10875,7 +11048,11 @@ export async function handleSync(request, env, session, body, _ctx) {
       await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawDocObj);
       capMinShellVerForRead(rawDocObj);
     }
-    const docObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
+    const scopedDocObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
+    const shaped = (targetKey === 'mfg_web_store' && row && !storeUnreadable)
+      ? await shapeMfgStoreRead(env.DB, request, session, body, rawDocObj, scopedDocObj, row)
+      : null;
+    const docObj = shaped ? shaped.doc : scopedDocObj;
     const etag = await computeSyncDocEtag(docObj);
     if (
       targetKey === 'mfg_web_store' &&
@@ -10885,23 +11062,35 @@ export async function handleSync(request, env, session, body, _ctx) {
       body.ifNoneMatchEtag &&
       body.ifNoneMatchEtag === etag
     ) {
-      return jsonResponse({
+      const notModResp = {
         ok: true,
         edge: true,
         deltaSyncV1: true,
         notModified: true,
         etag,
         updatedAt: String((docObj && docObj.updatedAt) || (row && row.updated_at) || '')
-      });
+      };
+      // Nothing this seat can see changed. The revision still moves on (other companies' entries), so the device is
+      // told where the index stands and keeps asking from there.
+      if (shaped && shaped.anchor) {
+        notModResp.rowSyncV1 = true;
+        notModResp.rowSync = shaped.anchor;
+      }
+      if (shaped && shaped.fields.trailsOnDemand) notModResp.trailsOnDemand = true;
+      if (shaped && shaped.fields.rowAuditNoted) notModResp.rowAuditNoted = true;
+      return jsonResponse(notModResp);
     }
+    if (shaped) completeMfgStoreShape(shaped);
     const getResp = {
       ok: true,
       edge: true,
       deltaSyncV1: true,
       etag,
-      updatedAt: String((row && row.updated_at) || (docObj && docObj.updatedAt) || ''),
-      docs: { [targetKey]: docObj }
+      updatedAt: String((row && row.updated_at) || (docObj && docObj.updatedAt) || '')
     };
+    if (shaped) Object.assign(getResp, shaped.fields);
+    if (shaped && shaped.delta) getResp.rowDelta = shaped.delta;
+    if (!shaped || shaped.wantDocs) getResp.docs = { [targetKey]: docObj };
     if (storeUnreadable) getResp.storeUnreadable = true;
     return jsonResponse(getResp);
   }
@@ -10973,9 +11162,9 @@ export async function handleSync(request, env, session, body, _ctx) {
       if (pKey === 'mfg_web_store') {
         await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawFresh);
         capMinShellVerForRead(rawFresh);
+        return jsonResponse(await mfgConflictReply(env.DB, request, session, body, pKey, rawFresh, currentRow, currentTs, currentParsed.unreadable));
       }
-      const freshDoc = pKey === 'mfg_web_store' ? scopeStoreDocForSession(rawFresh, session) : rawFresh;
-      const conflictResp = { ok: true, conflict: true, deltaSyncV1: true, updatedAt: currentTs, docs: { [pKey]: freshDoc } };
+      const conflictResp = { ok: true, conflict: true, deltaSyncV1: true, updatedAt: currentTs, docs: { [pKey]: rawFresh } };
       if (currentParsed.unreadable) conflictResp.storeUnreadable = true;
       return jsonResponse(conflictResp);
     }
@@ -11000,9 +11189,23 @@ export async function handleSync(request, env, session, body, _ctx) {
       return jsonResponse(conflictResp);
     }
 
+    // Row sync, writer side: hashes of the entries as stored, taken before any guard touches the document and only
+    // while the row index describes exactly this document (row_sync.js). Never a reason to refuse the save.
+    let rowIdxBegun = null;
+    if (pKey === 'mfg_web_store' && currentRow && !currentParsed.unreadable && currentRow.partsInStep !== false) {
+      try {
+        rowIdxBegun = await beginRowIndexPatch(env.DB, currentParsed.obj, currentRow);
+      } catch (_) {
+        rowIdxBegun = null;
+      }
+    }
+
     let prevDoc = currentRow ? (currentParsed.unreadable ? null : currentParsed.obj) : null;
     if (pKey === 'mfg_web_store') {
       prevDoc = await overlayCanonicalSubStoresOnMfgDoc(env.DB, prevDoc || {});
+      // A device that no longer downloads the edit history of live entries (`noTrails`) gets the stored history put
+      // back on what it sends, before any guard reads it: the guards then see what an older device would have sent.
+      if (body.noTrails === true && !(session && session.build_ticket)) rehydrateTrails(incomingDoc, prevDoc);
     }
     let crSyncMeta = null;
     if (pKey === 'mfg_web_store') {
@@ -11101,10 +11304,11 @@ export async function handleSync(request, env, session, body, _ctx) {
       : incomingDoc;
 
     // Claim the atomic `edge_kv_store` CAS slot FIRST so concurrent CAS losers never touch relational D1 tables
+    const kvPayloadJson = JSON.stringify(kvPayloadDoc);
     const kvRes = await writeEdgeKvDoc(
       env.DB,
       pKey,
-      JSON.stringify(kvPayloadDoc),
+      kvPayloadJson,
       newTs,
       updatedByStr,
       { exists: Boolean(currentRow), updatedAt: currentTs }
@@ -11113,20 +11317,31 @@ export async function handleSync(request, env, session, body, _ctx) {
       const latestRow = await readEdgeKvDoc(env.DB, pKey);
       const latestParsed = parseStoredKvDoc(latestRow);
       const latestRaw = latestParsed.obj;
+      const latestTs = latestRow ? String(latestRow.updated_at || '') : '';
       if (pKey === 'mfg_web_store') {
         await overlayCanonicalSubStoresOnMfgDoc(env.DB, latestRaw);
         capMinShellVerForRead(latestRaw);
+        return jsonResponse(await mfgConflictReply(env.DB, request, session, body, pKey, latestRaw, latestRow, latestTs, latestParsed.unreadable));
       }
-      const latestScoped = pKey === 'mfg_web_store' ? scopeStoreDocForSession(latestRaw, session) : latestRaw;
       const latestResp = {
         ok: true,
         conflict: true,
         deltaSyncV1: true,
-        updatedAt: latestRow ? String(latestRow.updated_at || '') : '',
-        docs: { [pKey]: latestScoped }
+        updatedAt: latestTs,
+        docs: { [pKey]: latestRaw }
       };
       if (latestParsed.unreadable) latestResp.storeUnreadable = true;
       return jsonResponse(latestResp);
+    }
+
+    // Row sync, writer side: the index and its anchor move together now that the head row carries the new text. A
+    // failure here leaves the anchor behind, which the next reader repairs from the document; it never fails the save.
+    if (rowIdxBegun) {
+      try {
+        await finishRowIndexPatch(env.DB, rowIdxBegun, kvPayloadDoc, newTs, kvPayloadJson);
+      } catch (err) {
+        console.error(`[row-sync] index update failed: ${String((err && err.message) || err).slice(0, 200)}`);
+      }
     }
 
     let mirrorStats = undefined;
