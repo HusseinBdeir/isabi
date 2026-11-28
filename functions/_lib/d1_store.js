@@ -5561,6 +5561,23 @@ export function mergeCompanyPolicyDefaultEntry(curRaw, incRaw) {
   return merged;
 }
 
+export function wsSortReorderDecision(curRec, incRec) {
+  if (!curRec || !incRec) return null;
+  const curTs = String(curRec.updated_at || '');
+  const incTs = String(incRec.updated_at || '');
+  if (curRec.voided && incRec._sortOnlyReorder) {
+    const incContentTs = String(incRec.content_updated_at || '');
+    if (incContentTs && (!curTs || tsCmp(incContentTs, curTs) > 0)) return 'accept';
+    return 'skip';
+  }
+  if (!curRec.voided && curRec._sortOnlyReorder && incRec.voided) {
+    const curContentTs = String(curRec.content_updated_at || '');
+    if (!curContentTs || (incTs && tsCmp(incTs, curContentTs) >= 0)) return 'accept';
+    return 'skip';
+  }
+  return null;
+}
+
 export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRls) {
   const prevWs = (prevWsRaw && typeof prevWsRaw === 'object') ? prevWsRaw : {};
   const nextWs = (nextWsRaw && typeof nextWsRaw === 'object') ? nextWsRaw : {};
@@ -5580,6 +5597,12 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
       if (!g || !g.id) continue;
       const gid = String(g.id);
       const cur = pgMap.get(gid);
+      const srDec = wsSortReorderDecision(cur, g);
+      if (srDec === 'skip') continue;
+      if (srDec === 'accept') {
+        pgMap.set(gid, g);
+        continue;
+      }
       const curTs = cur ? String(cur.updated_at || '') : '';
       const nxtTs = String(g.updated_at || '');
       if (!cur || !curTs || !nxtTs || tsCmp(nxtTs, curTs) >= 0) {
@@ -5636,6 +5659,12 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
     }
     const sk = shiftKeyFn(ns);
     const cur = shiftMap.get(sk);
+    const srDec = wsSortReorderDecision(cur, ns);
+    if (srDec === 'skip') continue;
+    if (srDec === 'accept') {
+      shiftMap.set(sk, ns);
+      continue;
+    }
     const curTs = cur ? String(cur.updated_at || '') : '';
     const nxtTs = String(ns.updated_at || '');
     if (!cur || !curTs || !nxtTs || tsCmp(nxtTs, curTs) >= 0) {
@@ -5673,6 +5702,117 @@ export function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRl
     companyPolicyDefaults: mergedDefs,
     staffRules: mergedRules
   };
+}
+
+export function checkWorkScheduleMinFloors(wsDoc, targetCo = '') {
+  if (!wsDoc || typeof wsDoc !== 'object') return null;
+  const builtinPgIds = ['pkg_15_open_15d', 'pkg_15_pass_15d', 'pkg_10_fixed_15d', 'pkg_exec_21d', 'pkg_daily_26d'];
+  const pgAliases = {
+    standard: 'pkg_15_open_15d',
+    pkg_hsp_resort_tips: 'pkg_15_open_15d',
+    pkg_trd_showroom_15d: 'pkg_15_pass_15d',
+    pkg_re_caretaker: 'pkg_15_open_15d',
+    pkg_ins_hld_exec_21d: 'pkg_exec_21d'
+  };
+  const pgById = new Map();
+  for (const g of (Array.isArray(wsDoc.policyGroups) ? wsDoc.policyGroups : [])) {
+    if (!g || !g.id) continue;
+    const rawGid = String(g.id).trim();
+    const gid = pgAliases[rawGid] || rawGid;
+    const cur = pgById.get(gid);
+    const gts = String(g.updated_at || '');
+    const cts = String((cur && cur.updated_at) || '');
+    if (!cur) {
+      pgById.set(gid, g);
+    } else {
+      const srDec = wsSortReorderDecision(cur, g);
+      if (srDec === 'skip') continue;
+      if (srDec === 'accept' || tsCmp(gts, cts) >= 0) pgById.set(gid, g);
+    }
+  }
+  let activeUnivPg = 0;
+  const seenPg = new Set();
+  for (const pid of builtinPgIds) {
+    seenPg.add(pid);
+    const rec = pgById.get(pid);
+    if (!rec || !rec.voided) activeUnivPg++;
+  }
+  for (const [gid, rec] of pgById.entries()) {
+    if (seenPg.has(gid) || rec.voided) continue;
+    const gco = String(rec.company || '').trim();
+    if (!gco || /^all(\s+(bus|companies))?$/i.test(gco)) activeUnivPg++;
+  }
+  if (activeUnivPg < 1) {
+    return 'At least one company-wide Policy & Perks group must remain';
+  }
+
+  const builtinShIds = ['day_8_4', 'office_mon_fri', 'ext_7_4', 'split_shift', 'night_7_3'];
+  const shAliases = {
+    exec_mon_fri: 'office_mon_fri',
+    split_11_23: 'split_shift',
+    showroom_830_5: 'day_8_4',
+    concierge_8_5: 'day_8_4'
+  };
+  const allSh = (Array.isArray(wsDoc.shiftTypes) ? wsDoc.shiftTypes : []).filter(s => s && (s.id || s.shift_code));
+  const voidedCoCanons = new Set();
+  let hasAllCoVoid = false;
+  for (const s of allSh) {
+    if (!s.voided) continue;
+    const sco = String(s.company || '').trim();
+    if (!sco || /^all(\s+(bus|companies))?$/i.test(sco)) {
+      hasAllCoVoid = true;
+    } else {
+      voidedCoCanons.add(canonEntityKey(sco));
+    }
+  }
+  const tRaw = String(targetCo || '').trim();
+  if (tRaw && !/^all(\s+(bus|companies))?$/i.test(tRaw)) voidedCoCanons.add(canonEntityKey(tRaw));
+  const checkScopes = Array.from(voidedCoCanons);
+  if (hasAllCoVoid || checkScopes.length === 0) checkScopes.push('__global__');
+  for (const coC of checkScopes) {
+    const bestByCode = new Map();
+    for (const s of allSh) {
+      const sco = String(s.company || '').trim();
+      const isAll = !sco || /^all(\s+(bus|companies))?$/i.test(sco);
+      const isExact = !isAll && canonEntityKey(sco) === coC;
+      if (coC !== '__global__' && !isAll && !isExact) continue;
+      if (coC === '__global__' && !isAll) continue;
+      const rawCode = String(s.shift_code || s.id || '').trim().toLowerCase();
+      const code = shAliases[rawCode] || rawCode;
+      if (!code) continue;
+      const cur = bestByCode.get(code);
+      const sts = String(s.updated_at || '');
+      if (!cur) {
+        bestByCode.set(code, { rec: s, ts: sts, isExact });
+      } else {
+        const srDec = wsSortReorderDecision(cur.rec, s);
+        if (srDec === 'skip') continue;
+        if (srDec === 'accept') {
+          bestByCode.set(code, { rec: s, ts: sts, isExact });
+        } else if (sts !== cur.ts) {
+          if (tsCmp(sts, cur.ts) > 0) bestByCode.set(code, { rec: s, ts: sts, isExact });
+        } else if (isExact && !cur.isExact) {
+          bestByCode.set(code, { rec: s, ts: sts, isExact });
+        } else if (isExact === cur.isExact && s.voided && !cur.rec.voided) {
+          bestByCode.set(code, { rec: s, ts: sts, isExact });
+        }
+      }
+    }
+    let activeSh = 0;
+    const seenSh = new Set();
+    for (const bid of builtinShIds) {
+      seenSh.add(bid);
+      const ent = bestByCode.get(bid);
+      if (!ent || !ent.rec.voided) activeSh++;
+    }
+    for (const [code, ent] of bestByCode.entries()) {
+      if (!seenSh.has(code) && !ent.rec.voided) activeSh++;
+    }
+    if (activeSh < 1) {
+      return 'At least one active work shift must remain for each company';
+    }
+  }
+  return null;
 }
 
 async function loadCanonicalAlertRulesFromDb(db) {
@@ -6359,8 +6499,31 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       return jsonResponse({ ok: false, error: 'Record id is required.' }, 400);
     }
     if (restrictKvRls) {
-      if (reqOp === 'upsert_policy_group' || reqOp === 'delete_policy_group') {
+      if (reqOp === 'upsert_policy_group' || reqOp === 'delete_policy_group' || reqOp === 'reorder_policy_groups') {
         return jsonResponse({ ok: false, error: 'Row-level security: Owner required to modify global policy groups.' }, 403);
+      }
+      if (body && body.company) {
+        const bCo = String(body.company || '').trim();
+        if (/^all(\s+(bus|companies))?$/i.test(bCo) || !canAccessCompany(session, bCo)) {
+          return jsonResponse({ ok: false, error: 'Row-level security: company is outside your assigned entities.' }, 403);
+        }
+      }
+      if (Array.isArray(body && body.companies)) {
+        for (const cItem of body.companies) {
+          const cStr = String(cItem || '').trim();
+          if (!cStr || /^all(\s+(bus|companies))?$/i.test(cStr) || !canAccessCompany(session, cStr)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: company list includes an entity outside your assigned scope.' }, 403);
+          }
+        }
+      }
+      if (body && body.item && typeof body.item === 'object') {
+        let itCo = String(body.item.company || '').trim();
+        if (!itCo && reqOp === 'upsert_staff_rule' && String(body.key || '').includes('|')) {
+          itCo = String(body.key).split('|', 1)[0].trim();
+        }
+        if (itCo && (/^all(\s+(bus|companies))?$/i.test(itCo) || !canAccessCompany(session, itCo))) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot modify schedule record outside your assigned scope.' }, 403);
+        }
       }
       if (reqOp === 'delete_shift') {
         const delId = String((body && body.id) || '').trim();
@@ -6370,10 +6533,11 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
         }
         const prevShiftsAll = Array.isArray(prevWs.shiftTypes) ? prevWs.shiftTypes : [];
         const delCoCanon = delCo ? canonEntityKey(delCo) : '';
+        const isSpecificCo = Boolean(delCoCanon && !/^all(\s+(bus|companies))?$/i.test(delCo));
         for (const exS of prevShiftsAll) {
           if (!exS || !delId || (String(exS.id || '').trim() !== delId && String(exS.shift_code || '').trim() !== delId)) continue;
           const exCo = String(exS.company || '').trim();
-          if (delCoCanon && exCo && !/^all(\s+(bus|companies))?$/i.test(exCo) && canonEntityKey(exCo) !== delCoCanon) {
+          if (isSpecificCo && (!exCo || /^all(\s+(bus|companies))?$/i.test(exCo) || canonEntityKey(exCo) !== delCoCanon)) {
             continue;
           }
           if (!exCo || /^all(\s+(bus|companies))?$/i.test(exCo) || !canAccessCompany(session, exCo)) {
@@ -6470,8 +6634,13 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
           return jsonResponse({ ok: false, error: 'Company is required when deleting a shift type' }, 400);
         }
         if (restrictKvRls) {
+          const isSpecificReqCo = Boolean(reqCoCanon && !/^all(\s+(bus|companies))?$/i.test(reqCoRaw));
           for (const pm of prevMatches) {
-            if (pm.company && !canAccessCompany(session, pm.company)) {
+            const pmCo = String(pm.company || '').trim();
+            if (reqOp === 'delete_shift' && isSpecificReqCo && (!pmCo || /^all(\s+(bus|companies))?$/i.test(pmCo) || canonEntityKey(pmCo) !== reqCoCanon)) {
+              continue;
+            }
+            if (pmCo && !canAccessCompany(session, pmCo)) {
               return jsonResponse({ ok: false, error: 'Row-level security: cannot delete another entity record.' }, 403);
             }
           }
@@ -6511,6 +6680,10 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       }
     }
     toStore = mergeWorkSchedulesDocs(prevWs, mergeWsIn, session, restrictKvRls);
+    const floorErr = checkWorkScheduleMinFloors(toStore, String((body && body.company) || (body && body.item && body.item.company) || ''));
+    if (floorErr) {
+      return jsonResponse({ ok: false, error: floorErr }, 400);
+    }
   }
   if (docKey === 'geo_config') {
     const mergeIncomingGeo = (basePrev) => {
@@ -9118,6 +9291,10 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       staffRules: safeRules
     };
     incomingDoc.workSchedules = mergeWorkSchedulesDocs(pWs, sanitizedWs, session, true);
+    const syncWsFloorErr = checkWorkScheduleMinFloors(incomingDoc.workSchedules);
+    if (syncWsFloorErr) {
+      return jsonResponse({ ok: false, error: syncWsFloorErr }, 400);
+    }
   }
   const canEnrolBio = canEnrolStaffBiometricsSession(session);
   if (!canEnrolBio) {
@@ -11575,6 +11752,13 @@ export async function handleSync(request, env, session, body, _ctx) {
       crSyncMeta = {};
       pruneBloatedShiftBackfillAttRows(incomingDoc, prevDoc, crSyncMeta);
       if (isOwnerOrFullGroupSession(session)) {
+        if (incomingDoc.workSchedules !== undefined || (prevDoc && prevDoc.workSchedules !== undefined)) {
+          incomingDoc.workSchedules = mergeWorkSchedulesDocs(prevDoc && prevDoc.workSchedules, incomingDoc.workSchedules, session, false);
+          const ownWsFloorErr = checkWorkScheduleMinFloors(incomingDoc.workSchedules);
+          if (ownWsFloorErr) {
+            return jsonResponse({ ok: false, error: ownWsFloorErr }, 400);
+          }
+        }
         if (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') {
           incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics);
         }
@@ -11621,7 +11805,8 @@ export async function handleSync(request, env, session, body, _ctx) {
           });
         }
       } else {
-        await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
+        const syncRlsResp = await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
+        if (syncRlsResp) return syncRlsResp;
       }
       reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, session, rawTruncMap, crSyncMeta);
     }
