@@ -540,37 +540,38 @@ def read_live_store_rows(env: dict) -> list[dict] | None:
         return None
 
 
-def live_store_rows_count(env: dict) -> int | None:
-    """How many lines `store_rows` holds for the store, or None when wrangler could not say."""
-    chk = run_wrangler(
-        ["d1", "execute", "isabi-ledger", "--remote", "--json", f"--command={RSR.ROWS_COUNT_SQL}"],
-        env,
-        check=False,
-    )
-    if chk.returncode != 0:
-        return None
-    try:
-        return int((json.loads(chk.stdout)[0].get("results") or [{}])[0].get("n"))
-    except Exception:
-        return None
+def read_rows_master_store(env: dict) -> tuple[dict, str]:
+    """(document, head stamp) of a live store whose rows are the master, read as any build script reads it
+    (row_store_read.read_doc: head, rows, head again; the rows must be the ones the commit record names and must
+    assemble to a document). Raises ValueError when they do not."""
+    def query(sql: str) -> list[dict]:
+        res = run_wrangler(["d1", "execute", "isabi-ledger", "--remote", "--json", f"--command={sql}"], env, check=False)
+        if res.returncode != 0:
+            raise ValueError("wrangler could not read the store")
+        try:
+            return json.loads(res.stdout)[0].get("results") or []
+        except Exception as exc:
+            raise ValueError(f"wrangler answered without rows ({exc})") from exc
+    return RSR.read_doc(query)
 
 
 def assert_live_store_parses(env: dict, after: str, expected_head_ts: str = "") -> str:
     """Stop the deploy when the live store's chunks no longer join into valid JSON (incident 2026-11-13).
     Reads twice before failing: a browser write is two steps (head, then parts) and a read can fall between them.
     Returns the joined live text. A store whose rows are the master (head row = commit record, row_store_read.py) is
-    in order when `store_rows` holds the number of lines the record names; the text returned is then empty."""
+    in order when its rows are the ones the record names and assemble to a document; the text returned is then empty."""
     last_err = ""
     for attempt in range(3):
         rows = read_live_store_rows(env)
         head_now = RSR.head_row_of(rows) if rows else None
         if head_now is not None and RSR.is_rows_head(str(head_now.get("payload_json") or "")):
-            rec = RSR.parse_commit(str(head_now.get("payload_json") or ""))
-            n_rows = live_store_rows_count(env)
-            if rec is not None and n_rows is not None and int(rec.get("n") or -1) == n_rows:
-                print(f"Live store is kept as rows ({n_rows} line(s), as its commit record names): left as it is.")
+            try:
+                rows_doc, _rows_ts = read_rows_master_store(env)
+                n_entries = sum(len(v) for v in (rows_doc.get("customRecords") or {}).values() if isinstance(v, list))
+                print(f"Live store is kept as rows ({n_entries} entries read back as a document): left as it is.")
                 return ""
-            last_err = f"the store is kept as rows and its commit record names {rec.get('n') if rec else 'nothing'} line(s), store_rows holds {n_rows}"
+            except ValueError as exc:
+                last_err = f"the store is kept as rows and did not read ({exc})"
         elif rows is None:
             last_err = "wrangler could not read the store"
         else:
@@ -1697,9 +1698,10 @@ def migrate_remote_d1_pins_to_pbkdf2(env: dict):
         return
     kv_head = RSR.head_row_of(kv_rows)
     if kv_head is not None and RSR.is_rows_head(str(kv_head.get("payload_json") or "")):
-        # The rows are the master: the Edge strips PIN and face fields from the seats on every save it writes, and a
-        # document swapped in here would make the document the master again.
-        print("Remote D1 store PIN scrub: the store is kept as rows (the Edge strips PIN and face fields on every save); nothing to scrub here.")
+        # The rows are the master: the Edge strips PINs and face samples from the seats on every save it writes
+        # (redactFaceSamplesFromUserObj; face thumbnails it leaves), and a document swapped in here would make the
+        # document the master again. Nothing is scrubbed here while the store is kept as rows.
+        print("Remote D1 store PIN scrub: the store is kept as rows (the Edge strips PINs and face samples on every save); nothing scrubbed here.")
         return
     raw_kv = "".join(str(x.get("payload_json") or "") for x in kv_rows)
     try:

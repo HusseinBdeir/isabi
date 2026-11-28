@@ -495,7 +495,7 @@ console.log('\n[3. While the document is the master, the rows are kept in step a
   const refused = await W.ticketAction('cutover');
   ok('3k. the switch-over is refused while a failed comparison is on record', refused.status === 409 && refused.json.ok === false && !isRowsHead(W.head().payload_json), refused.json);
   const reset = await W.api('row_store', { body: { action: 'reset' } });
-  ok('3l. Reset clears the count', reset.json.ok && W.state().rows_bad === 0 && reset.json.row_store.status === 'ok', reset.json);
+  ok('3l. Reset clears the count, and the clean comparisons from before it no longer count either', reset.json.ok && W.state().rows_bad === 0 && W.state().rows_ok === 0 && reset.json.row_store.status === 'ok', reset.json);
   // The tampered row still differs; the hash column says it does not. The switch-over must read the text itself.
   const refused2 = await W.ticketAction('cutover');
   ok('3m. the switch-over is refused when the rows do not read back as the stored document, whatever the counters say',

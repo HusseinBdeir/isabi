@@ -246,6 +246,41 @@ if APP_BUILD:
         check("4. reconcile_cloud_store: the Wrangler patch refuses a store kept as rows", "kept as rows" in str(exc), str(exc))
     still = db5.execute("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'").fetchone()[0]
     check("4. reconcile_cloud_store: and nothing was written", still == STORE["commit"])
+    # The switch-over lands (same stamp) after the patch read a document and staged its rows: the swap changes nothing.
+    db_race = make_db(False)
+    race = {"files": 0, "flipped": False}
+
+    def racing_exec(sql: str = "", sql_file=None, timeout: int = 90):
+        if sql_file is not None:
+            race["files"] += 1
+            db_race.executescript(pathlib.Path(sql_file).read_text(encoding="utf-8"))
+            db_race.commit()
+            if not race["flipped"]:
+                race["flipped"] = True
+                db_race.execute("DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%'")
+                db_race.execute("UPDATE edge_kv_store SET payload_json = ?, rev = rev + 1 WHERE doc_key = 'mfg_web_store'", (STORE["commit"],))
+                db_race.executemany(
+                    "INSERT INTO store_rows (doc_key, bucket, row_id, kind, ord, hash, json) VALUES ('mfg_web_store', ?, ?, ?, ?, ?, ?)",
+                    [(r["bucket"], r["row_id"], r["kind"], r["ord"], r["hash"], r["json"]) for r in STORE["rows"]],
+                )
+                db_race.commit()
+            return []
+        return q(db_race)(sql)
+
+    rcs._wrangler_d1_exec = racing_exec
+    patch_doc = json.loads(STORE["text"])
+    patch_doc["updatedAt"] = "2026-11-28T10:07:00.000Z"
+    patch_doc["marker"] = "from-the-top-up"
+    with contextlib.redirect_stdout(io.StringIO()):
+        try:
+            race_res, _uri = rcs._wrangler_d1_store_patch(patch_doc, "2026-11-28T10:05:00.000Z")
+        except Exception as exc:  # noqa: BLE001
+            race_res = {"raised": str(exc)}
+    race_head = db_race.execute("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'").fetchone()[0]
+    race_parts = db_race.execute("SELECT COUNT(*) FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__%'").fetchone()[0]
+    check("4. reconcile_cloud_store: a switch-over landing while the Wrangler patch is staging: the swap changes nothing (head still the commit record, no part rows, no staged rows)",
+          race["flipped"] and race["files"] >= 2 and race_head == STORE["commit"] and race_parts == 0 and not (isinstance(race_res, dict) and race_res.get("ok") and not race_res.get("conflict")),
+          (race, race_head[:40], race_parts, race_res if not isinstance(race_res, dict) else {k: v for k, v in race_res.items() if k != "docs"}))
     db5b = make_db(True)
     db5b.execute("DELETE FROM store_rows WHERE doc_key = 'mfg_web_store' AND bucket = 'kp'")
     rcs._wrangler_d1_exec = lambda sql=None, **k: q(db5b)(sql)
@@ -290,7 +325,16 @@ try:
         dc.assert_live_store_parses({}, "the gate")
     check("5. deploy: a commit record whose line count does not match stops the deploy", False)
 except SystemExit as exc:
-    check("5. deploy: a commit record whose line count does not match stops the deploy", "kept as rows" in str(exc), str(exc))
+    check("5. deploy: a commit record whose line count does not match stops the deploy", "kept as rows" in str(exc) and "did not read" in str(exc), str(exc))
+db_torn = make_db(True)
+db_torn.execute("UPDATE store_rows SET json = '{' WHERE doc_key = 'mfg_web_store' AND bucket = 'kp'")
+dc.run_wrangler = fake_wrangler(db_torn)
+try:
+    with contextlib.redirect_stdout(io.StringIO()):
+        dc.assert_live_store_parses({}, "the gate")
+    check("5. deploy: a damaged line stops the deploy even when the line count still matches", False)
+except SystemExit as exc:
+    check("5. deploy: a damaged line stops the deploy even when the line count still matches", "did not read" in str(exc), str(exc))
 dc.run_wrangler = fake_wrangler(make_db(False))
 with contextlib.redirect_stdout(io.StringIO()):
     text5b = dc.assert_live_store_parses({}, "the gate")
@@ -299,6 +343,9 @@ check("5. deploy: a document is checked as before", text5b == STORE["text"])
 # 6. the switch-over command
 import row_store_admin as rsa  # noqa: E402
 
+REAL_SCRIPTS_BLOCKERS = rsa.scripts_blockers
+REAL_CALL = rsa.call
+SCRIPTS_WHY: list[str] = []
 GOOD = {"status": "ok", "issues": [], "partial": {"on": True, "auditOk": 9, "auditBad": 0},
         "rows": {"master": "document", "mode": 1, "ok": 150, "bad": 0, "checkedAt": "2026-11-28T10:00:00Z"}}
 
@@ -313,6 +360,7 @@ def run_admin(argv, health, answers=None):
         return (answers or {}).get(action, (200, {"ok": True, "check": "ok", "row_store": health}))
 
     rsa.call = fake_call
+    rsa.scripts_blockers = lambda: list(SCRIPTS_WHY)
     eds.mint_build_ticket = lambda: "bt1_gate"
     with contextlib.redirect_stdout(io.StringIO()) as buf_:
         code = rsa.main(argv)
@@ -343,6 +391,40 @@ check("6. restore asks for restore_document", code == 0 and asked == [None, "res
 code, asked, o = run_admin(["rows-off", "--dry"], GOOD)
 check("6. --dry on any other command asks nothing", code == 0 and asked == [None])
 check("6. this program may issue a build ticket, and only by name", "row_store_admin.py" in eds.BUILD_TICKET_PROGRAMS)
+SCRIPTS_WHY[:] = ["isabi origin/main does not hold build/row_store_read.py yet"]
+code, asked, o = run_admin(["cutover", "--owner-go"], GOOD)
+check("6. cutover refused while the build scripts are not ready everywhere", code == 3 and asked == [None] and "origin/main" in o, o)
+SCRIPTS_WHY[:] = []
+code, asked, o = run_admin(["cutover", "--owner-go"], GOOD, {"cutover": (0, {"ok": False, "noAnswer": True, "error": "no answer (TimeoutError: timed out)"})})
+check("6. no answer to the switch-over request: it says so and reports what the store says now, never 'done'",
+      code == 4 and asked == [None, "check", "cutover", None] and "NO ANSWER" in o and "done" not in o.split("NO ANSWER")[0].splitlines()[-1], (code, asked))
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        rsa.main(["cutover", "--owner-go", "--min-clean", "0"])
+    check("6. --min-clean below 1 is refused", False)
+except SystemExit as exc:
+    check("6. --min-clean below 1 is refused", exc.code == 2)
+# The readiness test itself, with git and the two checkouts as they are here (no network needed to fail safely).
+rsa._on_origin_main = lambda repo: False
+why_now = REAL_SCRIPTS_BLOCKERS()
+check("6. readiness: a repository whose origin/main lacks the reader is named", any("origin/main" in w for w in why_now), why_now)
+rsa._on_origin_main = lambda repo: True
+why_ok = REAL_SCRIPTS_BLOCKERS()
+check("6. readiness: nothing in the way when both checkouts and both mains hold the same reader", (why_ok == []) if APP_BUILD else any("isabi-app" in w for w in why_ok), why_ok)
+
+
+class _Boom:
+    def __call__(self, *a, **k):
+        raise TimeoutError("timed out")
+
+
+_real_urlopen = rsa.urllib.request.urlopen
+rsa.urllib.request.urlopen = _Boom()
+try:
+    st, body = REAL_CALL("bt1_gate", "cutover", timeout=1)
+finally:
+    rsa.urllib.request.urlopen = _real_urlopen
+check("6. a timeout is an answer of its own, not a traceback", st == 0 and body.get("noAnswer") is True and body.get("ok") is False, (st, body))
 
 if FAILED:
     print(f"verify_row_store_tools: {len(FAILED)} of {COUNT} checks FAILED")

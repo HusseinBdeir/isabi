@@ -157,6 +157,11 @@ def lock_mod():
 
 def mods():
     if not _MODS.get("D"):
+        try:
+            # First of all: export_d1_seed and deploy_cloudflare import it, and would otherwise take the file on disk.
+            _MODS["R"] = _load_committed("row_store_read")
+        except subprocess.CalledProcessError:
+            pass  # a HEAD from before the row store: its helpers do not import it
         _MODS["E"] = _load_committed("export_d1_seed")  # first: deploy_cloudflare imports from it
         _MODS["D"] = _load_committed("deploy_cloudflare")
     return _MODS["E"], _MODS["D"]

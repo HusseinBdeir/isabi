@@ -12,15 +12,22 @@ build ticket, to report on it or to change which of the two is the master.
 
 `cutover` changes the master copy of the live books. It runs only with --owner-go (the owner said so, for this run),
 and only when: nothing is reported for the Owner to look at, at least --min-clean comparisons came back clean and none
-failed, the build scripts of this checkout read a commit record (row_store_read.py is beside this file), and a fresh
-comparison passes right now. `restore` undoes it and must run before the server is rolled back to a version from
-before the row store. --dry prints what would be asked and asks nothing but the status.
+failed, the build scripts read a commit record (row_store_read.py in this checkout, in the isabi-app checkout beside
+it, and on origin/main of both repositories), and a fresh comparison passes right now. `restore` undoes it and must
+run before the server is rolled back to a version from before the row store. --dry prints what would be asked and
+asks nothing but the status.
+
+Every PC that runs deploys, data releases or top-ups must have pulled main before `cutover`: an older checkout's
+data release would swap a document back over the rows (the store then falls back to the document, and the Owner is
+told), its deploys would stop at the store check, and its top-up would call the store unreadable.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -57,6 +64,46 @@ def call(ticket: str, action: str | None, timeout: int = 60) -> tuple[int, dict]
             return exc.code, json.loads(exc.read().decode("utf-8"))
         except Exception:  # noqa: BLE001
             return exc.code, {"ok": False, "error": f"HTTP {exc.code}"}
+    except Exception as exc:  # noqa: BLE001  (no answer at all: a timeout, the network)
+        return 0, {"ok": False, "noAnswer": True, "error": f"no answer ({exc.__class__.__name__}: {exc})"}
+
+
+def app_build_dir() -> pathlib.Path | None:
+    """build/ of the isabi-app checkout this isabi checkout is paired with (ISABI_APP_SRC as sync_app.py reads it,
+    else the checkout beside this one)."""
+    for cand in (os.environ.get("ISABI_APP_SRC") or "", str(BUILD_DIR.parent.parent / "isabi-app")):
+        if cand and (pathlib.Path(cand) / "build" / "reconcile_cloud_store.py").is_file():
+            return pathlib.Path(cand) / "build"
+    return None
+
+
+def _on_origin_main(repo: pathlib.Path) -> bool:
+    try:
+        subprocess.run(["git", "-C", str(repo), "fetch", "origin", "--quiet"], capture_output=True, timeout=120)
+        r = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", "origin/main:build/row_store_read.py"], capture_output=True, timeout=60)
+        return r.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def scripts_blockers() -> list[str]:
+    """Why the build scripts are not ready for a store kept as rows (empty = ready as far as this PC can tell)."""
+    why = []
+    mine = BUILD_DIR / "row_store_read.py"
+    if not mine.is_file():
+        why.append("this checkout's build scripts do not read a commit record (build/row_store_read.py is missing)")
+    app_build = app_build_dir()
+    if app_build is None:
+        why.append("no isabi-app checkout found beside this one (the top-up's scripts could not be checked)")
+    elif not (app_build / "row_store_read.py").is_file():
+        why.append("the isabi-app checkout's build scripts do not read a commit record (pull main there)")
+    elif mine.is_file() and (app_build / "row_store_read.py").read_bytes().replace(b"\r\n", b"\n") != mine.read_bytes().replace(b"\r\n", b"\n"):
+        why.append("the isabi and isabi-app copies of build/row_store_read.py differ (pull main in both)")
+    if not _on_origin_main(BUILD_DIR.parent):
+        why.append("isabi origin/main does not hold build/row_store_read.py yet (other PCs cannot have pulled it)")
+    if app_build is not None and not _on_origin_main(app_build.parent):
+        why.append("isabi-app origin/main does not hold build/row_store_read.py yet (other PCs cannot have pulled it)")
+    return why
 
 
 def describe(health: dict | None) -> list[str]:
@@ -93,16 +140,21 @@ def cutover_blockers(health: dict | None, min_clean: int) -> list[str]:
         why.append(f"{rows.get('bad')} failed comparison(s) on record")
     if int(rows.get("ok") or 0) < min_clean:
         why.append(f"only {rows.get('ok') or 0} clean comparison(s) so far, {min_clean} wanted")
-    if not (BUILD_DIR / "row_store_read.py").is_file():
-        why.append("this checkout's build scripts do not read a commit record (row_store_read.py is missing)")
-    return why
+    return why + scripts_blockers()
+
+
+def _min_clean_arg(raw: str) -> int:
+    n = int(raw)
+    if n < 1:
+        raise argparse.ArgumentTypeError("at least 1")
+    return n
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
     ap.add_argument("command", choices=["status", *ACTIONS.keys()])
     ap.add_argument("--owner-go", action="store_true", help="cutover only: the owner said to switch over, for this run")
-    ap.add_argument("--min-clean", type=int, default=DEFAULT_MIN_CLEAN, help=f"cutover only: clean comparisons wanted first (default {DEFAULT_MIN_CLEAN})")
+    ap.add_argument("--min-clean", type=_min_clean_arg, default=DEFAULT_MIN_CLEAN, help=f"cutover only: clean comparisons wanted first (default {DEFAULT_MIN_CLEAN})")
     ap.add_argument("--dry", action="store_true", help="ask for the status only and print what would be done")
     args = ap.parse_args(argv)
 
@@ -143,6 +195,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     code, res = call(ticket, ACTIONS[args.command], timeout=180)
+    if res.get("noAnswer"):
+        # The request may or may not have been carried out. Say what the store says now, never guess.
+        print(f"{args.command}: NO ANSWER ({res.get('error')}). What the live Edge reports now:")
+        code2, ans2 = call(ticket, None)
+        for line in describe(ans2.get("row_store") if code2 == 200 else None):
+            print(f"  {line}")
+        return 4
     done = code == 200 and bool(res.get("ok"))
     detail = {k: v for k, v in res.items() if k != "row_store"}
     print(f"{args.command}: {'done' if done else 'NOT done'} (HTTP {code}) {json.dumps(detail, ensure_ascii=False)}")

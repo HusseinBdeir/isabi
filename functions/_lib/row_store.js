@@ -749,7 +749,7 @@ export async function resetRowStoreCounters(db) {
   await db.batch([
     ensureStateStmt(db),
     db.prepare(
-      `UPDATE store_rows_state SET rows_bad = 0, rows_note = NULL, apply_bad = 0, apply_at = NULL, fell_back_at = NULL, updated_at = ?2
+      `UPDATE store_rows_state SET rows_ok = 0, rows_bad = 0, rows_note = NULL, apply_bad = 0, apply_at = NULL, fell_back_at = NULL, updated_at = ?2
        WHERE doc_key = ?1`
     ).bind(ROW_SYNC_DOC_KEY, nowIso),
     // Partial answers come back on, and the comparisons that guard them start again from none.

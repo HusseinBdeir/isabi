@@ -61,7 +61,8 @@ def assemble_text(rows: list[dict]) -> str:
     for r in rows or []:
         by_bucket.setdefault(str(r.get("bucket") or ""), []).append(r)
     for lst in by_bucket.values():
-        lst.sort(key=lambda r: (int(r.get("ord") or 0), str(r.get("row_id") or "")))
+        # Equal order numbers fall back to the id, compared as JavaScript compares strings (UTF-16 code units).
+        lst.sort(key=lambda r: (int(r.get("ord") or 0), str(r.get("row_id") or "").encode("utf-16-be", "surrogatepass")))
 
     def rows_text(bucket: str) -> str:
         return "[" + ",".join(str(r.get("json") or "") for r in by_bucket.get(bucket, [])) + "]"
