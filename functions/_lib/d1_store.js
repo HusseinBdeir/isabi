@@ -73,6 +73,7 @@ export const UNIVERSAL_UNIQUE_TABLES = new Set([
   'sites', 'regions', 'equipment', 'drivers', 'staff_roles',
   'expense_categories', 'expense_subcategories', 'currencies', 'gl_accounts'
 ]);
+const IND_PARTITIONED_UNIV_TABLES = new Set(['sites', 'regions', 'customers', 'suppliers']);
 export const GLOBAL_RATE_TABLES = new Set(['fx_rates', 'vat_rates']);
 
 // Map customRecords short keys to canonical SQL table names
@@ -2798,6 +2799,18 @@ export async function prepareUpsertTableRecordStmt(db, table, record) {
         dupRow = await db.prepare(
           `SELECT id, name FROM ${canonTable} WHERE id != ?1 AND lower(trim(name)) = lower(trim(?2)) AND lower(trim(COALESCE(category,''))) = lower(trim(?3)) AND COALESCE(voided, 0) = 0 LIMIT 1`
         ).bind(recId, mainVal, catVal).first();
+      } else if (IND_PARTITIONED_UNIV_TABLES.has(canonTable)) {
+        const recIndK = recordUnivIndustryKey(record);
+        const candRes = await db.prepare(
+          `SELECT * FROM ${canonTable} WHERE id != ?1 AND lower(trim(name)) = lower(trim(?2)) AND COALESCE(voided, 0) = 0`
+        ).bind(recId, mainVal).all();
+        for (const cand of (candRes.results || [])) {
+          const candHyd = hydrateRowJson(cand) || cand;
+          if (recordUnivIndustryKey(candHyd) === recIndK) {
+            dupRow = { id: String(candHyd.id || cand.id), name: candHyd.name || cand.name || mainVal };
+            break;
+          }
+        }
       } else {
         dupRow = await db.prepare(
           `SELECT id, name FROM ${canonTable} WHERE id != ?1 AND lower(trim(name)) = lower(trim(?2)) AND COALESCE(voided, 0) = 0 LIMIT 1`
@@ -2938,6 +2951,7 @@ export async function handleRecordsGet(request, env, session, url) {
 
   const restrictRls = !isOwnerOrFullGroupSession(session);
   const isUnivGeoTable = table === 'sites' || table === 'regions';
+  const isUnivIndTable = isUnivGeoTable || table === 'customers' || table === 'suppliers';
   if (restrictRls) {
     if (company && companyNorm !== 'all' && companyNorm !== 'manufacturing-group' && !canAccessCompany(session, company)) {
       return jsonResponse({ ok: false, error: 'Row-level security: unauthorized entity scope.' }, 403);
@@ -2994,14 +3008,14 @@ export async function handleRecordsGet(request, env, session, url) {
         whereParts.push(`company IN (${ph})`);
       }
     }
-  } else if (restrictRls && isUnivGeoTable) {
+  } else if (restrictRls && isUnivIndTable) {
     const rawAllowed = parseAllowedCompanies(session.companies).filter(c => c !== '*');
     if (!rawAllowed.length) {
       return jsonResponse({ ok: false, error: 'Row-level security: no permitted entities assigned.' }, 403);
     }
   }
 
-  const deferLimitAfterHydration = Boolean(restrictRls && isUnivGeoTable);
+  const deferLimitAfterHydration = Boolean(restrictRls && isUnivIndTable);
   if (whereParts.length) sql += ` WHERE ${whereParts.join(' AND ')}`;
   if (deferLimitAfterHydration) {
     sql += ` ${orderClause}`;
@@ -3020,7 +3034,7 @@ export async function handleRecordsGet(request, env, session, url) {
       : await env.DB.prepare(fbSql).bind(companyNorm, limit).all();
   }
   let outRows = (res.results || []).map(r => hydrateRowJson(r));
-  if (restrictRls && isUnivGeoTable) {
+  if (restrictRls && isUnivIndTable) {
     outRows = outRows.filter(r => canAccessUniversalGeoRow(session, table, r)).slice(0, limit);
   }
   return jsonResponse({ ok: true, edge: true, table, rows: outRows });
@@ -4280,11 +4294,25 @@ export async function handleRecordsPost(request, env, session, body) {
     }
     if (mainVal) {
       let dupRow = null;
+      let dupHydratedFull = null;
       if (canonTable === 'expense_subcategories' && cols.has('category')) {
         const catVal = String(record.category || '').trim();
         dupRow = await env.DB.prepare(
           `SELECT id FROM ${canonTable} WHERE id != ?1 AND lower(trim(name)) = lower(trim(?2)) AND lower(trim(COALESCE(category,''))) = lower(trim(?3)) AND COALESCE(voided, 0) = 0 LIMIT 1`
         ).bind(String(record.id).trim(), mainVal, catVal).first();
+      } else if (IND_PARTITIONED_UNIV_TABLES.has(canonTable)) {
+        const recIndK = recordUnivIndustryKey(record);
+        const candRes = await env.DB.prepare(
+          `SELECT * FROM ${canonTable} WHERE id != ?1 AND lower(trim(name)) = lower(trim(?2)) AND COALESCE(voided, 0) = 0`
+        ).bind(String(record.id).trim(), mainVal).all();
+        for (const cand of (candRes.results || [])) {
+          const candHyd = hydrateRowJson(cand) || cand;
+          if (recordUnivIndustryKey(candHyd) === recIndK) {
+            dupRow = { id: String(candHyd.id || cand.id) };
+            dupHydratedFull = cand;
+            break;
+          }
+        }
       } else {
         dupRow = await env.DB.prepare(
           `SELECT id FROM ${canonTable} WHERE id != ?1 AND lower(trim(name)) = lower(trim(?2)) AND COALESCE(voided, 0) = 0 LIMIT 1`
@@ -4297,7 +4325,7 @@ export async function handleRecordsPost(request, env, session, body) {
             error: `Duplicate ${canonTable} main column '${mainVal}' already exists (id=${dupRow.id}).`
           };
         } else {
-          const dupFull = await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(dupRow.id)).first();
+          const dupFull = dupHydratedFull || await env.DB.prepare(`SELECT * FROM ${canonTable} WHERE id = ?1`).bind(String(dupRow.id)).first();
           if (dupFull) {
             exRow = dupFull;
             record = Object.assign({}, record, { id: String(dupRow.id) });
@@ -4361,6 +4389,18 @@ export async function handleRecordsPost(request, env, session, body) {
     }
     if (recInd && exInd && canonGeoIndustryKey(recInd) !== canonGeoIndustryKey(exInd) && !canAccessGeoIndustrySession(session, recInd)) {
       return await rejectRecGeo403('Row-level security: unauthorized industry geo write.');
+    }
+  } else if (canonTable === 'customers' || canonTable === 'suppliers') {
+    const effInd = exHydratedRls ? recordUnivIndustryKey(exHydratedRls) : recordUnivIndustryKey(record);
+    const recInd = String(record._industry || record.industry || record.ind || '').trim();
+    const exInd = String((exHydratedRls && (exHydratedRls._industry || exHydratedRls.industry || exHydratedRls.ind)) || '').trim();
+    if (!isOwnerOrFullGroupSession(session)) {
+      if (!canAccessGeoIndustrySession(session, effInd)) {
+        return jsonResponse({ ok: false, error: 'Row-level security: unauthorized industry counterparty write.' }, 403);
+      }
+      if (recInd && exInd && canonGeoIndustryKey(recInd) !== canonGeoIndustryKey(exInd) && !canAccessGeoIndustrySession(session, recInd)) {
+        return jsonResponse({ ok: false, error: 'Row-level security: unauthorized industry counterparty write.' }, 403);
+      }
     }
   }
 
@@ -4868,6 +4908,19 @@ function inferEntityIndustry(coRaw) {
   return ENTITY_TO_GEO_IND[ck] || '';
 }
 
+function recordUnivIndustryKey(row) {
+  if (!row || typeof row !== 'object') return canonGeoIndustryKey('Manufacturing').toLowerCase() || 'manufacturing';
+  let indRaw = String(row._industry || row.industry || row.ind || '').trim();
+  if (!indRaw) {
+    const co = String(row.company || row.resort || row.entity || '').trim();
+    const normCo = co.toLowerCase().replace(/\s+/g, ' ');
+    if (normCo && normCo !== 'all' && normCo !== 'all bus' && normCo !== 'all companies' && normCo !== 'shared') {
+      indRaw = inferEntityIndustry(co);
+    }
+  }
+  return canonGeoIndustryKey(indRaw || 'Manufacturing').toLowerCase() || 'manufacturing';
+}
+
 function inferDomainIndustry(obj, keyHint = '') {
   if (obj && typeof obj === 'object') {
     const rawInd = String(obj._industry || obj.industry || obj.ind || '').trim();
@@ -4918,7 +4971,7 @@ function canAccessUniversalGeoRow(session, canonTable, row) {
   const normCo = co.toLowerCase().replace(/\s+/g, ' ');
   const isSharedCo = !normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'all companies' || normCo === 'shared';
   if (!isSharedCo && !canAccessCompany(session, co)) return false;
-  if (canonTable === 'sites' || canonTable === 'regions') {
+  if (canonTable === 'sites' || canonTable === 'regions' || canonTable === 'customers' || canonTable === 'suppliers') {
     let indRaw = String(row._industry || row.industry || row.ind || '').trim();
     if (!indRaw && !isSharedCo) indRaw = inferEntityIndustry(co);
     if (!canAccessGeoIndustrySession(session, indRaw || 'Manufacturing')) return false;

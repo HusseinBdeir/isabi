@@ -838,6 +838,57 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
       && r2.reference === 'NSSF-448120' && r2.id_doc_kind === 'nssf_card',
       { pCreate, pBackfill, r1, r2 });
   }
+
+  // 5l. Industry-partitioned customers & suppliers uniqueness and RLS across /api/records & /api/sync
+  {
+    const { env } = freshEnv();
+    const reUser = { sub: 'u-re', role: 'Entry', companies: '4235 Company S.A.L', email: 're-entry@example.test' };
+    const wtcUser = { sub: 'u-wtc', role: 'Entry', companies: 'WTC', email: 'wtc-entry@example.test' };
+    const mfgCust = await postRec(env, 'customers', {
+      id: 'cust-ind-mfg', name: 'zzSharedCrossIndParty', company: 'WTC', phone: '+96170111111',
+    }, wtcUser);
+    const reCust = await postRec(env, 'customers', {
+      id: 'cust-ind-re', name: 'zzSharedCrossIndParty', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', phone: '+96170222222',
+    }, reUser);
+    const mfgSup = await postRec(env, 'suppliers', {
+      id: 'sup-ind-mfg', name: 'zzSharedCrossIndParty', company: 'WTC', phone: '+96171333333',
+    }, wtcUser);
+    const reSup = await postRec(env, 'suppliers', {
+      id: 'sup-ind-re', name: 'zzSharedCrossIndParty', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', phone: '+96171444444',
+    }, reUser);
+    const mfgDup409 = await postRec(env, 'customers', {
+      id: 'cust-ind-mfg-dup', name: 'zzSharedCrossIndParty', company: 'WTC', phone: '+96170999999',
+    }, wtcUser);
+    const crossWrite403 = await postRec(env, 'customers', {
+      id: 'cust-ind-re', name: 'zzSharedCrossIndParty', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', phone: '+96170888888', modified_by: 'wtc-entry@example.test',
+    }, wtcUser);
+    const syncRes = await postSync(env, {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: {
+          minShellVer: effectiveMinSyncShellVer(),
+          updatedAt: new Date().toISOString(),
+          customRecords: {
+            customers: [
+              { id: 'cust-ind-re', name: 'zzSharedCrossIndParty', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', phone: '+96170222223', modified_at: new Date().toISOString(), modified_by: 'owner@example.test' },
+              { id: 'cust-ind-mfg-new', name: 'zzSharedCrossIndParty', company: 'WTC', phone: '+96170111112', modified_at: new Date().toISOString(), modified_by: 'owner@example.test' },
+            ],
+          },
+        },
+      },
+    }, OWNER);
+    const wtcView = await getRecs(env, 'customers', wtcUser);
+    const ownerView = await getRecs(env, 'customers', OWNER);
+    const wtcIds = (wtcView.json.rows || []).map(r => r.id);
+    const ownerMap = new Map((ownerView.json.rows || []).map(r => [r.id, r]));
+    ok('5l. customers & suppliers allow same name across industries without overwrite, enforce same-industry 409 & cross-industry 403/RLS',
+      mfgCust.status === 200 && reCust.status === 200 && mfgSup.status === 200 && reSup.status === 200
+      && mfgDup409.status === 409 && crossWrite403.status === 403 && syncRes.status === 200
+      && wtcIds.includes('cust-ind-mfg') && !wtcIds.includes('cust-ind-re')
+      && ownerMap.get('cust-ind-re')?.phone === '+96170222223' && ownerMap.get('cust-ind-mfg')?.phone === '+96170111112',
+      { mfgCust: mfgCust.status, reCust: reCust.status, mfgSup: mfgSup.status, reSup: reSup.status, mfgDup409: mfgDup409.status, crossWrite403: crossWrite403.status, wtcIds, ownerRe: ownerMap.get('cust-ind-re')?.phone, ownerMfg: ownerMap.get('cust-ind-mfg')?.phone });
+  }
 }
 
 // 6. Outward copy hygiene check on all API responses collected
