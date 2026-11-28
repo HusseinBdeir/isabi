@@ -3721,6 +3721,15 @@ table.m-grid tfoot tr td {
   gap: 10px;
 }
 
+.auth-shell-ver {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.auth-shell-ver:empty {
+  display: none;
+}
+
 .auth-link-btn,
 .auth-showcase-link {
   background: none;

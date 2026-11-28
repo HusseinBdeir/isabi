@@ -1779,6 +1779,15 @@ html.phone-scan-companion .topbar-more-popover {
   gap: 4px;
 }
 
+.topbar-more-popover .tm-ver-val {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, #6b5e51);
+  -webkit-user-select: all;
+  user-select: all;
+}
+
 .topbar-more-popover #themeToggleBtn,
 .topbar-more-popover #mobileThemeBtn {
   height: 28px;
