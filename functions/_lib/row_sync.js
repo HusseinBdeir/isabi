@@ -75,6 +75,32 @@ const SCHEMA_STMTS = [
      audit_bad INTEGER NOT NULL DEFAULT 0,
      audit_note TEXT,
      updated_at TEXT
+   )`,
+  // Stage B (row_store.js): the document one entry per row, and the line that says how far to trust those rows.
+  `CREATE TABLE IF NOT EXISTS store_rows (
+     doc_key TEXT NOT NULL,
+     bucket TEXT NOT NULL,
+     row_id TEXT NOT NULL,
+     kind INTEGER NOT NULL DEFAULT 0,
+     ord INTEGER NOT NULL DEFAULT 0,
+     hash TEXT NOT NULL DEFAULT '',
+     json TEXT NOT NULL DEFAULT '',
+     PRIMARY KEY (doc_key, bucket, row_id)
+   )`,
+  `CREATE TABLE IF NOT EXISTS store_rows_state (
+     doc_key TEXT PRIMARY KEY,
+     mode INTEGER NOT NULL DEFAULT 1,
+     master INTEGER NOT NULL DEFAULT 0,
+     rows_ts TEXT NOT NULL DEFAULT '',
+     rows_ok INTEGER NOT NULL DEFAULT 0,
+     rows_bad INTEGER NOT NULL DEFAULT 0,
+     rows_note TEXT,
+     checked_at TEXT,
+     apply_bad INTEGER NOT NULL DEFAULT 0,
+     apply_at TEXT,
+     fell_back_at TEXT,
+     master_at TEXT,
+     updated_at TEXT
    )`
 ];
 
@@ -205,6 +231,35 @@ export function rowSumsOf(doc) {
     sums[setName] = `${seen.size}.${(x1 >>> 0).toString(36)}.${(x2 >>> 0).toString(36)}`;
   }
   return { exact, sums };
+}
+
+// Leaves one entry per id in every keyed row set of the document: an entry whose id was already listed replaces the
+// earlier one where that one stood (the last mention wins, as on a device). Entries without an id stay as they are.
+// Returns how many entries were dropped.
+export function dropRepeatedRowIds(doc) {
+  if (!doc || typeof doc !== 'object') return 0;
+  let dropped = 0;
+  const dedupe = list => {
+    const out = [];
+    const at = new Map();
+    let n = 0;
+    for (const r of list) {
+      const rid = rowIdOf(r);
+      if (!rid) { out.push(r); continue; }
+      const i = at.get(rid);
+      if (i === undefined) { at.set(rid, out.length); out.push(r); } else { out[i] = r; n += 1; }
+    }
+    dropped += n;
+    return n ? out : list;
+  };
+  const cr = doc.customRecords;
+  if (cr && typeof cr === 'object' && !Array.isArray(cr)) {
+    for (const k of Object.keys(cr)) {
+      if (Array.isArray(cr[k])) cr[k] = dedupe(cr[k]);
+    }
+  }
+  if (Array.isArray(doc.kioskPunches)) doc.kioskPunches = dedupe(doc.kioskPunches);
+  return dropped;
 }
 
 function isRowSetTopKey(k) {
@@ -733,5 +788,16 @@ export async function noteRowAuditResult(db, result, meta) {
         ? 'UPDATE store_row_meta SET audit_bad = audit_bad + 1, audit_note = ?3 WHERE doc_key = ?1 AND epoch = ?2'
         : 'UPDATE store_row_meta SET audit_note = ?3 WHERE doc_key = ?1 AND epoch = ?2 AND audit_bad = 0'
     ).bind(ROW_SYNC_DOC_KEY, meta.epoch, note).run();
+    // Copies that could not follow are counted where the Owner notice reads them (store_rows_state): one is the
+    // fallback working, many in a row is something to look at.
+    if (!counts) {
+      try {
+        const nowIso = new Date().toISOString();
+        await db.prepare(
+          `INSERT INTO store_rows_state (doc_key, apply_bad, apply_at, updated_at) VALUES (?1, 1, ?2, ?2)
+           ON CONFLICT(doc_key) DO UPDATE SET apply_bad = apply_bad + 1, apply_at = excluded.apply_at`
+        ).bind(ROW_SYNC_DOC_KEY, nowIso).run();
+      } catch (_) {}
+    }
   }
 }

@@ -50,10 +50,13 @@ import {
   ROW_SYNC_AUDIT_TARGET,
   ROW_SYNC_MAX_DELTA_ROWS,
   ROW_SYNC_SCOPED_SCAN_ROWS,
+  anchorOfText,
   rowAuditReportCounts,
   beginRowIndexPatch,
   buildRowDelta,
+  dropRepeatedRowIds,
   elideTrailsInDoc,
+  ensureRowSyncSchema,
   ensureRowIndexCurrent,
   finishRowIndexPatch,
   noteRowAuditResult,
@@ -66,6 +69,21 @@ import {
   topEtagsOf,
   withoutTrail
 } from './row_sync.js';
+import {
+  ROW_STORE_CHECK_TARGET,
+  cutoverToRows,
+  forgetRowStoreMemo,
+  isRowsHead,
+  linesOfDoc,
+  noteRowsFellBack,
+  readRowStoreState,
+  readRowsForRestore,
+  readRowsMasterDoc,
+  resetRowStoreCounters,
+  setRowStoreMode,
+  shadowAfterSave,
+  writeRowsMasterDoc
+} from './row_store.js';
 
 export const ALLOWED_TABLES = new Set([
   'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions',
@@ -6646,6 +6664,163 @@ export async function handleCashflowBehind(request, env, session, body, rawBytes
   return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
 }
 
+// ---- Sync health: row sync and the row store (owner 2026-11-28) ----------------------------------------------------
+// Two things could go wrong without anyone knowing: partial answers switch themselves off for every device after one
+// failed comparison (row_sync.js), and the per-entry rows could stop matching the stored document (row_store.js).
+// GET /api/row_store tells the Owner; POST { action: 'reset' } clears the counters, which puts partial answers back
+// on and starts their comparisons again. The other actions change how the store is kept and are for the build
+// scripts only (a build ticket): 'check', 'rows_on', 'rows_off', 'cutover', 'restore_document'.
+const ROW_STORE_APPLY_NOTICE_AT = 5;
+
+async function readRowStoreHealth(db) {
+  let meta = null;
+  let state = null;
+  let head = null;
+  try {
+    meta = await db.prepare(
+      'SELECT mode, rev, audit_ok, audit_bad, audit_note FROM store_row_meta WHERE doc_key = ?1'
+    ).bind('mfg_web_store').first();
+  } catch (_) { meta = null; }
+  try { state = await readRowStoreState(db); } catch (_) { state = null; }
+  try {
+    head = await db.prepare(
+      'SELECT substr(payload_json, 1, 400) AS p, updated_at FROM edge_kv_store WHERE doc_key = ?1'
+    ).bind('mfg_web_store').first();
+  } catch (_) { head = null; }
+  const rowsAreMaster = Boolean(head && isRowsHead(String(head.p || '')));
+  const auditNote = meta && meta.audit_note ? safeJsonParse(meta.audit_note, null) : null;
+  const rowsNote = state && state.rows_note ? safeJsonParse(state.rows_note, null) : null;
+  const partialMode = meta ? Number(meta.mode === undefined || meta.mode === null ? 2 : meta.mode) : null;
+  const auditBad = meta ? Number(meta.audit_bad || 0) : 0;
+  const issues = [];
+  if (auditBad > 0) issues.push({ code: 'partial_off', n: auditBad, at: String((auditNote && auditNote.at) || '') });
+  if (state && state.apply_bad >= ROW_STORE_APPLY_NOTICE_AT) issues.push({ code: 'copies_failing', n: state.apply_bad, at: state.apply_at });
+  if (state && state.rows_bad > 0) issues.push({ code: 'rows_mismatch', n: state.rows_bad, at: String((rowsNote && rowsNote.at) || state.checked_at || '') });
+  if (state && state.fell_back_at) issues.push({ code: 'fell_back', n: 1, at: state.fell_back_at });
+  return {
+    status: issues.length ? 'attention' : 'ok',
+    issues,
+    partial: meta ? {
+      mode: partialMode,
+      on: auditBad === 0 && (partialMode === 2 || partialMode === 3),
+      rev: Number(meta.rev || 0),
+      auditOk: Number(meta.audit_ok || 0),
+      auditBad,
+      note: auditNote
+    } : null,
+    rows: {
+      master: rowsAreMaster ? 'rows' : 'document',
+      mode: state ? state.mode : null,
+      ok: state ? state.rows_ok : 0,
+      bad: state ? state.rows_bad : 0,
+      checkTarget: ROW_STORE_CHECK_TARGET,
+      checkedAt: state ? state.checked_at : '',
+      copiesFailed: state ? state.apply_bad : 0,
+      masterSince: state && rowsAreMaster ? state.master_at : '',
+      fellBackAt: state ? state.fell_back_at : '',
+      note: rowsNote
+    },
+    storeUpdatedAt: head ? String(head.updated_at || '') : ''
+  };
+}
+
+// Puts the document back as the master: the text the rows assemble to is written to the head row and its __part_
+// rows in one batch, only while the head row still holds the commit record it was read under. The stamp does not
+// move (no device sees a change) and the rows stay in step with the text.
+async function restoreDocumentMaster(db) {
+  const got = await readRowsForRestore(db);
+  if (!got) return { ok: false, error: 'the document is already the master' };
+  if (got.damaged) return { ok: false, error: 'the rows are at odds with their commit record; repair the store first' };
+  const slices = chunkStringSurrogateSafe(got.text, KV_CHUNK_CHARS);
+  if (slices.length > 450) return { ok: false, error: `the document needs ${slices.length} part rows, more than one batch holds` };
+  const key = 'mfg_web_store';
+  const newRev = got.rev + 1;
+  const nowIso = new Date().toISOString();
+  const anchor = await anchorOfText(got.updated_at, got.text);
+  const stmts = [
+    db.prepare(
+      'UPDATE edge_kv_store SET payload_json = ?2, rev = ?3 WHERE doc_key = ?1 AND rev = ?4 AND payload_json = ?5'
+    ).bind(key, slices[0], newRev, got.rev, got.commit)
+  ];
+  const headIsOurs = 'EXISTS (SELECT 1 FROM edge_kv_store h WHERE h.doc_key = ?1 AND h.rev = ?2 AND h.payload_json = ?3)';
+  stmts.push(db.prepare(`DELETE FROM edge_kv_store WHERE doc_key LIKE ?4 AND ${headIsOurs}`).bind(key, newRev, slices[0], `${key}__part_%`));
+  for (let partIdx = 1; partIdx < slices.length; partIdx++) {
+    stmts.push(db.prepare(
+      `INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev)
+       SELECT ?4, ?5, ?6, '', 1 WHERE ${headIsOurs}`
+    ).bind(key, newRev, slices[0], `${key}__part_${String(partIdx).padStart(4, '0')}`, slices[partIdx], got.updated_at));
+  }
+  stmts.push(db.prepare(
+    `UPDATE store_rows_state SET master = 0, fell_back_at = NULL, rows_ts = ?4, updated_at = ?5 WHERE doc_key = ?1 AND ${headIsOurs}`
+  ).bind(key, newRev, slices[0], anchor, nowIso));
+  await db.batch(stmts);
+  const now = await db.prepare('SELECT payload_json, rev FROM edge_kv_store WHERE doc_key = ?1').bind(key).first();
+  if (!now || isRowsHead(String(now.payload_json || '')) || Number(now.rev || 0) !== newRev) {
+    return { ok: false, error: 'the store changed meanwhile; try again' };
+  }
+  const back = await readEdgeKvDoc(db, key);
+  if (!back || back.rowsMaster || back.payload_json !== got.text) return { ok: false, error: 'the document written does not read back as the rows did' };
+  return { ok: true, chars: got.text.length, parts: slices.length - 1, updatedAt: got.updated_at };
+}
+
+export async function handleRowStore(request, env, session, body, rawBytes = 0, bodyMeta = null) {
+  if (request.method !== 'GET' && request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405);
+  if (request.method === 'GET' && isDemoHeader(request)) return jsonResponse({ ok: true, demo: true, row_store: null });
+  if (request.method === 'POST' && isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  const isStrictOwner = Boolean(/\bowner\b/i.test(String(session.role || '')));
+  if (!isStrictOwner) return jsonResponse({ ok: false, error: 'Owner permissions required.' }, 403);
+  if (!env || !env.DB) return request.method === 'GET'
+    ? jsonResponse({ ok: true, row_store: null })
+    : jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
+  if (request.method === 'GET') return jsonResponse({ ok: true, row_store: await readRowStoreHealth(env.DB) });
+
+  if (Number(rawBytes || 0) > 2048) return jsonResponse({ ok: false, error: 'Request exceeds 2 KB limit.' }, 413);
+  if ((bodyMeta && (bodyMeta.parseError || bodyMeta.emptyBody)) || !body || typeof body !== 'object' || Array.isArray(body)) {
+    return jsonResponse({ ok: false, error: 'Valid non-empty JSON body required.' }, 400);
+  }
+  const action = String(body.action || '');
+  if (action === 'reset') {
+    await resetRowStoreCounters(env.DB);
+    return jsonResponse({ ok: true, reset: true, row_store: await readRowStoreHealth(env.DB) });
+  }
+  // Everything below changes how the store is kept: the build scripts only.
+  if (!session.build_ticket) return jsonResponse({ ok: false, error: 'This action is run by the build scripts.' }, 403);
+  const key = 'mfg_web_store';
+  if (action === 'rows_on' || action === 'rows_off') {
+    const head = await env.DB.prepare('SELECT substr(payload_json, 1, 40) AS p FROM edge_kv_store WHERE doc_key = ?1').bind(key).first();
+    if (action === 'rows_off' && head && isRowsHead(String(head.p || ''))) {
+      return jsonResponse({ ok: false, error: 'The rows are the master; restore the document first.' }, 409);
+    }
+    const mode = await setRowStoreMode(env.DB, action === 'rows_on' ? 1 : 0);
+    return jsonResponse({ ok: true, mode, row_store: await readRowStoreHealth(env.DB) });
+  }
+  if (action === 'check') {
+    const row = await readEdgeKvDoc(env.DB, key);
+    if (!row) return jsonResponse({ ok: false, error: 'No stored document.' }, 404);
+    const parsed = parseStoredKvDoc(row);
+    if (parsed.unreadable) return jsonResponse({ ok: false, storeUnreadable: true, error: 'The store does not read.' }, 409);
+    if (row.rowsMaster) {
+      return jsonResponse({ ok: true, master: 'rows', check: 'ok', chars: row.payload_json.length, row_store: await readRowStoreHealth(env.DB) });
+    }
+    if (row.partsInStep === false) return jsonResponse({ ok: false, error: 'The stored document is mid-write; try again.' }, 409);
+    const check = await shadowAfterSave(env.DB, linesOfDoc(parsed.obj), row.updated_at, row.payload_json, true);
+    return jsonResponse({ ok: check === 'ok', master: 'document', check, chars: row.payload_json.length, row_store: await readRowStoreHealth(env.DB) });
+  }
+  if (action === 'cutover') {
+    const row = await readEdgeKvDoc(env.DB, key);
+    const out = await cutoverToRows(env.DB, row);
+    return jsonResponse(Object.assign({ row_store: await readRowStoreHealth(env.DB) }, out), out.ok ? 200 : 409);
+  }
+  if (action === 'restore_document') {
+    await ensureRowSyncSchema(env.DB);
+    const out = await restoreDocumentMaster(env.DB);
+    forgetRowStoreMemo();
+    return jsonResponse(Object.assign({ row_store: await readRowStoreHealth(env.DB) }, out), out.ok ? 200 : 409);
+  }
+  return jsonResponse({ ok: false, error: 'Unknown action.' }, 400);
+}
+
 // ---- Entries held on a device (owner 2026-11-18) ------------------------------------------------------------------
 // On 16 and 17 Nov one device kept a day of entries to itself; they reached the store after the evening top-up, which
 // could not pair them with their workbook rows. A device whose entries have waited now reports it here when it can
@@ -9297,7 +9472,7 @@ async function hasOrphanKvParts(db, key) {
   return Boolean(r);
 }
 
-export async function readEdgeKvDoc(db, key) {
+export async function readEdgeKvDoc(db, key, _again = false) {
   const rows = await db.prepare(
     'SELECT doc_key, payload_json, updated_at, rev FROM edge_kv_store WHERE doc_key = ?1 OR doc_key LIKE ?2 ORDER BY doc_key ASC'
   ).bind(key, `${key}__part_%`).all();
@@ -9315,6 +9490,15 @@ export async function readEdgeKvDoc(db, key) {
     }
   }
   if (!head) return null;
+  // The Manufacturing store once its rows are the master (row_store.js): the head row is a commit record and the
+  // document is read from store_rows. Callers get the same shape as for a stored document, text included.
+  if (key === 'mfg_web_store' && isRowsHead(String(head.payload_json || ''))) {
+    const fromRows = await readRowsMasterDoc(db, head);
+    if (fromRows && !fromRows.moved) return fromRows;
+    // The head row took a document between the two reads: read that.
+    if (!_again) return readEdgeKvDoc(db, key, true);
+    return { payload_json: String(head.payload_json || ''), updated_at: String(head.updated_at || ''), rev: Number(head.rev || 1), partsInStep: false };
+  }
   const fullJson = String(head.payload_json || '') + parts.join('');
   const headStamp = String(head.updated_at || '');
   return {
@@ -9329,6 +9513,19 @@ export async function readEdgeKvDoc(db, key) {
 }
 
 export async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy, casOpts = null) {
+  if (key === 'mfg_web_store') {
+    // While the rows are the master (row_store.js) a save writes the changed rows and the head row in one batch.
+    // Null: the head row holds a document, written below as always.
+    const hasCas = Boolean(casOpts && typeof casOpts === 'object');
+    const viaRows = await writeRowsMasterDoc(
+      db, jsonStr, updatedAt, updatedBy,
+      hasCas ? { updatedAt: casOpts.exists ? String(casOpts.updatedAt || '') : '' } : null,
+      hasCas ? casOpts.docObj : null
+    );
+    if (viaRows && !viaRows.fallback) return viaRows;
+    // The rows cannot hold this text exactly: it is written as a document, which is the master again from here.
+    if (viaRows && viaRows.fallback) await noteRowsFellBack(db, 'a save the rows could not hold exactly');
+  }
   const slices = chunkStringSurrogateSafe(jsonStr, KV_CHUNK_CHARS);
   const headSlice = slices[0];
   if (casOpts && typeof casOpts === 'object') {
@@ -11568,6 +11765,10 @@ export async function handleSync(request, env, session, body, _ctx) {
         expandDeltaMfgPatch(incomingDoc, prevDoc);
       } else {
         stripDeltaWireFields(incomingDoc);
+        // A whole save that lists one id twice: the row-level guard below answers every listed entry, so the second
+        // mention of another company's entry stored that entry twice. One entry per id before any guard reads it.
+        const repeatedIn = dropRepeatedRowIds(incomingDoc);
+        if (repeatedIn) console.error(`[sync] a save listed ${repeatedIn} id(s) more than once (${String((session && session.email) || '')}); the last entry of each id was kept`);
         if (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') {
           incomingDoc.staffBiometrics = normalizeStaffBiometricsMap(incomingDoc.staffBiometrics, { keepInvalid: true });
         }
@@ -11657,6 +11858,11 @@ export async function handleSync(request, env, session, body, _ctx) {
       newTs = Number.isFinite(parsedMs) ? new Date(parsedMs + 1).toISOString() : `${newTs}.1`;
     }
     incomingDoc.updatedAt = newTs;
+    // Whatever the guards put back from the stored document, the document written holds each id once.
+    if (pKey === 'mfg_web_store') {
+      const repeatedOut = dropRepeatedRowIds(incomingDoc);
+      if (repeatedOut) console.error(`[sync] ${repeatedOut} repeated id(s) dropped from the document before it was stored`);
+    }
 
     const updatedByStr = String(incomingDoc.updatedBy || (session && session.email) || '');
     const kvPayloadDoc = (pKey === 'mfg_web_store' && Array.isArray(incomingDoc.users))
@@ -11671,7 +11877,7 @@ export async function handleSync(request, env, session, body, _ctx) {
       kvPayloadJson,
       newTs,
       updatedByStr,
-      { exists: Boolean(currentRow), updatedAt: currentTs }
+      { exists: Boolean(currentRow), updatedAt: currentTs, docObj: pKey === 'mfg_web_store' ? kvPayloadDoc : null }
     );
     if (kvRes && kvRes.conflict) {
       const latestRow = await readEdgeKvDoc(env.DB, pKey);
@@ -11703,6 +11909,10 @@ export async function handleSync(request, env, session, body, _ctx) {
         console.error(`[row-sync] index update failed: ${String((err && err.message) || err).slice(0, 200)}`);
       }
     }
+
+    // Row store, while the document is the master: the document as per-entry lines, taken now (the steps below go on
+    // working with the same objects) and written once the save is whole (row_store.js).
+    const shadowLines = (pKey === 'mfg_web_store' && !(kvRes && kvRes.rowsMaster)) ? linesOfDoc(kvPayloadDoc) : null;
 
     let mirrorStats = undefined;
     if (pKey === 'mfg_web_store') {
@@ -11744,6 +11954,10 @@ export async function handleSync(request, env, session, body, _ctx) {
       const legacyHitsTask = scheduleLegacyIdHits(env, _ctx, legacyCandidates, mfgLegacySignals);
       if (legacyHitsTask) await legacyHitsTask;
     }
+
+    // Row store: the per-entry rows are brought in step with the text this save stored and compared with it. Never a
+    // reason to fail the save (rows left behind are brought in step by the next one).
+    if (shadowLines) await shadowAfterSave(env.DB, shadowLines, newTs, kvPayloadJson);
 
     const patchOut = { ok: true, edge: true, deltaSyncV1: true, updatedAt: newTs };
     if (body.awaitMirror === true && mirrorStats) patchOut.mirrorStats = mirrorStats;

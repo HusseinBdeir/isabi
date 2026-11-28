@@ -13,6 +13,7 @@ import {
   handleBlobs,
   handleCashflowBehind,
   handleDeviceUnsent,
+  handleRowStore,
   handleGeoAuditGet,
   handleGeoGateSuggestions,
   handleIndustryDomainStore,
@@ -77,6 +78,7 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/cashflow_behind',
   '/source_behind',
   '/changed_entries',
+  '/row_store',
   '/device_unsent',
   '/kiosk_optical_diag',
   '/industry_domain_store',
@@ -278,6 +280,7 @@ async function routeAppApi(context) {
       if (subPath === '/cashflow_behind') return jsonResponse({ ok: true, demo: true, cashflow_behind: null });
       if (subPath === '/source_behind') return jsonResponse({ ok: true, demo: true, source_behind: null });
       if (subPath === '/changed_entries') return jsonResponse({ ok: true, demo: true, changed_entries: null });
+      if (subPath === '/row_store') return jsonResponse({ ok: true, demo: true, row_store: null });
       if (subPath === '/device_unsent') return jsonResponse({ ok: true, demo: true, devices: [], minSyncShellVer: effectiveMinSyncShellVer() });
       if (subPath === '/kiosk_optical_diag') return jsonResponse({ ok: true, demo: true, stations: [] });
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
@@ -381,6 +384,11 @@ async function routeAppApi(context) {
 
   if (subPath === '/cashflow_behind' || subPath === '/source_behind' || subPath === '/changed_entries') {
     return handleCashflowBehind(request, env, session, body, rawBytes, { parseError, emptyBody }, subPath.slice(1));
+  }
+
+  // Sync health for the Owner (row sync and the row store), and the build scripts' switches for the row store.
+  if (subPath === '/row_store') {
+    return handleRowStore(request, env, session, body, rawBytes, { parseError, emptyBody });
   }
 
   // Entries a device has not sent yet: any signed-in seat reports its own device, the Owner reads the list.

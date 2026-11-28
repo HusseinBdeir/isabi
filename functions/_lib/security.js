@@ -719,6 +719,7 @@ const BUILD_TICKET_ROUTES = Object.freeze({
   '/cashflow_behind': Object.freeze(['GET', 'POST']),
   '/source_behind': Object.freeze(['GET', 'POST']),
   '/changed_entries': Object.freeze(['GET', 'POST']),
+  '/row_store': Object.freeze(['GET', 'POST']),
   '/day-close-push': Object.freeze(['POST'])
 });
 

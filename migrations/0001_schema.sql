@@ -373,6 +373,38 @@ CREATE TABLE IF NOT EXISTS store_row_meta (
   updated_at TEXT
 );
 
+-- Row store (store-size plan step 2, stage B; functions/_lib/row_store.js): the Manufacturing store one entry per
+-- row. store_rows holds the exact JSON text of every entry and top-level part with its order; store_rows_state says
+-- how far to trust them. While the head row of edge_kv_store holds the document, the rows are a copy kept in step by
+-- every save and compared with it (rows_ok / rows_bad); once it holds a commit record (text starting
+-- '#isabi-rows-master '), the rows are the master. mode: 0 rows left alone, 1 kept in step (default).
+CREATE TABLE IF NOT EXISTS store_rows (
+  doc_key TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  row_id TEXT NOT NULL,
+  kind INTEGER NOT NULL DEFAULT 0,
+  ord INTEGER NOT NULL DEFAULT 0,
+  hash TEXT NOT NULL DEFAULT '',
+  json TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (doc_key, bucket, row_id)
+);
+
+CREATE TABLE IF NOT EXISTS store_rows_state (
+  doc_key TEXT PRIMARY KEY,
+  mode INTEGER NOT NULL DEFAULT 1,
+  master INTEGER NOT NULL DEFAULT 0,
+  rows_ts TEXT NOT NULL DEFAULT '',
+  rows_ok INTEGER NOT NULL DEFAULT 0,
+  rows_bad INTEGER NOT NULL DEFAULT 0,
+  rows_note TEXT,
+  checked_at TEXT,
+  apply_bad INTEGER NOT NULL DEFAULT 0,
+  apply_at TEXT,
+  fell_back_at TEXT,
+  master_at TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sentinel_reviews (
   id TEXT PRIMARY KEY,
   rule_id TEXT DEFAULT '',
