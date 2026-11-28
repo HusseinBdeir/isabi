@@ -1,4 +1,4 @@
-// Offline gate for the row store (store-size plan step 2, stage B): the Manufacturing store kept one entry per row,
+﻿// Offline gate for the row store (store-size plan step 2, stage B): the Manufacturing store kept one entry per row,
 // so a save writes the entries that changed instead of the whole document.
 //   functions/_lib/row_store.js + readEdgeKvDoc / writeEdgeKvDoc / handleSync / handleRowStore in d1_store.js
 //   (the real code, run here), and the row sync device blocks of isabi-app js/app.js for the checks that need a device.
@@ -37,7 +37,7 @@ import { effectiveMinSyncShellVer, handleRowStore, handleSync, readEdgeKvDoc, wr
 import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
 import { collectRowMaps, docAnchorOf, dropRepeatedRowIds, rowSumsOf } from '../functions/_lib/row_sync.js';
 import {
-  ROWS_HEAD_PREFIX, assembleText, checkShadowRows, forgetRowStoreMemo, isRowsHead, linesOfDoc, planLineDiff, planOrds,
+  ROWS_HEAD_PREFIX, ROW_STORE_MAX_LINE_CHARS, assembleText, checkShadowRows, forgetRowStoreMemo, isRowsHead, linesOfDoc, planLineDiff, planOrds,
   sortStoredLines, syncShadowRows, writeRowsMasterDoc
 } from '../functions/_lib/row_store.js';
 
@@ -316,7 +316,7 @@ console.log('\n[1. The lines are an exact form of any document]');
     10: 'ten', 2: 'two', b: 1, a: [1, 2, { x: null }],
     'ke"y\\with\nescapes': { 'in"ner': 'v' },
     customRecords: {
-      plain: [{ id: 'p1', v: 1 }, { id: 'p2', v: 'عربي نص', nested: { a: [1, { b: 2 }] } }],
+      plain: [{ id: 'p1', v: 1 }, { id: 'p2', v: 'Ø¹Ø±Ø¨ÙŠ Ù†Øµ', nested: { a: [1, { b: 2 }] } }],
       empty: [],
       repeated: [{ id: 'r1', v: 1 }, { id: 'r1', v: 2 }],
       noId: [{ id: 'n1' }, { v: 'nothing to key by' }],
@@ -802,6 +802,43 @@ console.log('\n[12. The Owner notice]');
     reset.status === 200 && h3.status === 'ok' && h3.issues.length === 0 && h3.partial.on === true && h3.partial.auditOk === 0 && h3.rows.copiesFailed === 0, h3);
   const onRead = await dev.read();
   ok('12h. devices are anchored again', onRead.json.rowSyncV1 === true, { kind: onRead.kind });
+}
+
+console.log('\n[13. What the rows cannot hold, or the database refuses, is saved the old way]');
+{
+  const X = await makeWorld();
+  await X.buildTicketPatch(seedDoc());
+  const huge = 'x'.repeat(ROW_STORE_MAX_LINE_CHARS + 10);
+  const okBefore = X.state().rows_ok;
+  const p = await X.legacy.patch({ customRecords: { expenses: [{ id: 'ex-huge', company: 'WTC', amount: 1, source: 'app', notes: huge }] } });
+  const st = X.state();
+  ok('13a. document master: an entry larger than one row holds is saved; the rows are left behind, nothing is counted as failed',
+    p.json.ok === true && st.rows_ts !== await X.anchor() && st.rows_bad === 0 && st.rows_ok === okBefore && (await X.stored()).doc.customRecords.expenses.some(r => r.id === 'ex-huge'), st);
+  const cut = await X.ticketAction('cutover');
+  ok('13b. and the switch-over is refused while it is there', cut.status === 409 && !isRowsHead(X.head().payload_json), cut.json);
+  await X.legacy.patch({ customRecords: {}, _deletedCrIds: { expenses: ['ex-huge'] } });
+  const cut2 = await X.ticketAction('cutover');
+  ok('13c. once it is gone the rows catch up and the switch-over goes through', cut2.status === 200 && cut2.json.ok === true && isRowsHead(X.head().payload_json), cut2.json);
+  const p2 = await X.legacy.patch({ customRecords: { expenses: [{ id: 'ex-huge-2', company: 'WTC', amount: 1, source: 'app', notes: huge }] } });
+  const after = await X.stored();
+  ok('13d. rows master: the same entry is saved as a document, the document is the master again and the Owner is told',
+    p2.json.ok === true && !p2.json.conflict && !isRowsHead(X.head().payload_json) && X.partCount() > 0 && after.doc.customRecords.expenses.some(r => r.id === 'ex-huge-2') && Boolean(X.state().fell_back_at), { p2: p2.json, st: X.state() });
+  await X.legacy.patch({ customRecords: {}, _deletedCrIds: { expenses: ['ex-huge-2'] } });
+  await X.api('row_store', { body: { action: 'reset' } });
+  const cut3 = await X.ticketAction('cutover');
+  // The database refuses the batch that would write the rows.
+  let threw = false;
+  X.d1.beforeBatch = async stmts => {
+    if (!stmts.some(s => /UPDATE edge_kv_store SET payload_json/.test(s.sql))) return;
+    threw = true;
+    throw new Error('D1_ERROR: simulated');
+  };
+  const p3 = await X.legacy.patch({ customRecords: { expenses: [{ id: 'ex-after-error', company: 'WTC', amount: 2, source: 'app' }] } });
+  const end = await X.stored();
+  ok('13e. rows master: a batch the database refuses writes nothing, and the save goes through as a document',
+    cut3.json.ok === true && threw && p3.json.ok === true && !p3.json.conflict && !isRowsHead(X.head().payload_json) && end.doc.customRecords.expenses.some(r => r.id === 'ex-after-error') && Boolean(X.state().fell_back_at), { p3: p3.json, st: X.state() });
+  const again = await X.legacy.patch({ lbpFxRate: 5 });
+  ok('13f. the next save brings the rows in step with that document', again.json.ok === true && X.rowsText() === (await X.stored()).text && X.state().rows_ts === await X.anchor(), X.state());
 }
 
 console.log(`\nSummary: ${pass} passed, ${fail} failed`);

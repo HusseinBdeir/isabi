@@ -44,7 +44,13 @@ const KIND_VALUE = 1;   // a value stored whole (a top-level part, or a row set 
 const KIND_SET = 2;     // the marker of a row set whose entries are lines of their own
 const ORD_STRIDE = 1024;
 const WRITE_CHUNK_LINES = 300;
-const WRITE_CHUNK_CHARS = 400000;
+// One statement carries about this much text (the size the document's own part rows and the row index have always
+// been written at); a single line larger than that travels alone.
+const WRITE_CHUNK_CHARS = 60000;
+// D1 holds 2,000,000 bytes in one value, and a character can take three. A line above this is not written as a row:
+// while the document is the master the rows are simply not brought in step (so no switch-over), and while the rows
+// are the master the save is written as a document instead.
+export const ROW_STORE_MAX_LINE_CHARS = 600000;
 const KEY_SEP = '\u0000';
 
 function isPlainObj(v) {
@@ -175,6 +181,11 @@ export function digestOfLines(lineMap) {
     n += 1;
   }
   return { n, x: `${(x1 >>> 0).toString(36)}.${(x2 >>> 0).toString(36)}` };
+}
+
+function oversizedLine(desired) {
+  for (const ln of desired) if (ln.json.length > ROW_STORE_MAX_LINE_CHARS) return ln;
+  return null;
 }
 
 // Map(line key -> { k, ord, h }) of stored lines (as sortStoredLines returns them).
@@ -403,6 +414,11 @@ export async function syncShadowRows(db, desired, ts, text) {
   if (!state || state.mode !== 1) return null;
   const anchor = await anchorOfText(ts, text);
   if (!anchor) return null;
+  const big = oversizedLine(desired);
+  if (big) {
+    console.error(`[row-store] rows not brought in step: ${big.b}/${big.id} is ${big.json.length} characters, more than one row holds`);
+    return null;
+  }
   const stored = lineMapOf(sortStoredLines(resultsOf(res, 2)));
   const plan = planLineDiff(stored, desired);
   const nowIso = new Date().toISOString();
@@ -471,8 +487,16 @@ export function isRowsHead(payload) {
   return typeof payload === 'string' && payload.startsWith(ROWS_HEAD_PREFIX);
 }
 
-function commitRecord(digest, sinceIso) {
-  return `${ROWS_HEAD_PREFIX}${JSON.stringify({ v: 1, n: digest.n, x: digest.x, since: sinceIso })}`;
+// `id` names this switch-over (carried from record to record), so nothing remembered from an earlier one, or from
+// another database, is ever taken for this store.
+function commitRecord(digest, sinceIso, id) {
+  return `${ROWS_HEAD_PREFIX}${JSON.stringify({ v: 1, id, n: digest.n, x: digest.x, since: sinceIso })}`;
+}
+
+function newCommitId() {
+  const b = new Uint8Array(6);
+  crypto.getRandomValues(b);
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
 }
 
 function parseCommit(payload) {
@@ -543,12 +567,16 @@ export async function writeRowsMasterDoc(db, jsonStr, updatedAt, updatedBy, cas 
     }
     if (!isPlainObj(doc)) return { fallback: true };
     const desired = linesOfDoc(doc);
-    if (assembleText(desired) !== jsonStr) return { fallback: true };
+    if (assembleText(desired) !== jsonStr || oversizedLine(desired)) return { fallback: true };
     const m = memoFor(head);
     const stored = m ? m.lines : lineMapOf(sortStoredLines((await linesStmt(db, false).all()).results || []));
     const plan = planLineDiff(stored, desired);
     const prevCommit = parseCommit(head.payload_json);
-    const newCommit = commitRecord(digestOfLines(plan.next), String((prevCommit && prevCommit.since) || new Date().toISOString()));
+    const newCommit = commitRecord(
+      digestOfLines(plan.next),
+      String((prevCommit && prevCommit.since) || new Date().toISOString()),
+      String((prevCommit && prevCommit.id) || newCommitId())
+    );
     const newRev = head.rev + 1;
     const stmts = [
       db.prepare(
@@ -561,7 +589,15 @@ export async function writeRowsMasterDoc(db, jsonStr, updatedAt, updatedBy, cas 
         newRev, newCommit
       )
     ];
-    const res = await db.batch(stmts);
+    let res = null;
+    try {
+      res = await db.batch(stmts);
+    } catch (err) {
+      // The batch is one transaction: nothing of it was written. The caller writes the document the old way.
+      console.error(`[row-store] a save could not be written as rows: ${String((err && err.message) || err).slice(0, 200)}`);
+      _memo = null;
+      return { fallback: true };
+    }
     let landed = res && res[0] && res[0].meta && typeof res[0].meta.changes === 'number' ? res[0].meta.changes > 0 : null;
     if (landed === null) {
       const now = await headStmt(db).first();
@@ -627,7 +663,8 @@ export async function cutoverToRows(db, docRow) {
     if (ln.h !== lineMap.get(lineKey(ln.b, ln.id)).h) return { ok: false, error: 'a stored content hash is wrong' };
   }
   const nowIso = new Date().toISOString();
-  const commit = commitRecord(digestOfLines(lineMap), nowIso);
+  if (oversizedLine(lines)) return { ok: false, error: 'a part of the document is larger than one row holds' };
+  const commit = commitRecord(digestOfLines(lineMap), nowIso, newCommitId());
   const newRev = Number(head.rev || 0) + 1;
   await db.batch([
     db.prepare(
