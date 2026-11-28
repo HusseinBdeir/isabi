@@ -16745,7 +16745,15 @@
       "No saved WhatsApp number on file": "لا يوجد رقم واتساب محفوظ في الملف",
       "Enter once to open direct chat next time": "أدخله مرة واحدة لفتح المحادثة مباشرة في المرة القادمة",
       "Enter a valid WhatsApp number (8 to 15 digits)": "أدخل رقم واتساب صحيحاً (من 8 إلى 15 رقماً)",
-      "WhatsApp number saved": "تم حفظ رقم واتساب"
+      "WhatsApp number saved": "تم حفظ رقم واتساب",
+      "Inspect / Adjust": "معاينة / تعديل",
+      "Resumed saved comparison": "تمت استعادة المقارنة المحفوظة",
+      "Statement 16 Amount Delta": "فرق مبلغ في كشف الحساب 16",
+      "Vendor SOA": "كشف المورد",
+      "ISABI Booked": "المسجل في ISABI",
+      "Apply Vendor Amount": "اعتماد مبلغ المورد",
+      "Open Price Agreement": "فتح اتفاقية السعر",
+      "Your seat cannot inspect or adjust this Statement 16 voucher": "لا يملك مقعدك صلاحية معاينة أو تعديل هذا السند في كشف 16"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -33472,7 +33480,15 @@
       "No saved WhatsApp number on file": "Aucun numéro WhatsApp enregistré dans le dossier",
       "Enter once to open direct chat next time": "Saisissez-le une fois pour ouvrir le chat directement la prochaine fois",
       "Enter a valid WhatsApp number (8 to 15 digits)": "Saisissez un numéro WhatsApp valide (8 à 15 chiffres)",
-      "WhatsApp number saved": "Numéro WhatsApp enregistré"
+      "WhatsApp number saved": "Numéro WhatsApp enregistré",
+      "Inspect / Adjust": "Inspecter / Ajuster",
+      "Resumed saved comparison": "Comparaison enregistrée reprise",
+      "Statement 16 Amount Delta": "Écart de montant sur relevé 16",
+      "Vendor SOA": "Relevé fournisseur",
+      "ISABI Booked": "Comptabilisé ISABI",
+      "Apply Vendor Amount": "Appliquer le montant fournisseur",
+      "Open Price Agreement": "Ouvrir l'accord tarifaire",
+      "Your seat cannot inspect or adjust this Statement 16 voucher": "Votre poste ne peut pas inspecter ou ajuster cette pièce du relevé 16"
     }
   };
 
