@@ -963,14 +963,40 @@ async function checkSameNameSyncPatchConflict(db, nextDoc, prevDoc) {
   return null;
 }
 
+const SQL_OMITTED_DEFAULT_PRUNE_KEYS = new Set([
+  'tab_sig', 'is_callout', 'att_preset', 'manual_override',
+  'late_cutoff', 'early_out_cutoff', 'penalty_summary',
+  'approved_ot_min', 'billable_late_min', 'raw_late_min', 'raw_ot_min', 'unapproved_ot_hours',
+  'leave_days', 'extra_usd'
+]);
+
 function hydrateRowJson(row) {
   if (!row || typeof row !== 'object') return row;
   const base = safeJsonParse(row.payload_json, {});
-  const merged = Object.assign({}, base, row);
-  delete merged.payload_json;
+  const colFields = Object.assign({}, row);
+  delete colFields.payload_json;
+  if (base && typeof base === 'object' && Object.keys(base).length > 0) {
+    for (const atk of ATT_RENDER_TRANSIENT_KEYS) {
+      if (!(atk in base)) delete colFields[atk];
+    }
+    for (const pk of SQL_OMITTED_DEFAULT_PRUNE_KEYS) {
+      if (!(pk in base)) {
+        const cv = colFields[pk];
+        if (cv === null || cv === undefined || cv === '' || cv === 0 || cv === false) delete colFields[pk];
+      }
+    }
+  }
+  const merged = Object.assign({}, base, colFields);
   for (const jk of ['attachments', 'adj_windows', 'driver_rows', 'admin_overrides', '_seed_orig', '_subcategories', '_pre_void_orig', '_pre_void_edits']) {
     if (typeof merged[jk] === 'string' && /^[\[{]/.test(merged[jk].trim())) {
       merged[jk] = safeJsonParse(merged[jk], merged[jk]);
+    }
+  }
+  if (base && typeof base === 'object') {
+    for (const bk of Object.keys(base)) {
+      if (typeof base[bk] === 'boolean' && bk !== 'voided' && bk !== 'vat_registered' && bk !== 'iva' && typeof merged[bk] === 'number') {
+        merged[bk] = Boolean(merged[bk]);
+      }
     }
   }
   if ('voided' in merged) merged.voided = Boolean(merged.voided);
@@ -3682,9 +3708,22 @@ const PRE_VOID_NON_BUSINESS_KEYS = new Set([
   'attachments', 'adj_windows', 'driver_rows', 'admin_overrides', 'removedDocIds', 'backfill_status',
   'settled_amount', 'has_paired_return', 'data_url', 'headers', 'cells',
   'shift_str', 'shift_basis_lbl', 'display_type', 'eff_date', 'tx_date', 'weekday',
+  'is_sunday', 'is_overnight', '_render_is_callout',
   'ot_pay_usd', 'late_ded_usd', 'abs_ded_usd', 'earned_usd', 'lost_usd', 'payroll_impact_usd',
   'late_cutoff', 'early_out_cutoff', 'penalty_summary'
 ]);
+
+const ATT_RENDER_TRANSIENT_KEYS = [
+  'display_type', 'shift_basis_lbl', 'shift_str', 'eff_date', 'tx_date',
+  'weekday', 'is_sunday', 'is_overnight', '_render_is_callout',
+  'ot_pay_usd', 'late_ded_usd', 'abs_ded_usd', 'earned_usd', 'lost_usd', 'payroll_impact_usd'
+];
+
+const ATT_SYNC_ABSENT_PRUNE_KEYS = [
+  'tab_sig', 'is_callout', 'att_preset', 'manual_override',
+  'late_cutoff', 'early_out_cutoff', 'penalty_summary',
+  'approved_ot_min', 'billable_late_min', 'raw_late_min', 'raw_ot_min', 'unapproved_ot_hours'
+];
 
 function preVoidValEqual(a, b) {
   if (a === b) return true;
@@ -4577,6 +4616,18 @@ export async function handleRecordsPost(request, env, session, body) {
         if (!Object.prototype.hasOwnProperty.call(record, lk)) delete recordToWrite[lk];
       }
     }
+    if (
+      canonTable === 'attendance'
+      && !nowVoid
+      && !isSparsePureVoid
+      && !allowVoidOnly
+      && !(perms.modifyText && !perms.modifyData)
+      && ('staff' in record || 'date' in record || 'type' in record || 'status' in record)
+    ) {
+      for (const ak of ATT_SYNC_ABSENT_PRUNE_KEYS) {
+        if (!Object.prototype.hasOwnProperty.call(record, ak)) delete recordToWrite[ak];
+      }
+    }
     sanitizeIncomingTwinKeys(recordToWrite, exHydrated, session, perms);
     if (!wasVoid && nowVoid && !deferred400) {
       const vrCfg = await loadVoidReasonRuleCfgEdge(env.DB);
@@ -4591,6 +4642,53 @@ export async function handleRecordsPost(request, env, session, body) {
   if (deferred400) return jsonResponse(deferred400, 400);
   if (dupConflict409) return jsonResponse(dupConflict409, 409);
 
+  if (exRow && (canonTable === 'attendance' || canonTable === 'work_shifts')) {
+    const exHydCheck = exHydratedRls || hydrateRowJson(exRow);
+    const normRecTs = v => {
+      const s = String(v || '').trim();
+      return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+    };
+    const maxRecTs = obj => {
+      let best = '';
+      for (const tk of ['modified_at', 'updated_at', 'updatedAt', 'price_entered_at', 'salary_entered_at', 'restored_at']) {
+        const cand = String((obj && obj[tk]) || '').trim();
+        if (cand && (!best || tsCmp(normRecTs(cand), normRecTs(best)) > 0)) best = cand;
+      }
+      return best;
+    };
+    if (exHydCheck && !exHydCheck.voided && !record.voided) {
+      const lastRecEdTs = obj => {
+        const eds = obj && Array.isArray(obj._pre_void_edits) ? obj._pre_void_edits : null;
+        return (eds && eds.length) ? String((eds[eds.length - 1] && eds[eds.length - 1].at) || '') : '';
+      };
+      const exTs = maxRecTs(exHydCheck);
+      const incTs = maxRecTs(record);
+      const exEdCnt = Array.isArray(exHydCheck._pre_void_edits) ? exHydCheck._pre_void_edits.length : 0;
+      const exEditTs = lastRecEdTs(exHydCheck);
+      const incEditTs = lastRecEdTs(record);
+      const staleByModTs = Boolean(exTs && (!incTs || tsCmp(normRecTs(incTs), normRecTs(exTs)) < 0));
+      const staleByEqualModEd = Boolean(
+        exTs && incTs && tsCmp(normRecTs(incTs), normRecTs(exTs)) === 0
+        && exEdCnt > 0 && exEditTs
+        && (!incEditTs || tsCmp(normRecTs(incEditTs), normRecTs(exEditTs)) < 0)
+      );
+      if (staleByModTs || staleByEqualModEd) {
+        return jsonResponse({ ok: true, edge: true, table: canonTable, id: String(recordToWrite.id || record.id || ''), staleIgnored: true });
+      }
+    } else if (exHydCheck && exHydCheck.voided && !record.voided && !record._reopenedExplicitly) {
+      const exVoidRefTs = String(exHydCheck.voided_at || exHydCheck.voidedAt || maxRecTs(exHydCheck) || '').trim();
+      const incRestTs = String(record.restored_at || record.restoredAt || '').trim();
+      const incTs = maxRecTs(record);
+      if (
+        exVoidRefTs
+        && (!incRestTs || tsCmp(normRecTs(incRestTs), normRecTs(exVoidRefTs)) < 0)
+        && (!incTs || tsCmp(normRecTs(incTs), normRecTs(exVoidRefTs)) < 0)
+      ) {
+        return jsonResponse({ ok: true, edge: true, table: canonTable, id: String(recordToWrite.id || record.id || ''), staleIgnored: true });
+      }
+    }
+  }
+
   const prevRowForRb = exHydratedRls ? hydrateRowJson(exRow) : null;
   if (prevRowForRb && canonTable === 'sites') {
     if (!('latitude' in prevRowForRb)) prevRowForRb.latitude = null;
@@ -4602,6 +4700,11 @@ export async function handleRecordsPost(request, env, session, body) {
   }
   if (canonTable === 'sites' && (!exRow || perms.canWriteGeoConfig)) {
     stripSiteAliasCoordKeys(recordToWrite);
+  }
+  if (canonTable === 'attendance') {
+    for (const atk of ATT_RENDER_TRANSIENT_KEYS) {
+      delete recordToWrite[atk];
+    }
   }
   if (canonTable === 'employments' || canonTable === 'freelance_entries' || canonTable === 'staff_members') {
     const sameNameConflict = await checkSameNameRecordConflict(env.DB, canonTable, recordToWrite);
@@ -7885,7 +7988,7 @@ async function lookupSeedRowFromBucket(r2Cache, env, crKey, canonTable, targetId
   return { found: false, row: null, hasSeedSource: sawSeedSource };
 }
 
-export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayload = null, session = null, env = null) {
+export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayload = null, session = null, env = null, opts = null) {
   const stats = {
     upsertedRecords: 0,
     voidedRemoved: 0,
@@ -7895,6 +7998,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     skippedPunches: 0
   };
   if (!db || !storePayload || typeof storePayload !== 'object') return stats;
+  const forceMirrorByTable = (opts && opts.forceMirrorByTable instanceof Map) ? opts.forceMirrorByTable : null;
   const hasPrev = Boolean(prevStorePayload && typeof prevStorePayload === 'object');
   const prevCr = (hasPrev && prevStorePayload.customRecords && typeof prevStorePayload.customRecords === 'object')
     ? prevStorePayload.customRecords
@@ -7916,6 +8020,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
       const canonTable = CR_KEY_TO_TABLE[crKey] || crKey;
       if (!USER_WRITABLE_TABLES.has(canonTable)) continue;
       if (restrictRls && GLOBAL_RATE_TABLES.has(canonTable)) continue;
+      const forceSet = forceMirrorByTable ? forceMirrorByTable.get(canonTable) : null;
 
       const prevList = Array.isArray(prevCr[crKey]) ? prevCr[crKey] : [];
       const prevMap = new Map();
@@ -7940,7 +8045,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         }
         const prevEntry = prevMap.get(rid);
         const curSig = stableRowSig(rec);
-        if (prevEntry && prevEntry.sig === curSig) {
+        if (prevEntry && prevEntry.sig === curSig && !(forceSet && forceSet.has(rid))) {
           stats.skippedRecords++;
           continue;
         }
@@ -9896,22 +10001,47 @@ export async function handleAuthMe(env, session, url = null) {
 function pickSyncBase(dbr, pr) {
   if (!dbr || typeof dbr !== 'object') return pr;
   if (!pr || typeof pr !== 'object') return dbr;
-  const dbTs = String(dbr.modified_at || dbr.updated_at || dbr.updatedAt || dbr.restored_at || dbr.voided_at || '');
-  const prTs = String(pr.modified_at || pr.updated_at || pr.updatedAt || pr.restored_at || pr.voided_at || '');
+  const normBaseTs = v => {
+    const s = String(v || '').trim();
+    return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+  };
+  const pickTs = obj => {
+    let best = '';
+    for (const tk of ['modified_at', 'updated_at', 'updatedAt', 'price_entered_at', 'salary_entered_at', 'restored_at', 'voided_at']) {
+      const cand = String(obj[tk] || '').trim();
+      if (cand && (!best || tsCmp(normBaseTs(cand), normBaseTs(best)) > 0)) best = cand;
+    }
+    return best;
+  };
+  const dbTs = pickTs(dbr);
+  const prTs = pickTs(pr);
   const dbVoid = Boolean(dbr.voided);
   const prVoid = Boolean(pr.voided);
+  const baseTsCmpVal = tsCmp(normBaseTs(dbTs), normBaseTs(prTs));
   if (dbVoid !== prVoid) {
     if (dbVoid && (!pr.restored_at || String(dbr.voided_at || '') >= String(pr.restored_at || ''))) return dbr;
     if (prVoid && (!dbr.restored_at || String(dbr.restored_at || '') < String(pr.voided_at || ''))) return pr;
-    return dbTs >= prTs ? dbr : pr;
+    return baseTsCmpVal >= 0 ? dbr : pr;
   }
-  const dbEd = Array.isArray(dbr._pre_void_edits) ? dbr._pre_void_edits.length : 0;
-  const prEd = Array.isArray(pr._pre_void_edits) ? pr._pre_void_edits.length : 0;
+  if (dbTs && prTs && baseTsCmpVal !== 0) return baseTsCmpVal > 0 ? dbr : pr;
+  if (Boolean(dbTs) !== Boolean(prTs)) return dbTs ? dbr : pr;
+  const dbEds = Array.isArray(dbr._pre_void_edits) ? dbr._pre_void_edits : [];
+  const prEds = Array.isArray(pr._pre_void_edits) ? pr._pre_void_edits : [];
+  const dbEd = dbEds.length;
+  const prEd = prEds.length;
   if (dbEd !== prEd) return dbEd > prEd ? dbr : pr;
+  if (baseTsCmpVal === 0 && dbEd > 0) {
+    const dbLast = String((dbEds[dbEd - 1] && dbEds[dbEd - 1].at) || '');
+    const prLast = String((prEds[prEd - 1] && prEds[prEd - 1].at) || '');
+    if (dbLast && prLast) {
+      const edCmp = tsCmp(normBaseTs(dbLast), normBaseTs(prLast));
+      if (edCmp !== 0) return edCmp > 0 ? dbr : pr;
+    }
+  }
   if (!dbTs && !prTs && dbr.rev !== pr.rev) {
     return Number(dbr.rev || 1) >= Number(pr.rev || 1) ? dbr : pr;
   }
-  return dbTs >= prTs ? dbr : pr;
+  return baseTsCmpVal >= 0 ? dbr : pr;
 }
 
 function isStaleDbVoidPayload(d1r, kvPr, sanIr) {
@@ -10557,11 +10687,22 @@ async function enforceSyncRoleWriteLocks(db, incomingDoc, prevDoc, session, audi
   }
 }
 
-async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
+async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session, syncOptsOrMap = null) {
   if (!incomingDoc || typeof incomingDoc !== 'object' || !session || session.build_ticket) return;
+  const syncOpts = (syncOptsOrMap instanceof Map)
+    ? { forceMirrorByTable: syncOptsOrMap }
+    : (syncOptsOrMap && typeof syncOptsOrMap === 'object' ? syncOptsOrMap : {});
+  const forceMirrorByTable = syncOpts.forceMirrorByTable instanceof Map ? syncOpts.forceMirrorByTable : null;
+  const patchedCrIds = syncOpts.patchedCrIds instanceof Map ? syncOpts.patchedCrIds : null;
+  const prevUpdatedAt = String(syncOpts.prevUpdatedAt || (prevDoc && prevDoc.updatedAt) || '').trim();
   const prev = (prevDoc && typeof prevDoc === 'object') ? prevDoc : {};
   const nowIso = new Date().toISOString();
-  const needsSyncProbe = (ir, pr) => {
+  const needsSyncProbe = (ir, pr, canonTable = '', patchedSet = null) => {
+    if (patchedSet && (canonTable === 'attendance' || canonTable === 'work_shifts')) {
+      const irId = (ir && typeof ir === 'object' && ir.id) ? String(ir.id).trim() : '';
+      if (irId && patchedSet.has(irId)) return true;
+    }
+    if (pr && pr === ir) return false;
     if (!pr) return true;
     if (Boolean(ir.voided) !== Boolean(pr.voided)) return true;
     if (ir._pre_void_edits || ir._pre_void_orig || pr._pre_void_edits || pr._pre_void_orig) return true;
@@ -10572,6 +10713,19 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
     const eds = obj && Array.isArray(obj._pre_void_edits) ? obj._pre_void_edits : null;
     return (eds && eds.length) ? String(eds[eds.length - 1]?.at || '') : '';
   };
+  const recSyncModTs = obj => {
+    if (!obj || typeof obj !== 'object') return '';
+    const norm = v => {
+      const s = String(v || '').trim();
+      return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+    };
+    let best = '';
+    for (const tk of ['modified_at', 'updated_at', 'updatedAt', 'price_entered_at', 'salary_entered_at', 'restored_at']) {
+      const cand = String(obj[tk] || '').trim();
+      if (cand && (!best || tsCmp(norm(cand), norm(best)) > 0)) best = cand;
+    }
+    return best;
+  };
   const preserveNewerDbRowOverStaleSync = (ir, dbr, pr) => {
     if (!ir || typeof ir !== 'object' || !dbr || typeof dbr !== 'object') return false;
     const dbV = Boolean(dbr.voided);
@@ -10580,8 +10734,10 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
     const restoredAt = String(ir.restored_at || ir.restoredAt || '').trim();
     const dbVoidTs = String(dbr.voided_at || dbr.voidedAt || '');
     const editTs = lastEditTs(dbr);
-    const dbBizTs = String(editTs || dbr.modified_at || dbr.updated_at || dbr.updatedAt || '');
-    const irTs = String(ir.modified_at || ir.updated_at || ir.updatedAt || '');
+    const irEditTs = lastEditTs(ir);
+    const dbrTs = recSyncModTs(dbr);
+    const dbBizTs = String(editTs || dbrTs);
+    const irTs = recSyncModTs(ir);
     const irVoidTs = String(ir.voided_at || ir.voidedAt || irTs || '');
     const dbEdCnt = Array.isArray(dbr._pre_void_edits) ? dbr._pre_void_edits.length : 0;
     const irEdCnt = Array.isArray(ir._pre_void_edits) ? ir._pre_void_edits.length : 0;
@@ -10601,15 +10757,42 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
         && (hasDbDelta || !irTs || (dbVoidTs && irTs < dbVoidTs))
       )
     );
-    const isOlderTs = Boolean(dbAheadOfPr && dbEdCnt > irEdCnt && editTs && irTs && irTs < editTs);
+    const syncTsCmp = (a, b) => {
+      const norm = v => {
+        const s = String(v || '').trim();
+        return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+      };
+      return tsCmp(norm(a), norm(b));
+    };
+    const sameModBehindServerEdits = Boolean(
+      !dbV && !irV
+      && irTs && dbrTs && syncTsCmp(irTs, dbrTs) === 0
+      && editTs
+      && (!irEditTs || syncTsCmp(irEditTs, editTs) < 0)
+      && dbEdCnt > 0
+    );
+    const dbBeatsOrTiesPr = (pickSyncBase(dbr, pr) === dbr);
+    let dbOlderThanInc = false;
+    if (irTs && dbrTs) {
+      const irDbCmp = syncTsCmp(dbrTs, irTs);
+      dbOlderThanInc = Boolean(
+        irDbCmp < 0
+        || (irDbCmp === 0 && irEditTs && (!editTs || syncTsCmp(editTs, irEditTs) < 0))
+      );
+    } else if (irTs && !dbrTs) {
+      dbOlderThanInc = !(editTs && syncTsCmp(editTs, irTs) >= 0);
+    }
+    const dbCanWinNonVoid = Boolean(dbBeatsOrTiesPr && !dbOlderThanInc);
+    const isOlderTs = Boolean(dbCanWinNonVoid && ((dbAheadOfPr && dbEdCnt > irEdCnt && editTs && irTs && syncTsCmp(irTs, editTs) < 0) || sameModBehindServerEdits));
     const matchesPreEditOrig = Boolean(
-      dbAheadOfPr
+      dbCanWinNonVoid
+      && dbAheadOfPr
       && dbEdCnt > irEdCnt
       && dbr._pre_void_orig && typeof dbr._pre_void_orig === 'object'
       && hasNonVoidFieldChange(ir, dbr)
       && !hasNonVoidFieldChange(Object.assign({}, dbr, dbr._pre_void_orig), ir)
     );
-    const uneditedStaleOverNewerDb = Boolean(matchesPreEditOrig || (pr && !hasNonVoidFieldChange(pr, ir) && hasDbDelta));
+    const uneditedStaleOverNewerDb = Boolean(dbCanWinNonVoid && (matchesPreEditOrig || (pr && !hasNonVoidFieldChange(pr, ir) && hasDbDelta)));
     if (!staleUnvoidOverwrite && !isOlderTs && !uneditedStaleOverNewerDb) return false;
     const keepBucket = ir._customBucket;
     if (!staleUnvoidOverwrite && !dbV && irV && uneditedStaleOverNewerDb && !isOlderTs && irVoidTs && (!dbBizTs || irVoidTs >= dbBizTs)) {
@@ -10628,22 +10811,57 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
     return true;
   };
 
+  const syncTsCmp = (a, b) => {
+    const norm = v => {
+      const s = String(v || '').trim();
+      return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s) ? `${s.replace(' ', 'T')}Z` : s;
+    };
+    return tsCmp(norm(a), norm(b));
+  };
+  const preserveNewerSyncBaseOverStaleNonVoid = (ir, baseObj, canonTable = '') => {
+    if (canonTable !== 'attendance' && canonTable !== 'work_shifts') return false;
+    if (!ir || typeof ir !== 'object' || !baseObj || typeof baseObj !== 'object') return false;
+    if (Boolean(ir.voided) || Boolean(baseObj.voided)) return false;
+    const irTs = recSyncModTs(ir);
+    const bTs = recSyncModTs(baseObj);
+    if (!bTs) return false;
+    const cmp = irTs ? syncTsCmp(irTs, bTs) : -1;
+    const strictlyOlder = !irTs || cmp < 0;
+    const bEditTs = lastEditTs(baseObj);
+    const irEditTs = lastEditTs(ir);
+    const bEdCnt = Array.isArray(baseObj._pre_void_edits) ? baseObj._pre_void_edits.length : 0;
+    const sameModBehind = Boolean(
+      cmp === 0 && bEditTs
+      && (!irEditTs || syncTsCmp(irEditTs, bEditTs) < 0)
+      && bEdCnt > 0
+    );
+    if (!strictlyOlder && !sameModBehind) return false;
+    const keepBucket = ir._customBucket;
+    for (const k of Object.keys(ir)) delete ir[k];
+    Object.assign(ir, baseObj);
+    if (keepBucket && !ir._customBucket) ir._customBucket = keepBucket;
+    return true;
+  };
+
   if (incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') {
     const prevCr = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
     for (const [k, list] of Object.entries(incomingDoc.customRecords)) {
       if (!Array.isArray(list) || !list.length) continue;
       const canonTable = CR_KEY_TO_TABLE[k] || k;
+      const patchedSet = patchedCrIds ? (patchedCrIds.get(canonTable) || null) : null;
       const pList = Array.isArray(prevCr[k]) ? prevCr[k] : [];
       const pMap = new Map(pList.filter(x => x && x.id).map(x => [String(x.id).trim(), x]));
       const d1Map = new Map();
+      const probedIds = new Set();
       if (db && ALLOWED_TABLES.has(canonTable)) {
         const probeIds = [];
         for (const ir of list) {
           if (!ir || typeof ir !== 'object' || !ir.id) continue;
           const rid = String(ir.id).trim();
           const pr = pMap.get(rid);
-          if (needsSyncProbe(ir, pr)) probeIds.push(rid);
+          if (needsSyncProbe(ir, pr, canonTable, patchedSet)) probeIds.push(rid);
         }
+        for (const pid of probeIds) probedIds.add(pid);
         for (let i = 0; i < probeIds.length; i += 80) {
           const slice = probeIds.slice(i, i + 80);
           const ph = slice.map((_, idx) => `?${idx + 1}`).join(',');
@@ -10654,15 +10872,63 @@ async function enforceSyncVoidActors(db, incomingDoc, prevDoc, session) {
             }
           } catch (_) {}
         }
+        if ((canonTable === 'attendance' || canonTable === 'work_shifts') && prevUpdatedAt) {
+          const parsedUpdMs = Date.parse(prevUpdatedAt);
+          const cutoff = Number.isFinite(parsedUpdMs)
+            ? new Date(parsedUpdMs - 300000).toISOString().slice(0, 19)
+            : prevUpdatedAt.slice(0, 19);
+          if (cutoff.length >= 10) {
+            try {
+              const oobRes = await db.prepare(
+                `SELECT * FROM ${canonTable} WHERE modified_at >= ?1 OR voided_at >= ?1 OR entered_at >= ?1 LIMIT 200`
+              ).bind(cutoff).all();
+              for (const xr of (oobRes.results || [])) {
+                const hid = String(xr && xr.id || '').trim();
+                if (!hid) continue;
+                d1Map.set(hid, hydrateRowJson(xr));
+                probedIds.add(hid);
+              }
+            } catch (_) {}
+          }
+        }
       }
       for (const ir of list) {
         if (!ir || typeof ir !== 'object' || !ir.id) continue;
         const rid = String(ir.id).trim();
         const pr = pMap.get(rid) || null;
         const d1r = d1Map.get(rid) || null;
-        if (preserveNewerDbRowOverStaleSync(ir, d1r, pr)) continue;
-        const base = pickSyncBase(d1r, pr);
-        enforceServerVoidActorFields(ir, base, session, nowIso, { allowDoorTablet: canonTable === 'attendance' });
+        if ((canonTable === 'attendance' || canonTable === 'work_shifts') && !d1r && !probedIds.has(rid) && !needsSyncProbe(ir, pr, canonTable, patchedSet)) {
+          if (canonTable === 'attendance') {
+            for (const atk of ATT_RENDER_TRANSIENT_KEYS) delete ir[atk];
+          }
+          continue;
+        }
+        const preserved = preserveNewerDbRowOverStaleSync(ir, d1r, pr);
+        if (!preserved) {
+          const base = pickSyncBase(d1r, pr);
+          if (!preserveNewerSyncBaseOverStaleNonVoid(ir, base, canonTable)) {
+            enforceServerVoidActorFields(ir, base, session, nowIso, { allowDoorTablet: canonTable === 'attendance' });
+          }
+        }
+        if (canonTable === 'attendance') {
+          for (const atk of ATT_RENDER_TRANSIENT_KEYS) delete ir[atk];
+        }
+        if (
+          forceMirrorByTable instanceof Map
+          && (canonTable === 'attendance' || canonTable === 'work_shifts')
+          && !preserved
+          && (probedIds.has(rid) || Boolean(d1r))
+          && (
+            !d1r
+            || Boolean(d1r.voided) !== Boolean(ir.voided)
+            || hasNonVoidFieldChange(d1r, ir)
+            || String(d1r.modified_at || '') !== String(ir.modified_at || '')
+          )
+        ) {
+          let fSet = forceMirrorByTable.get(canonTable);
+          if (!fSet) { fSet = new Set(); forceMirrorByTable.set(canonTable, fSet); }
+          fSet.add(rid);
+        }
       }
     }
   }
@@ -11282,8 +11548,23 @@ export async function handleSync(request, env, session, body, _ctx) {
       if (body.noTrails === true && !(session && session.build_ticket)) rehydrateTrails(incomingDoc, prevDoc);
     }
     let crSyncMeta = null;
+    let patchedCrIds = null;
     if (pKey === 'mfg_web_store') {
       if (isDeltaPatch) {
+        patchedCrIds = new Map();
+        const rawIncCr = (incomingDoc.customRecords && typeof incomingDoc.customRecords === 'object') ? incomingDoc.customRecords : null;
+        if (rawIncCr) {
+          for (const [rk, rlist] of Object.entries(rawIncCr)) {
+            const canonT = CR_KEY_TO_TABLE[rk] || rk;
+            if ((canonT === 'attendance' || canonT === 'work_shifts') && Array.isArray(rlist) && rlist.length) {
+              const pSet = patchedCrIds.get(canonT) || new Set();
+              for (const item of rlist) {
+                if (item && typeof item === 'object' && item.id) pSet.add(String(item.id).trim());
+              }
+              if (pSet.size) patchedCrIds.set(canonT, pSet);
+            }
+          }
+        }
         expandDeltaMfgPatch(incomingDoc, prevDoc);
       } else {
         stripDeltaWireFields(incomingDoc);
@@ -11358,7 +11639,12 @@ export async function handleSync(request, env, session, body, _ctx) {
       if (syncVrErr) {
         return jsonResponse(syncVrErr, 400);
       }
-      await enforceSyncVoidActors(env.DB, incomingDoc, prevDoc, session);
+      var forceMirrorByTable = new Map();
+      await enforceSyncVoidActors(env.DB, incomingDoc, prevDoc, session, {
+        forceMirrorByTable,
+        patchedCrIds,
+        prevUpdatedAt: currentTs
+      });
       holdMinShellVer(incomingDoc, prevDoc);
       const sameNameConflict = await checkSameNameSyncPatchConflict(env.DB, incomingDoc, prevDoc);
       if (sameNameConflict) {
@@ -11420,7 +11706,7 @@ export async function handleSync(request, env, session, body, _ctx) {
 
     let mirrorStats = undefined;
     if (pKey === 'mfg_web_store') {
-      mirrorStats = await mirrorStoreDeltaToD1Tables(env.DB, incomingDoc, prevDoc, session, env);
+      mirrorStats = await mirrorStoreDeltaToD1Tables(env.DB, incomingDoc, prevDoc, session, env, { forceMirrorByTable: (typeof forceMirrorByTable !== 'undefined' ? forceMirrorByTable : null) });
       if (mirrorStats && mirrorStats.error) {
         try {
           if (currentRow) {
