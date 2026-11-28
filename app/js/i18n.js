@@ -16779,7 +16779,14 @@
       "Ready for Print / Save as PDF": "جاهز للطباعة / الحفظ كملف PDF",
       "Pin beside Views": "تثبيت بجانب العروض",
       "Pin beside Views with live count": "تثبيت بجانب العروض مع عدّاد مباشر",
-      "Unpin from toolbar": "إلغاء التثبيت من شريط الأدوات"
+      "Unpin from toolbar": "إلغاء التثبيت من شريط الأدوات",
+      "Reload": "إعادة التحميل",
+      "Connection interrupted while loading. Reloading...": "انقطع الاتصال أثناء التحميل. جارٍ إعادة التحميل...",
+      "App scripts did not finish loading. Tap Reload to try again.": "لم يكتمل تحميل ملفات التطبيق. اضغط على إعادة التحميل للمحاولة مرة أخرى.",
+      "ISABI Kiosk Admin": "إدارة كشك ISABI",
+      "Enter Admin PIN to unlock controls": "أدخل رمز PIN للمسؤول لفتح عناصر التحكم",
+      "Incorrect Admin PIN": "رمز PIN للمسؤول غير صحيح",
+      "Unlock Vault": "فتح الخزنة"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -33540,7 +33547,14 @@
       "Ready for Print / Save as PDF": "Prêt à imprimer / Enregistrer en PDF",
       "Pin beside Views": "Épingler près de Vues",
       "Pin beside Views with live count": "Épingler près de Vues avec compteur en direct",
-      "Unpin from toolbar": "Désépingler de la barre d'outils"
+      "Unpin from toolbar": "Désépingler de la barre d'outils",
+      "Reload": "Recharger",
+      "Connection interrupted while loading. Reloading...": "Connexion interrompue pendant le chargement. Rechargement...",
+      "App scripts did not finish loading. Tap Reload to try again.": "Les scripts de l’application n’ont pas fini de charger. Touchez Recharger pour réessayer.",
+      "ISABI Kiosk Admin": "Admin Kiosque ISABI",
+      "Enter Admin PIN to unlock controls": "Entrez le PIN Admin pour déverrouiller les contrôles",
+      "Incorrect Admin PIN": "PIN Admin incorrect",
+      "Unlock Vault": "Déverrouiller"
     }
   };
 

@@ -568,6 +568,12 @@
     return s;
   }
   if (typeof window !== 'undefined') window.__mfgCanonCompany = canonCompany;
+  const VOUCHER_REF_AS_PERSON_RE = /^(?:SALPAY|SUPPAY|REXP|EXP|ASGN|SAL-INS|SET-INS|REC-INS)-(?:\d{3,}|[A-Z0-9]+-\d+)/i;
+  function isVoucherRefNotPersonName(raw) {
+    const s = String(raw || '').trim();
+    return Boolean(s && VOUCHER_REF_AS_PERSON_RE.test(s));
+  }
+  if (typeof window !== 'undefined') window.__mfgIsVoucherRefNotStaff = isVoucherRefNotPersonName;
   function ensureCanonicalMultiIndustrySeat(u) {
     if (!u || typeof u !== 'object') return u;
     const uid = String(u.id || '').trim().toLowerCase();
@@ -1742,6 +1748,16 @@
     if (/clinic|diagnostic|medical|pharma|hospital|dental|rehab|health|lab/.test(s)) return 'Healthcare & Diagnostics';
     if (/holding|treasury|isabi|venture|family office|capital|shared services/.test(s)) return 'Holding & Treasury';
     return 'Manufacturing';
+  }
+
+  function resolveIndustryForCompany(rawCo) {
+    const c = canonCompany(rawCo);
+    if (!c) return '';
+    const k = COMPANY_KEY_BY_NAME[c] || slugCompanyKey(c);
+    if (COMPANY_INDUSTRY_BY_KEY[k]) return COMPANY_INDUSTRY_BY_KEY[k];
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const hit = cat.find(x => x && (norm(x.name) === norm(c) || x.key === k));
+    return (hit && hit.industry) || inferIndustryForCompany(c) || '';
   }
 
   function buildEnterprisePreviewCatalog() {
@@ -10495,8 +10511,8 @@
   }
 
   const _PAYROLL_MASKED_COL_RE = {
-    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status)$/i,
-    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|salary_pending|reimbursement|reimbursement_lbp|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status)$/i,
+    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status|amount|usd_amount|lbp_amount|total|total_ttc)$/i,
+    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|salary_pending|reimbursement|reimbursement_lbp|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status|amount|total|total_ttc)$/i,
     salaries: /^(?:amount|lbp_amount|usd_amount|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|deduction|month_earnings|month_cum_paid|cash_usd|bank_usd|unmatched_usd)$/i,
     attendance: /^(?:extra_usd|overtime_usd|deduction_usd|net_usd|wage_usd|amount|usd_amount|sales_ot_usd|raw_ot_usd|total_ot_usd|in_payroll_usd|total|diff|ot_pay_usd|late_ded_usd|abs_ded_usd|earned_usd|lost_usd|payroll_impact_usd|extra_lbp)$/i,
     freelance_entries: /^(?:rate_usd|total|amount|usd_amount|reimbursement|reimbursement_lbp|deduction)$/i,
@@ -16076,7 +16092,7 @@
     const rawSm = (SEED && SEED.records && Array.isArray(SEED.records.staff_members)) ? SEED.records.staff_members : [];
     const univStaffRows = (typeof filterRecords === 'function'
       ? filterRecords(rawSm, { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
-      : rawSm).filter(r => typeof isStaffMemberAllowedForSeat !== 'function' || isStaffMemberAllowedForSeat(r, SEED));
+      : rawSm).filter(r => isStaffInSelectedCompanyScope(r, SEED) && (typeof isStaffMemberAllowedForSeat !== 'function' || isStaffMemberAllowedForSeat(r, SEED)));
     const wd = computeStaffComplianceWatchdog(univStaffRows, SEED, { critDays, warnDays });
     const c = (wd && wd.counts) || {};
     const critCnt = Number(c.expired || 0) + Number(c.critical_7 || 0);
@@ -17732,11 +17748,12 @@
       inc(driver, f.driver, 1);
       inc(fuelLoc, f.location, 1);
     });
-    sals.forEach(s => { if (s && !s.voided) inc(staff, s.staff, 1); });
-    atts.forEach(a => { if (a && !a.voided) inc(staff, a.staff, 1); });
+    sals.forEach(s => { if (s && !s.voided && !isVoucherRefNotPersonName(s.staff)) inc(staff, s.staff, 1); });
+    atts.forEach(a => { if (a && !a.voided && !isVoucherRefNotPersonName(a.staff)) inc(staff, a.staff, 1); });
     emps.forEach(e => {
       if (!e || e.voided) return;
-      inc(staff, e.staff || e.name, 1);
+      const empStaff = e.staff || e.name;
+      if (!isVoucherRefNotPersonName(empStaff)) inc(staff, empStaff, 1);
       inc(role, e.role, 2);
     });
     fsh.forEach(f => { if (f && !f.voided) inc(role, f.role, 1); });
@@ -17977,9 +17994,10 @@
         if (r.region || r.zone) inc(region, r.region || r.zone, wTbl);
         if (r.truck || r.equipment || r.target_equipment || r.default_truck || r.default_equipment) incTruck(r.truck || r.equipment || r.target_equipment || r.default_truck || r.default_equipment, wTbl);
         if (r.driver || r.operator || r.default_driver) inc(driver, r.driver || r.operator || r.default_driver, wTbl);
-        if (tk === 'staff_members' && r.name) inc(staff, r.name, wTbl);
+        if (tk === 'staff_members' && r.name && !isVoucherRefNotPersonName(r.name)) inc(staff, r.name, wTbl);
         if (tk === 'staff_roles' && r.name) inc(role, r.name, wTbl);
-        if (r.staff || r.employee || r.approved_by) inc(staff, r.staff || r.employee || r.approved_by, wTbl);
+        const autoStaff = r.staff || r.employee || r.approved_by;
+        if (autoStaff && !isVoucherRefNotPersonName(autoStaff)) inc(staff, autoStaff, wTbl);
         if (r.category) inc(category, r.category, wTbl);
         if (r.subcategory) inc(subcategory, r.subcategory, wTbl);
         if (r.uom || r.unit) inc(uom, r.uom || r.unit, wTbl);
@@ -17992,7 +18010,10 @@
           const ck = rKeys[ci];
           if (_AUTO_SKIP_COLS.has(ck) || /(^|_)(id|date|dt|time|url|hash)$/i.test(ck)) continue;
           const cv = r[ck];
-          if (typeof cv === 'string' && cv.length > 0 && cv.length <= 120) incCol(ck, cv, wTbl);
+          if (typeof cv === 'string' && cv.length > 0 && cv.length <= 120) {
+            if (((tk === 'staff_members' && ck === 'name') || /^(?:staff|employee|approved_by|cashier|producer)$/i.test(ck)) && isVoucherRefNotPersonName(cv)) continue;
+            incCol(ck, cv, wTbl);
+          }
         }
       }
     }
@@ -21256,7 +21277,7 @@
         (SEED.records.logistics_allowances || []).map(l => l && l.staff),
         (SEED.records.staff_assignments || []).filter(sa => sa && !sa.voided).map(sa => sa.staff),
         (SEED.records.staff_members || []).filter(sm => sm && !sm.voided).map(sm => sm.name || sm.staff)
-      ),
+      ).filter(nm => nm && !isVoucherRefNotPersonName(nm)),
       fIdx.staff
     );
     return fIdx._lists.staff;
@@ -41363,7 +41384,7 @@
     // Retain non-voided app rows and rebuild clean deterministic seed rows where needed
     for (let i = rec.staff_assignments.length - 1; i >= 0; i--) {
       const r = rec.staff_assignments[i];
-      if (!r || r.voided || voidedIds.has(String(r.id || ''))) {
+      if (!r || r.voided || voidedIds.has(String(r.id || '')) || isVoucherRefNotPersonName(r.staff)) {
         rec.staff_assignments.splice(i, 1);
       }
     }
@@ -41396,7 +41417,11 @@
 
     const today = String((SEED.meta && SEED.meta.as_of) || '2026-11-04').slice(0, 10);
     const staffAnchored = new Set();
+    const customEmpList = (STATE.customRecords && Array.isArray(STATE.customRecords.employments)) ? STATE.customRecords.employments : [];
+    const customEmpIds = new Set(customEmpList.map(e => e && e.id != null ? String(e.id) : '').filter(Boolean));
     const empsSorted = (rec.employments || [])
+      .filter(e => e && !e.voided && !customEmpIds.has(String(e.id || '')))
+      .concat(customEmpList)
       .filter(e => e && !e.voided && (e.staff || e.name))
       .slice()
       .sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
@@ -41404,7 +41429,7 @@
     empsSorted.forEach((e, idx) => {
       const st = String(e.staff || e.name || '').trim();
       const sk = norm(st);
-      if (!sk) return;
+      if (!sk || isVoucherRefNotPersonName(st)) return;
       const co = e.company || 'WTC';
       const sDate = String(e.start_date || e.date || '2025-01-01').slice(0, 10);
       const eDate = String(e.end_date || '').slice(0, 10);
@@ -41427,6 +41452,7 @@
         if (!existing.role_category) existing.role_category = roleCat;
         return;
       }
+      const eInd = e._industry || (co ? resolveIndustryForCompany(co) : '');
       const saRow = {
         id: seedId,
         name: `ASGN-${sDate.replace(/-/g, '')}-${st.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12) || 'STAFF'}`,
@@ -41444,6 +41470,8 @@
         source: 'seed',
         voided: false
       };
+      if (e._multiIndustrySeed) saRow._multiIndustrySeed = true;
+      if (eInd && eInd !== 'Manufacturing') saRow._industry = eInd;
       rec.staff_assignments.push(saRow);
       byId.set(seedId, saRow);
     });
@@ -41452,7 +41480,7 @@
       if (!sm || sm.voided) return;
       const st = String(sm.name || sm.staff || '').trim();
       const sk = norm(st);
-      if (!sk || staffAnchored.has(sk) || staffWithCustom.has(sk)) return;
+      if (!sk || isVoucherRefNotPersonName(st) || staffAnchored.has(sk) || staffWithCustom.has(sk)) return;
       if (!sm.role && !sm.default_equipment && !eqByStaff.has(sk)) return;
       const sDate = String(sm.assign_start || sm.start_date || sm.date || '2025-01-01').slice(0, 10);
       const roleVal = String(sm.role || (eqByStaff.has(sk) ? 'Driver' : 'General Labour')).trim();
@@ -41461,10 +41489,12 @@
       const slug = sk.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || String(idx + 1);
       const seedId = `sa_seed_sm_${slug}`;
       if (voidedIds.has(seedId) || byId.has(seedId)) return;
+      const smCo = sm.company || '';
+      const smInd = sm._industry || (sm.company ? resolveIndustryForCompany(sm.company) : '');
       const saRow = {
         id: seedId,
         name: `ASGN-${sDate.replace(/-/g, '')}-${st.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12) || 'STAFF'}`,
-        company: sm.company || 'WTC',
+        company: smCo,
         date: sDate,
         rep_date: sDate,
         staff: st,
@@ -41478,12 +41508,14 @@
         source: 'seed',
         voided: false
       };
+      if (sm._multiIndustrySeed) saRow._multiIndustrySeed = true;
+      if (smInd && smInd !== 'Manufacturing') saRow._industry = smInd;
       rec.staff_assignments.push(saRow);
       byId.set(seedId, saRow);
     });
 
     customList.forEach(r => {
-      if (!r || r.voided) return;
+      if (!r || r.voided || isVoucherRefNotPersonName(r.staff)) return;
       const rid = String(r.id || '');
       const cat = resolveRoleCategory(r.role, r.role_category || '');
       const existing = rid ? byId.get(rid) : null;
@@ -43760,7 +43792,7 @@
 
     const skipName = v => {
       const s = String(v || '').trim();
-      return !s || s === '(Unassigned)' || s === '-' || /^remove$/i.test(s);
+      return !s || s === '(Unassigned)' || s === '-' || /^remove$/i.test(s) || isVoucherRefNotPersonName(s);
     };
     const cosByName = new Map();
     const trackStaffCo = (rawName, rawCo) => {
@@ -43831,7 +43863,10 @@
           default_equipment: dm.truck || '',
           isCoDriver: false,
           isFreelance: false,
-          hasEmp: false
+          hasEmp: false,
+          hasRealMfgOrApp: false,
+          multiIndustrySeed: false,
+          industry: ''
         };
         discovered.set(k, cur);
       }
@@ -43844,12 +43879,20 @@
         if (patch.isCoDriver) cur.isCoDriver = true;
         if (patch.isFreelance) cur.isFreelance = true;
         if (patch.hasEmp) cur.hasEmp = true;
+        const pInd = String(patch.industry || (co ? resolveIndustryForCompany(co) : '') || '').trim();
+        const pMulti = Boolean(patch.multiIndustrySeed);
+        if (!pMulti && (!pInd || pInd === 'Manufacturing')) {
+          cur.hasRealMfgOrApp = true;
+        } else {
+          if (pMulti) cur.multiIndustrySeed = true;
+          if (!cur.industry && pInd) cur.industry = pInd;
+        }
       }
     };
 
     (rec.company_drivers || []).forEach(cd => {
       if (!cd || cd.voided) return;
-      touchName(cd.staff || cd.driver, { company: cd.company || 'WTC', isCoDriver: true, default_equipment: cd.equipment || '' });
+      touchName(cd.staff || cd.driver, { company: cd.company || 'WTC', isCoDriver: true, default_equipment: cd.equipment || '', multiIndustrySeed: Boolean(cd._multiIndustrySeed), industry: cd._industry || '' });
     });
     const sortedEmps = (rec.employments || []).filter(e => e && !e.voided).slice().sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
     sortedEmps.forEach(e => {
@@ -43860,17 +43903,19 @@
         role: e.role || '',
         phone: e.phone || '',
         hasEmp: !isFl,
-        isFreelance: isFl
+        isFreelance: isFl,
+        multiIndustrySeed: Boolean(e._multiIndustrySeed),
+        industry: e._industry || ''
       });
     });
-    (rec.salaries || []).forEach(s => { if (s && !s.voided) touchName(s.staff, { company: s.company || '' }); });
-    (rec.attendance || []).forEach(a => { if (a && !a.voided) touchName(a.staff, { company: a.company || '' }); });
-    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) touchName(f.staff, { company: f.company || 'WTC', father_name: cleanFatherName(f.father_name || ''), isFreelance: true }); });
+    (rec.salaries || []).forEach(s => { if (s && !s.voided) touchName(s.staff, { company: s.company || '', multiIndustrySeed: Boolean(s._multiIndustrySeed), industry: s._industry || '' }); });
+    (rec.attendance || []).forEach(a => { if (a && !a.voided) touchName(a.staff, { company: a.company || '', multiIndustrySeed: Boolean(a._multiIndustrySeed), industry: a._industry || '' }); });
+    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) touchName(f.staff, { company: f.company || 'WTC', father_name: cleanFatherName(f.father_name || ''), isFreelance: true, multiIndustrySeed: Boolean(f._multiIndustrySeed), industry: f._industry || '' }); });
     (rec.logistics_allowances || []).forEach(l => {
-      if (l && !l.voided) touchName(l.staff, { company: l.company || '', default_equipment: l.equipment || '' });
+      if (l && !l.voided) touchName(l.staff, { company: l.company || '', default_equipment: l.equipment || '', multiIndustrySeed: Boolean(l._multiIndustrySeed), industry: l._industry || '' });
     });
     (rec.staff_assignments || []).forEach(sa => {
-      if (sa && !sa.voided) touchName(sa.staff, { company: sa.company || '', role: sa.role || '', default_equipment: sa.equipment || '' });
+      if (sa && !sa.voided) touchName(sa.staff, { company: sa.company || '', role: sa.role || '', default_equipment: sa.equipment || '', multiIndustrySeed: Boolean(sa._multiIndustrySeed), industry: sa._industry || '' });
     });
 
     // Drop auto-seeded rows whose underlying operational records were removed/voided (unless explicitly kept in customRecords)
@@ -43879,7 +43924,7 @@
       if (!r || r.voided) { rec.staff_members.splice(i, 1); continue; }
       const rawK = norm(r.name || r.staff);
       const k = staffEntryKey(rawK, r.company);
-      if (!rawK || voidedNames.has(k) || (r.source === 'seed' && splitNames.has(rawK) && !r.company)) { rec.staff_members.splice(i, 1); continue; }
+      if (!rawK || isVoucherRefNotPersonName(r.name || r.staff) || voidedNames.has(k) || (r.source === 'seed' && splitNames.has(rawK) && !r.company)) { rec.staff_members.splice(i, 1); continue; }
       if (r.source === 'seed' && !customKeepKeys.has(k) && !discovered.has(k)) {
         rec.staff_members.splice(i, 1);
       }
@@ -43901,6 +43946,8 @@
         ? 'Freelance & Subcontract'
         : ((/driver|chauffeur/i.test(effRole) || (info.isCoDriver && !effRole)) ? 'Fleet & Drivers' : 'Site & Operations');
       const inferredCat = resolveRoleCategory(effRole, fallbackCat) || fallbackCat;
+      const isNonMfgSeed = !info.hasRealMfgOrApp && (info.multiIndustrySeed || (info.industry && info.industry !== 'Manufacturing'));
+      const effInd = isNonMfgSeed ? (info.industry || resolveIndustryForCompany(info.company) || '') : '';
       const existing = byKey.get(k);
       if (existing) {
         if (!existing.staff) existing.staff = existing.name;
@@ -43912,6 +43959,10 @@
         if (!existing.father_name && info.father_name) existing.father_name = info.father_name;
         if (!existing.phone && info.phone) existing.phone = info.phone;
         if (!existing.default_equipment && info.default_equipment) existing.default_equipment = info.default_equipment;
+        if (existing.source === 'seed' && isNonMfgSeed) {
+          if (info.multiIndustrySeed) existing._multiIndustrySeed = true;
+          if (!existing._industry && effInd) existing._industry = effInd;
+        }
         return;
       }
       const slugSrc = k.indexOf('@@') >= 0 ? k.replace('@@', '_') : k;
@@ -43932,6 +43983,10 @@
         source: 'seed',
         voided: false
       };
+      if (isNonMfgSeed) {
+        if (info.multiIndustrySeed) newRec._multiIndustrySeed = true;
+        if (effInd) newRec._industry = effInd;
+      }
       rec.staff_members.push(newRec);
       byKey.set(k, newRec);
     });
@@ -43939,7 +43994,9 @@
     customList.forEach(r => {
       if (!r || r.voided) return;
       const nmRaw = String(r.name || r.staff || '').trim();
+      if (isVoucherRefNotPersonName(nmRaw)) return;
       const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
+      if (isVoucherRefNotPersonName(nm)) return;
       const k = staffEntryKey(norm(nm), r.company);
       if (!k) return;
       const rPol = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(r, 'staff_members') : r;
@@ -84291,6 +84348,7 @@
           id: `mi-stf-${pfx}-${sfIdx + 1}`,
           name: stf.name,
           staff: stf.name,
+          company: ent.co,
           role: stf.role,
           role_category: stf.cat,
           default_equipment: unitName,
@@ -133132,7 +133190,10 @@
         if (!mergedMap.has(nk)) mergedMap.set(nk, cnt);
         else mergedMap.set(nk, mergedMap.get(nk) + (cnt * 0.05));
       });
-      return typeof uniqSorted === 'function' ? uniqSorted(out, mergedMap) : Array.from(new Set(out));
+      const cleanOut = (partyKind === 'staff' || (isRegEdit && modalForm === 'staff'))
+        ? out.filter(nm => !isVoucherRefNotPersonName(nm))
+        : out;
+      return typeof uniqSorted === 'function' ? uniqSorted(cleanOut, mergedMap) : Array.from(new Set(cleanOut));
     };
 
     if (isRegEdit) {
@@ -133198,9 +133259,18 @@
       }
     }
     if (wantStaff) {
-      allRowsFor('staff_members').forEach(s => { if (matchScopeRow(s)) push(s.name || s.full_name || s.Staff || s.staff_name); });
+      allRowsFor('staff_members').forEach(s => {
+        if (!matchScopeRow(s)) return;
+        const nm = s.name || s.full_name || s.Staff || s.staff_name;
+        if (!isVoucherRefNotPersonName(nm)) push(nm);
+      });
       ['salaries', 'attendance', 'payroll_attendance', 'employments', 'freelance_sheets', 'freelance_entries', 'logistics_allowances', 'staff_assignments'].forEach(tk => {
-        allRowsFor(tk).forEach(r => { if (matchScopeRow(r)) push(r.staff || r.employee || r.name); });
+        const allowNameFallback = tk === 'employments';
+        allRowsFor(tk).forEach(r => {
+          if (!matchScopeRow(r)) return;
+          const nm = r.staff || r.employee || (allowNameFallback ? r.name : '');
+          if (!isVoucherRefNotPersonName(nm)) push(nm);
+        });
       });
     }
 
@@ -151889,6 +151959,9 @@
     if (key === 'warehouse_movements') { hidden.add('location'); hidden.add('target_equipment'); }
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
+    if (key === 'staff_members' || key === 'staff_roles' || key === 'staff_assignments' || key === 'employments' || key === 'work_shifts') {
+      ['official_name', 'item_name', 'contact', 'address', 'location', 'default_location', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'credit_days', 'credit_limit', 'uom', 'unit_cost', 'default_cost', 'min_stock', 'amount', 'usd_amount', 'lbp_amount', 'total', 'total_ttc'].forEach(hk => hidden.add(hk));
+    }
     if (key === 'raw_purchases') {
       hidden.add('includes_transport');
       if (!seatLens().expenses) {
@@ -154945,10 +155018,19 @@
       navigateToRecordOrDomainRow(key, idOrName, idOrName, opts && opts.company);
       return;
     }
+    const canOpenMaskedSalaryInspector = () => {
+      const u = activeUser();
+      if (!u || STATE.kioskLocked || String(u.status || '') === 'Suspended' || u.locked) return false;
+      if (canViewPayrollDollarAmounts(u)) return false;
+      if (!(/^Custom/i.test(String(u.role || '')) || String(u.pbi_access || '').toLowerCase() === 'custom')) return false;
+      const p = getEffectivePermissions(u);
+      return Boolean(p && p.rights && p.rights.enter_master && (canViewView('payroll', u) || canViewView('payroll_attendance', u)));
+    };
     if (key && !canAccessTable(key)) { toast('Access restricted for this seat', 'err'); return; }
-    if (key && !isCashFlowFullFin() && TIEOUT_CONF_KEYS.has(key) && key !== 'attendance') { toast('Access restricted for this seat', 'err'); return; }
+    if (key && !isCashFlowFullFin() && TIEOUT_CONF_KEYS.has(key) && key !== 'attendance' && !(key === 'salaries' && canOpenMaskedSalaryInspector())) { toast('Access restricted for this seat', 'err'); return; }
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
+    if (key === 'salaries' && !isCashFlowFullFin() && row.voided) { toast('Access restricted for this seat', 'err'); return; }
     if (key === 'attendance' && !isCashFlowFullFin() && /^Config\s+(USD|LBP)$/i.test(String(row.type || ''))) { toast('Access restricted for this seat', 'err'); return; }
     if (row.company && !isDemoScopeActive()) {
       const seatCos = allowedCompanyNames();
@@ -171728,6 +171810,7 @@
     const prevView = STATE.view;
     const prevCompany = STATE.company;
     const fromHistory = Boolean(opts && opts.fromHistory);
+    STATE._explicitAllScope = Boolean(coKey === 'ALL' && ((typeof isOwner === 'function' && isOwner(uScopeNow)) || (typeof isDemoScopeActive === 'function' && isDemoScopeActive())));
     STATE.company = coKey;
     const nextDemo = isDemoScopeActive();
     if (prevDemo !== nextDemo) {
@@ -171753,7 +171836,11 @@
       STATE.cfFocusDateFromScrub = false;
       STATE.rawPricingGradeFilter = 'ALL';
       clearCfScrubChipState();
-      if (STATE.rdl && STATE.rdl.params && STATE.rdl.params.hrBatchTargets) STATE.rdl.params.hrBatchTargets = null;
+      if (STATE.rdl && STATE.rdl.params) {
+        STATE.rdl.params.hrBatchTargets = null;
+        STATE.rdl.params.hrStaff = '';
+        STATE.rdl.params.hrEmp = '';
+      }
     }
     FORM_UI.unpricedQueueSession = null;
     FORM_UI.unpricedSiteCtx = null;
@@ -172488,6 +172575,7 @@
     if (STATE._lastRlsUserId !== rlsUserKey) {
       const hadPrevRlsUser = STATE._lastRlsUserId !== undefined;
       STATE._lastRlsUserId = rlsUserKey;
+      STATE._explicitAllScope = false;
       STATE.companySwitchIndFilter = 'all';
       if (hadPrevRlsUser) {
         STATE.showSalesTaxBreakdown = false;
@@ -177235,6 +177323,17 @@
   }
 
   function openKioskStationAdminModal(opts = {}) {
+    const gateElNow = $('authGate');
+    const authGateActiveNow = Boolean(!STATE.authed || (gateElNow && !gateElNow.hidden));
+    if (authGateActiveNow) {
+      const ksaNatNow = getAndroidKioskNativeInfo();
+      if (ksaNatNow.isAndroidWrapper && ksaNatNow.bridge && typeof window.__mfgOpenNativeRecoveryVault === 'function') {
+        if (window.Face && typeof window.Face.stop === 'function') {
+          try { window.Face.stop(); } catch (_) {}
+        }
+        return window.__mfgOpenNativeRecoveryVault();
+      }
+    }
     wireKioskStationAdminKeyboardOnce();
     wireKioskAdminActivityListenersOnce();
     const targetAction = opts && opts.targetAction === 'enrol' ? 'enrol' : 'admin';
@@ -192389,9 +192488,9 @@
       const rawSm = (sd && sd.records && Array.isArray(sd.records.staff_members)) ? sd.records.staff_members : [];
       const baseRows = (typeof filterRecords === 'function'
         ? filterRecords(rawSm, { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
-        : rawSm).filter(r => isStaffMemberAllowedForSeat(r, sd));
+        : rawSm).filter(r => isStaffInSelectedCompanyScope(r, sd) && isStaffMemberAllowedForSeat(r, sd));
       const scopeCo = (typeof STATE !== 'undefined' && STATE.company) ? String(STATE.company) : 'ALL';
-      if (!scopeCo || scopeCo === 'ALL' || (typeof DEMO_COMPANY_KEY !== 'undefined' && scopeCo === DEMO_COMPANY_KEY)) {
+      if (!scopeCo || scopeCo === 'ALL' || Boolean(typeof STATE !== 'undefined' && STATE && STATE._explicitAllScope) || (typeof DEMO_COMPANY_KEY !== 'undefined' && scopeCo === DEMO_COMPANY_KEY)) {
         scopedRows = baseRows;
       } else {
         const allowAllBypass = (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) || (typeof isOwner === 'function' && isOwner());
@@ -192690,7 +192789,83 @@
 
   window.__mfgIsNonLebaneseNationality = isNonLebaneseNationality;
   window.__mfgComplianceNormIso = _complianceNormIso;
+  let _staffLinkedCosCacheKey = '';
+  let _staffLinkedCosCacheVal = null;
+  function getStaffLinkedCompaniesByInd(seedObj, activeInd) {
+    const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : null);
+    const rec = (sd && sd.records) || {};
+    const tr = (sd && sd._tableRev) || {};
+    const sig = `${activeInd}|${sd && sd._recordsReady ? 1 : 0}|${sd && sd._customRev || 0}|${(rec.employments || []).length}:${tr.employments || 0}|${(rec.freelance_entries || []).length}:${tr.freelance_entries || 0}|${(rec.company_drivers || []).length}:${tr.company_drivers || 0}|${(rec.salaries || []).length}:${tr.salaries || 0}|${(rec.attendance || []).length}:${tr.attendance || 0}|${(rec.staff_assignments || []).length}:${tr.staff_assignments || 0}`;
+    if (_staffLinkedCosCacheKey === sig && _staffLinkedCosCacheVal) return _staffLinkedCosCacheVal;
+    const map = new Map();
+    const isMfg = !activeInd || activeInd === 'Manufacturing';
+    const track = (rawName, rawCo, row) => {
+      if (!row || row.voided) return;
+      if (isMfg ? (row._multiIndustrySeed || (row._industry && row._industry !== 'Manufacturing')) : (row._industry && row._industry !== activeInd)) return;
+      const nm = String(rawName || '').trim();
+      if (!nm || isVoucherRefNotPersonName(nm)) return;
+      const nk = norm(nm);
+      const co = canonCompany(rawCo);
+      const ck = co ? norm(co) : '';
+      if (!nk || !ck || ck === 'all' || ck === 'all companies') return;
+      let set = map.get(nk);
+      if (!set) { set = new Set(); map.set(nk, set); }
+      set.add(ck);
+    };
+    (rec.employments || []).forEach(r => track(r && (r.staff || r.name), r && r.company, r));
+    (rec.freelance_entries || []).forEach(r => track(r && r.staff, r && r.company, r));
+    (rec.company_drivers || []).forEach(r => track(r && (r.staff || r.driver), r && r.company, r));
+    (rec.salaries || []).forEach(r => track(r && r.staff, r && r.company, r));
+    (rec.attendance || []).forEach(r => track(r && r.staff, r && r.company, r));
+    (rec.staff_assignments || []).forEach(r => track(r && r.staff, r && r.company, r));
+    _staffLinkedCosCacheKey = sig;
+    _staffLinkedCosCacheVal = map;
+    return map;
+  }
+
+  function isStaffInSelectedCompanyScope(staff, seedObj, scopeKeyOverride) {
+    const r = staff;
+    if (!r || r.voided) return false;
+    const nm = String(r.name || r.staff || '').trim();
+    if (!nm || isVoucherRefNotPersonName(nm)) return false;
+    const hasOverride = scopeKeyOverride != null && String(scopeKeyOverride).trim() !== '';
+    const rawScope = String(hasOverride ? scopeKeyOverride : ((STATE && STATE.company) || 'manufacturing-group')).trim();
+    if (rawScope === 'ALL' || Boolean(STATE && STATE._explicitAllScope && (!hasOverride || rawScope === STATE.company))) return true;
+    const scopeKey = COMPANY_KEY_BY_NAME[rawScope] || rawScope;
+    const isDemoCo = scopeKey === DEMO_COMPANY_KEY;
+    const activeInd = getActiveIndustry(scopeKey);
+    const singleBu = (!isDemoCo && !scopeKey.startsWith('industry:') && COMPANY_BU_MATCH[scopeKey]) ? COMPANY_BU_MATCH[scopeKey] : '';
+    const normScopeCo = coRaw => {
+      const s = String(coRaw || '').trim();
+      if (!s || /^(?:all|all\s*companies|all\s*bus(?:\s*\(ready\))?)$/i.test(s)) return '';
+      return canonCompany(s);
+    };
+    const rowCo = normScopeCo(r.company);
+    const arrCos = Array.isArray(r.companies) ? r.companies.map(normScopeCo).filter(Boolean) : [];
+    const explicitCos = rowCo ? [rowCo].concat(arrCos.filter(c => norm(c) !== norm(rowCo))) : arrCos;
+
+    if (singleBu) {
+      const targetNorm = norm(singleBu);
+      if (explicitCos.length > 0) return explicitCos.some(c => norm(c) === targetNorm);
+      if (r._industry && r._industry !== activeInd) return false;
+      const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : null);
+      const linkedMap = getStaffLinkedCompaniesByInd(sd, activeInd);
+      const linkedCos = linkedMap.get(norm(nm));
+      if (!linkedCos || linkedCos.size === 0) return true;
+      return linkedCos.has(targetNorm);
+    }
+
+    if (r._industry && r._industry !== activeInd) return false;
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const indCoNorms = new Set(cat.filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => norm(c.name)).filter(Boolean));
+    if (explicitCos.length > 0 && indCoNorms.size > 0) {
+      return explicitCos.some(c => indCoNorms.has(norm(c)));
+    }
+    return true;
+  }
+
   window.__mfgIsStaffMemberAllowedForSeat = isStaffMemberAllowedForSeat;
+  window.__mfgIsStaffInSelectedCompanyScope = isStaffInSelectedCompanyScope;
   window.__mfgCanAccessRdlReport = canAccessRdlReport;
   window.__mfgEvaluateStaffComplianceRow = evaluateStaffComplianceRow;
   window.__mfgMatchesComplianceTier = matchesComplianceTier;
@@ -211133,7 +211308,7 @@
           const canViewPayStaff = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
           const wdStaffCols = ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']
             .concat(canViewPayStaff ? ['active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'] : []);
-          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffMemberAllowedForSeat(r, SEED));
+          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffInSelectedCompanyScope(r, SEED) && isStaffMemberAllowedForSeat(r, SEED));
           const wdHtml = renderStaffPermitWatchdogStripHtml({ scope: 'reg_staff', staffRows: wdStaffRows });
           const fbHtml = canOpenFatherBackfill() ? renderFatherBackfillBannerHtml() : '';
           if (fbHtml || wdHtml) wsHtml = fbHtml + wdHtml + wsHtml;
@@ -221348,6 +221523,10 @@
     if (STATE.authed || isAutoTest) {
       renderApp();
     }
+    window.__mfgAppBooted = true;
+    if (typeof window.__mfgCancelBootWatchdog === 'function') {
+      window.__mfgCancelBootWatchdog();
+    }
   }
 
   let _uiTipWired = false;
@@ -221898,6 +222077,10 @@
         if (!row.currency) row.currency = 'USD';
         if (row.usd_amount == null) row.usd_amount = row.amount;
         if (row.lbp_amount == null) row.lbp_amount = 0;
+        if (row.staff && isVoucherRefNotPersonName(row.staff)) {
+          if (!row.name) row.name = String(row.staff).trim();
+          row.staff = '';
+        }
       } else if (tbl === 'settlements') {
         if (!row.rep_date) row.rep_date = row.date;
         if (!row.payable_leg) row.payable_leg = 'expense';
@@ -223261,6 +223444,9 @@
     getDieselPriceOn: typeof getDieselPriceOn === 'function' ? getDieselPriceOn : null,
     renderEquipmentHealthBadge: typeof renderEquipmentHealthBadge === 'function' ? renderEquipmentHealthBadge : null,
     getEquipmentHealth: typeof getEquipmentHealth === 'function' ? getEquipmentHealth : null,
+    staffNames: typeof staffNames === 'function' ? staffNames : null,
+    getStaffComplianceExceptionBadge: typeof getStaffComplianceExceptionBadge === 'function' ? getStaffComplianceExceptionBadge : null,
+    getIndustryKpiSnapshot: typeof getIndustryKpiSnapshot === 'function' ? getIndustryKpiSnapshot : null,
     isSingleCorporationScope: () => Boolean(window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.isSingleCorporationScope === 'function' && window.MFG_TABLE_COLS.isSingleCorporationScope(STATE)),
     getFormUi: () => FORM_UI
   };

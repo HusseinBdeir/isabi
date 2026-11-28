@@ -9937,7 +9937,7 @@
     const meta = new Map();
     const touch = (staff, co, weight, fatherName) => {
       const s = String(staff || '').trim();
-      if (!s) return;
+      if (!s || (typeof window !== 'undefined' && typeof window.__mfgIsVoucherRefNotStaff === 'function' ? window.__mfgIsVoucherRefNotStaff(s) : /^(?:SALPAY|SUPPAY|REXP|EXP|ASGN|SAL-INS|SET-INS|REC-INS)-(?:\d{3,}|[A-Z0-9]+-\d+)/i.test(s))) return;
       const c = canon(co) || coHint || (allowed.length === 1 ? allowed[0] : '');
       if (!c || !allowedSet.has(c)) return;
       if (scopeSet && !scopeSet.has(c)) return;
@@ -11115,8 +11115,10 @@
       });
     }
     const byNorm = new Map();
+    const isVoucherStaff = s => Boolean(s && kind === 'staff' && typeof window !== 'undefined' && typeof window.__mfgIsVoucherRefNotStaff === 'function' && window.__mfgIsVoucherRefNotStaff(s));
     list.forEach(raw => {
       const s = String(raw || '').trim();
+      if (isVoucherStaff(s)) return;
       const nk = dhNormBasic(s);
       if (s && nk && !byNorm.has(nk)) byNorm.set(nk, s);
     });

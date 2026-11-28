@@ -3750,6 +3750,23 @@ table.m-grid tfoot tr td {
   font-weight: 600;
 }
 
+.auth-reload-btn {
+  white-space: nowrap;
+}
+
+.auth-reload-btn.is-watchdog-prominent {
+  background: var(--brass-tint);
+  border: 1px solid var(--brass);
+  color: var(--ink);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .auth-reload-btn.is-watchdog-prominent {
+  color: #F4F2EE;
+}
+
 /* Toast & Welcome Pill */
 @keyframes toastRise {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
