@@ -949,6 +949,7 @@ BUILD_TICKET_PROBE_URL = "https://isabisystems.com/app/api/cashflow_behind"
 # a notebook, `python -c`, or any script not named here signs a session as before. ISABI_BUILD_TICKET=1 names one more.
 BUILD_TICKET_PROGRAMS = frozenset({
     "export_d1_seed.py", "deploy_cloudflare.py", "release_data_only.py", "release_batch.py", "sync_app.py",
+    "row_store_admin.py",
 })
 _BUILD_TICKET: dict = {"tok": "", "exp": 0.0, "off": "", "digest": ""}
 
@@ -1196,6 +1197,11 @@ _ORIG_WRANGLER_D1_QUERY = _wrangler_d1_query
 _WRANGLER_D1_QUERY_CODE = _wrangler_d1_query.__code__  # the function as written here: what _build_ticket_allowed trusts
 
 
+if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import row_store_read as RSR  # noqa: E402  (beside this file: the store once its rows are the master)
+
+
 def _stitch_kv_rows(kv_rows: list[dict], doc_key: str) -> tuple[dict | None, str, bool]:
     """Stitch `doc_key` + `doc_key__part_%` rows identically to `d1_store.js` readEdgeKvDoc."""
     head = None
@@ -1439,7 +1445,17 @@ def _fetch_d1_store_via_wrangler() -> dict:
     except Exception as ex:
         _edge_pull_failed(f"wrangler://d1/isabi-ledger failed ({type(ex).__name__}: {ex})")
         return {}
-    remote, head_ts, unreadable = _stitch_kv_rows(kv_rows, STORE_KV_KEY)
+    head_row = RSR.head_row_of(kv_rows, STORE_KV_KEY)
+    if head_row is not None and RSR.is_rows_head(head_row.get("payload_json")):
+        # The rows are the master (row_store_read.py): the head row is a commit record, the document is in store_rows.
+        try:
+            remote, head_ts = RSR.read_doc(_q)
+        except Exception as ex:  # noqa: BLE001
+            _edge_pull_failed(f"the live store is kept as rows and did not read (wrangler://d1/isabi-ledger: {ex})")
+            return {}
+        unreadable = False
+    else:
+        remote, head_ts, unreadable = _stitch_kv_rows(kv_rows, STORE_KV_KEY)
     if unreadable:
         _edge_pull_failed("the live store is unreadable (wrangler://d1/isabi-ledger); repair it first (Users, Sync Cloud Now from an Owner browser)")
         return {}
@@ -1895,9 +1911,11 @@ def is_store_kv_row_key(rk: str) -> bool:
 
 def store_kv_head_guard(head_ts: str) -> str:
     # A missing head (brand-new database) or blank default updated_at lets the write through; any populated timestamp must match the pulled head.
+    # Never onto a store whose rows are the master (its head row is a commit record, row_store_read.py): a document
+    # swapped in there would make the document the master again. The store is then left exactly as it is.
     return (
         f"COALESCE(NULLIF((SELECT updated_at FROM edge_kv_store WHERE doc_key = '{STORE_KV_KEY}'), ''), {sql_lit(head_ts)}) "
-        f"= {sql_lit(head_ts)}"
+        f"= {sql_lit(head_ts)} AND NOT ({RSR.HEAD_IS_ROWS_SQL})"
     )
 
 

@@ -47,6 +47,7 @@ BUILD_DIR = pathlib.Path(__file__).resolve().parent
 if str(BUILD_DIR) not in sys.path:
     sys.path.insert(0, str(BUILD_DIR))
 
+import row_store_read as RSR  # noqa: E402
 from export_d1_seed import (  # noqa: E402
     COMMITTED_MANIFEST_JSON, DB_PATH, build_store_kv_stage_clear, build_store_kv_stage_stmts,
     build_store_kv_stale_stage_clear, build_store_kv_swap, file_sha256, new_store_run_id, promote_pending_manifest, sql_lit,
@@ -539,14 +540,38 @@ def read_live_store_rows(env: dict) -> list[dict] | None:
         return None
 
 
+def live_store_rows_count(env: dict) -> int | None:
+    """How many lines `store_rows` holds for the store, or None when wrangler could not say."""
+    chk = run_wrangler(
+        ["d1", "execute", "isabi-ledger", "--remote", "--json", f"--command={RSR.ROWS_COUNT_SQL}"],
+        env,
+        check=False,
+    )
+    if chk.returncode != 0:
+        return None
+    try:
+        return int((json.loads(chk.stdout)[0].get("results") or [{}])[0].get("n"))
+    except Exception:
+        return None
+
+
 def assert_live_store_parses(env: dict, after: str, expected_head_ts: str = "") -> str:
     """Stop the deploy when the live store's chunks no longer join into valid JSON (incident 2026-11-13).
     Reads twice before failing: a browser write is two steps (head, then parts) and a read can fall between them.
-    Returns the joined live text."""
+    Returns the joined live text. A store whose rows are the master (head row = commit record, row_store_read.py) is
+    in order when `store_rows` holds the number of lines the record names; the text returned is then empty."""
     last_err = ""
     for attempt in range(3):
         rows = read_live_store_rows(env)
-        if rows is None:
+        head_now = RSR.head_row_of(rows) if rows else None
+        if head_now is not None and RSR.is_rows_head(str(head_now.get("payload_json") or "")):
+            rec = RSR.parse_commit(str(head_now.get("payload_json") or ""))
+            n_rows = live_store_rows_count(env)
+            if rec is not None and n_rows is not None and int(rec.get("n") or -1) == n_rows:
+                print(f"Live store is kept as rows ({n_rows} line(s), as its commit record names): left as it is.")
+                return ""
+            last_err = f"the store is kept as rows and its commit record names {rec.get('n') if rec else 'nothing'} line(s), store_rows holds {n_rows}"
+        elif rows is None:
             last_err = "wrangler could not read the store"
         else:
             try:
@@ -1669,6 +1694,12 @@ def migrate_remote_d1_pins_to_pbkdf2(env: dict):
     except Exception:
         kv_rows = []
     if not kv_rows:
+        return
+    kv_head = RSR.head_row_of(kv_rows)
+    if kv_head is not None and RSR.is_rows_head(str(kv_head.get("payload_json") or "")):
+        # The rows are the master: the Edge strips PIN and face fields from the seats on every save it writes, and a
+        # document swapped in here would make the document the master again.
+        print("Remote D1 store PIN scrub: the store is kept as rows (the Edge strips PIN and face fields on every save); nothing to scrub here.")
         return
     raw_kv = "".join(str(x.get("payload_json") or "") for x in kv_rows)
     try:
