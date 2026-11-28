@@ -10767,6 +10767,47 @@
     'products', 'product_types', 'sites', 'equipment', 'drivers', 'staff_assignments'
   ]);
 
+  function getUnshrunkHubRegistryRows(ctx) {
+    if (!ctx || !ctx.SEED || !ctx.STATE || typeof ctx.filterRecords !== 'function') return null;
+    const { STATE, SEED, filterRecords } = ctx;
+    const mode = ctx.mode === 'ureg' ? 'ureg' : 'tbl';
+    const tk = String(ctx.tableKey || '').trim();
+    const meta = TABLE_CATALOG.find(t => t.key === tk);
+    if (!meta || (mode === 'ureg' && !meta.universal)) return null;
+    if (typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable(meta.key)) return null;
+    _activePbiState = STATE;
+    const rawList = (SEED.records && SEED.records[meta.key]) || [];
+    const canViewExpTbl = canViewExpensesPbi(ctx);
+    const canViewProfitTbl = canViewProfitPbi(ctx);
+    const scopedRawList = meta.key === 'staff_members'
+      ? (rawList || []).filter(r => isStaffAllowedPbi(r, SEED, ctx))
+      : (meta.key === 'price_rules' && mode === 'tbl'
+        ? (rawList || []).filter(r => (canViewProfitTbl || !/^commission$/i.test(String((r && r.rule_type) || '').trim())) && (canViewExpTbl || !/^(?:Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String((r && r.rule_type) || '').trim())))
+        : rawList);
+    const isUniv = mode === 'ureg' ? true : Boolean(meta.universal);
+    const actInd = ctx.activeIndustry || ((typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function') ? window.__mfgGetActiveIndustry() : 'Manufacturing');
+    const isHoldingTbl = actInd === 'Holding & Treasury';
+    const isMfgTbl = actInd === 'Manufacturing';
+    const rawViews = (mode === 'tbl' && meta.key === 'external_movements' && !isHoldingTbl)
+      ? [{ id: 'all', label: 'All External Movements' }]
+      : (meta.views || [{ id: 'all', label: 'All ' + meta.label }]);
+    const views = ((mode === 'tbl' && meta.key === 'sales_tickets' && !STATE._canSeeTaxBreakdown)
+      ? rawViews.filter(v => v.id !== 'iva')
+      : rawViews).filter(v => (isMfgTbl || !v.mfgOnly) && !isMaskedHubViewPbi(meta.key, v.id, ctx));
+    const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
+    const activeView = views.find(v => v.id === activeViewId) || views[0] || { id: 'all', label: 'All ' + meta.label };
+    const PERIOD_HUB_TBLS = ['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'];
+    const baseRows = filterRecords(scopedRawList, {
+      tableKey: meta.key,
+      ignoreSearch: true,
+      ignoreCompany: isUniv,
+      ignoreRls: isUniv,
+      ignorePeriod: isUniv || !PERIOD_HUB_TBLS.includes(meta.key)
+    });
+    const rel = getHubRelIndex(SEED);
+    return activeView && activeView.fn ? baseRows.filter(r => activeView.fn(r, rel)) : baseRows;
+  }
+
   function renderTablesHub(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
     _activePbiState = STATE;
@@ -11059,7 +11100,11 @@
                       : (isLookup
                         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
                         : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key, tblQfCtx) || wrapEmptyZeroCellHtml(c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell, tblQfCtx, c) : (c === 'cost_class' ? formatCostClassHtml(cell, tblQfCtx, c) : (c === 'automation_mode' ? formatAutomationModeHtml(cell, tblQfCtx, c) : esc(cell))))), v, cell, isMoney)));
-                    return `<td class="${!isMaskedPay && (isMoney || isSignedUsd || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|ext_ref|_no$|plate|version|_delta$|^ext_owes_|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
+                    const tblMonoTxt = (ci === 0 && !isMaskedPay && !isLookup && (meta.key === 'staff_members' || meta.key === 'drivers' || meta.key === 'customers' || meta.key === 'suppliers' || meta.key === 'employments') && (c === 'name' || c === 'staff' || c === 'driver' || c === 'customer' || c === 'supplier'))
+                      ? regNameMonogram(cell)
+                      : '';
+                    const tblPrimaryHtml = tblMonoTxt ? `<b class="reg-primary-name" data-monogram="${esc(tblMonoTxt)}">${innerHtml}</b>` : `<b>${innerHtml}</b>`;
+                    return `<td class="${!isMaskedPay && (isMoney || isSignedUsd || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|ext_ref|_no$|plate|version|_delta$|^ext_owes_|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `${tblPrimaryHtml}${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}
@@ -11949,12 +11994,17 @@
                       ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
                       : null;
                     const isMaskedPay = isMaskedHubColPbi(connKey, c, r, _connCtx, activeConnView.id);
+                    const connQfCtx = { view: 'conn_' + connKey, cf: (STATE.colFilters && STATE.colFilters['conn_' + connKey]) || {} };
                     const innerHtml = isMaskedPay
                       ? `<span class="muted" data-masked-payroll="1">Restricted</span>`
                       : (isLookup
                         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey) || wrapEmptyZeroCellHtml(c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))), v, cell, isMoney)));
-                    return `<td class="${!isMaskedPay && (isMoney || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, connKey)}` : innerHtml}</td>`;
+                        : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey, connQfCtx) || wrapEmptyZeroCellHtml(c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell, connQfCtx, c) : (c === 'cost_class' ? formatCostClassHtml(cell, connQfCtx, c) : (c === 'automation_mode' ? formatAutomationModeHtml(cell, connQfCtx, c) : esc(cell))))), v, cell, isMoney)));
+                    const connMonoTxt = (ci === 0 && !isMaskedPay && !isLookup && (connKey === 'staff_members' || connKey === 'drivers' || connKey === 'customers' || connKey === 'suppliers' || connKey === 'employments') && (c === 'name' || c === 'staff' || c === 'driver' || c === 'customer' || c === 'supplier'))
+                      ? regNameMonogram(cell)
+                      : '';
+                    const connPrimaryHtml = connMonoTxt ? `<b class="reg-primary-name" data-monogram="${esc(connMonoTxt)}">${innerHtml}</b>` : `<b>${innerHtml}</b>`;
+                    return `<td class="${!isMaskedPay && (isMoney || isNum || isLbp || isSignedLbp) ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `${connPrimaryHtml}${appCell(r, connKey)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(connCols.length, 'No connected records match the active filter.')}
@@ -15136,6 +15186,7 @@
     buildHorizontalBarChart,
     renderPbiStudio,
     renderModuleAnalytics,
+    getUnshrunkHubRegistryRows,
     renderTablesHub,
     renderUniversalRegistriesView,
     renderCashFlowVisualsSection,

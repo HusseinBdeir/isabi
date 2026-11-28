@@ -19708,8 +19708,11 @@ thead th:focus-within > .tbl-th-tools {
   position: relative;
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 5px;
-  flex-shrink: 0;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .tbl-col-trigger-btn,
@@ -20494,6 +20497,8 @@ th.sortable.col-filtered {
   padding: 4px 6px;
 }
 .cf-pop-opt {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   display: flex;
   align-items: center;
@@ -20505,8 +20510,26 @@ th.sortable.col-filtered {
   background: transparent;
   color: var(--ink);
   font-size: 11.5px;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
+}
+.cf-pop-opt::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 2px;
+  width: var(--cf-pct, 0%);
+  background: color-mix(in srgb, var(--brass) 13%, transparent);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 0;
+  transition: width 0.16s ease;
+}
+:root[data-theme="dark"] .cf-pop-opt::before {
+  background: rgba(217, 165, 74, 0.14);
+}
+.cf-pop-opt.active::before {
+  background: color-mix(in srgb, var(--brass) 22%, transparent);
 }
 .cf-pop-opt[hidden] {
   display: none !important;
@@ -20520,6 +20543,8 @@ th.sortable.col-filtered {
   font-weight: 700;
 }
 .cf-pop-opt-lbl {
+  position: relative;
+  z-index: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -20527,6 +20552,8 @@ th.sortable.col-filtered {
   flex: 1 1 auto;
 }
 .cf-pop-opt-meta {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -24312,6 +24339,9 @@ tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
   flex-shrink: 0;
 }
 .lsb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid var(--line-strong);
   background: var(--surface-2);
   color: var(--ink);
@@ -24322,6 +24352,17 @@ tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.12s, border-color 0.12s;
+}
+.lsb-btn svg.ic {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  margin: 0;
+}
+.lsb-btn.lsb-hr-pack-btn {
+  border-color: var(--brass-border);
+  background: var(--brass-tint);
+  color: var(--ink);
 }
 .lsb-btn:hover {
   background: var(--brass-tint);
@@ -44927,7 +44968,7 @@ g.hub-drill-bar.reg-drill-armed .pbi-col-hit { fill: rgba(192, 137, 47, 0.16); s
 .permit-status-badge {
   white-space: nowrap;
 }
-.emp-hr-pack-btn {
+.emp-hr-pack-btn:not(.staff-hr-pack-inline-btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -45006,6 +45047,28 @@ td.td-has-sel-dot:has(> .void-btn.row-void-hover) > .staff-hr-pack-inline-btn {
 }
 
 /* --- Bilingual HR Contract & NSSF Pack (Statement #28) --- */
+.hr-pack-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--brass-border);
+  background: var(--brass-tint);
+  color: var(--ink);
+  font-size: 12px;
+}
+.hr-pack-batch-entry + .hr-pack-batch-entry {
+  margin-top: 22px;
+}
+@media print {
+  .hr-pack-batch-entry + .hr-pack-batch-entry {
+    margin-top: 0;
+  }
+}
 .hr-print-pack {
   display: flex;
   flex-direction: column;

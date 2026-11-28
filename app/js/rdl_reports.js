@@ -2503,8 +2503,19 @@
     if (!rdl.params.receiptId || !d.receiptById.has(String(rdl.params.receiptId))) {
       rdl.params.receiptId = d.receiptCandidates[0] ? String(d.receiptCandidates[0].id) : '';
     }
-    if (!rdl.params.hrStaff || !d.hrStaffById.has(String(rdl.params.hrStaff))) {
-      rdl.params.hrStaff = d.hrStaffCandidates[0] ? String(d.hrStaffCandidates[0].id) : '';
+    const hasBatchTargets = Array.isArray(rdl.params.hrBatchTargets) && rdl.params.hrBatchTargets.length >= 1;
+    if (!hasBatchTargets && (!rdl.params.hrStaff || !d.hrStaffById.has(String(rdl.params.hrStaff)))) {
+      const crossSingle = (rdl.params.hrStaff || rdl.params.hrEmp)
+        ? resolve28BatchEntries(Object.assign({ co, seed: typeof window !== 'undefined' ? window.MFG_SEED : null }, d), [{ staffId: rdl.params.hrStaff || '', empId: rdl.params.hrEmp || '' }])
+        : [];
+      if (crossSingle.length) {
+        if (!rdl.params.hrStaff && crossSingle[0].cand && crossSingle[0].cand.id) {
+          rdl.params.hrStaff = String(crossSingle[0].cand.id);
+        }
+      } else {
+        rdl.params.hrStaff = d.hrStaffCandidates[0] ? String(d.hrStaffCandidates[0].id) : '';
+        rdl.params.hrEmp = '';
+      }
     }
     const allowedBordCos = _resolveBordereauEntityPool(d.ind, co, STATE, d.allowedCos, d.hasEmptyAllowedCos).pool;
     const curBordCo = String(rdl.params.hrBordereauCo || '').trim();
@@ -9873,17 +9884,88 @@
     `;
   }
 
-  function render28HrPrintPack(meta, ctx) {
-    const p = ctx.rdl.params || {};
-    const mode = ['both', 'contract', 'nssf', 'bordereau'].includes(p.hrPackMode) ? p.hrPackMode : 'both';
-    const lang = ['bi', 'ar', 'fr'].includes(p.hrPackLang) ? p.hrPackLang : 'bi';
-    if (mode === 'bordereau') {
-      return render28HrBordereauHtml(meta, ctx, lang);
-    }
+  function resolve28BatchEntries(ctx, targets) {
     const candidates = Array.isArray(ctx.hrStaffCandidates) ? ctx.hrStaffCandidates : [];
-    const cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || candidates.find(c => String(c.id) === String(p.hrStaff || '')) || candidates[0] || {};
+    const byId = ctx.hrStaffById;
+    const out = [];
+    const seen = new Set();
+    const seatAllowsStaffFn = (typeof window !== 'undefined' && typeof window.__mfgIsStaffMemberAllowedForSeat === 'function')
+      ? window.__mfgIsStaffMemberAllowedForSeat
+      : null;
+    const allowedCos = Array.isArray(ctx.allowedCos) ? ctx.allowedCos : [];
+    const seed = ctx.seed || (typeof window !== 'undefined' ? window.MFG_SEED : null);
+    const allStaffRecs = (!ctx.hasEmptyAllowedCos && ctx.recs && Array.isArray(ctx.recs.staff_members)) ? ctx.recs.staff_members : [];
+    const allEmpRecs = (!ctx.hasEmptyAllowedCos && ctx.recs && Array.isArray(ctx.recs.employments)) ? ctx.recs.employments : [];
+    const isAllowedCrossBuCo = rc => {
+      if (ctx.hasEmptyAllowedCos) return false;
+      const s = String(rc || '').trim();
+      return !s || !allowedCos.length || allowedCos.includes(s);
+    };
+    const findCrossBuFallback = (tid, eid, tname) => {
+      if (ctx.hasEmptyAllowedCos) return null;
+      let stHit = tid ? allStaffRecs.find(s => s && !s.voided && !s.archived && String(s.id || '').trim() === tid) : null;
+      if (!stHit && eid) {
+        const empDirect = allEmpRecs.find(e => e && !e.voided && !e.archived && String(e.id || '').trim() === eid && isAllowedCrossBuCo(e.company));
+        if (empDirect) {
+          const esid = String(empDirect.staff_id || '').trim();
+          const ename = String(empDirect.staff || '').trim().toLowerCase();
+          stHit = (esid && allStaffRecs.find(s => s && !s.voided && !s.archived && String(s.id || '').trim() === esid))
+            || (ename && allStaffRecs.find(s => s && !s.voided && !s.archived && String(s.name || '').trim().toLowerCase() === ename));
+        }
+      }
+      if (!stHit && tname) {
+        stHit = allStaffRecs.find(s => s && !s.voided && !s.archived && String(s.name || '').trim().toLowerCase() === tname);
+      }
+      if (!stHit) return null;
+      if (seatAllowsStaffFn && !seatAllowsStaffFn(stHit, seed)) return null;
+      const sid = String(stHit.id || '').trim();
+      const snameLower = String(stHit.name || '').trim().toLowerCase();
+      const linked = allEmpRecs.filter(e => e && !e.voided && !e.archived
+        && isAllowedCrossBuCo(e.company)
+        && ((sid && String(e.staff_id || '').trim() === sid) || (snameLower && String(e.staff || '').trim().toLowerCase() === snameLower)));
+      if (!linked.length && !isAllowedCrossBuCo(stHit.company)) return null;
+      const bestEmp = linked[0] || {};
+      return {
+        id: sid || ('st:' + String(stHit.name || '')),
+        name: String(stHit.name || '').trim(),
+        staff: stHit,
+        emp: bestEmp,
+        emps: linked,
+        coKey: (bestEmp && bestEmp.company) || stHit.company || ctx.co
+      };
+    };
+    (Array.isArray(targets) ? targets : []).forEach(t => {
+      if (!t || typeof t !== 'object') return;
+      const tid = String(t.staffId || '').trim();
+      const eid = String(t.empId || '').trim();
+      const tname = String(t.staffName || '').trim().toLowerCase();
+      let cand = (tid && byId && byId.get(tid)) || (tid ? candidates.find(c => String(c.id) === tid) : null);
+      if (!cand && eid) {
+        cand = candidates.find(c => (c.emp && String(c.emp.id) === eid) || (Array.isArray(c.emps) && c.emps.some(em => String(em.id) === eid)));
+      }
+      if (!cand && tname) {
+        cand = candidates.find(c => String(c.name || '').trim().toLowerCase() === tname);
+      }
+      if (!cand) {
+        cand = findCrossBuFallback(tid, eid, tname);
+      }
+      if (!cand) return;
+      let empOverride = cand.emp || {};
+      if (eid && Array.isArray(cand.emps)) {
+        const hitEmp = cand.emps.find(em => String(em.id) === eid);
+        if (hitEmp) empOverride = hitEmp;
+      }
+      const dedupeKey = `${cand.id || ''}::${(empOverride && empOverride.id) || ''}`;
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      out.push({ cand, empOverride });
+    });
+    return out;
+  }
+
+  function renderSingle28HrPackHtml(meta, ctx, cand, empOverride, mode, lang, batchIdx) {
     const st = cand.staff || {};
-    const emp = cand.emp || {};
+    const emp = empOverride || cand.emp || {};
     const effCoKey = (emp && emp.company && CO_LEGAL[emp.company]) ? emp.company
       : ((cand.coKey && CO_LEGAL[cand.coKey]) ? cand.coKey : ((ctx.co && CO_LEGAL[ctx.co]) ? ctx.co : 'WTC'));
     const L = CO_LEGAL[effCoKey] || CO_LEGAL.WTC;
@@ -9958,7 +10040,7 @@
     const kvTable = (rows, isAr) => `
       <table class="rdl-table hr-pack-kv${isAr ? ' is-ar' : ''}"${isAr ? ' dir="rtl"' : ''}>
         <tbody>
-          ${rows.map(([lbl, val]) => `<tr><th>${esc(lbl)}</th><td>${esc(val)}</td></tr>`).join('')}
+          ${rows.map(([lbl, val, isSal]) => `<tr><th>${esc(lbl)}</th><td${isSal ? ` class="hr-salary-amt"${!canViewPayrollAmt ? ' data-masked-payroll="1"' : ''}` : ''}>${esc(val)}</td></tr>`).join('')}
         </tbody>
       </table>
     `;
@@ -9976,7 +10058,7 @@
       ['Poste & Type de contrat', `${roleTitle} · ${contractType} (${contractStatus})`],
       ['Date d’embauche / Échéance', `${startD} / ${endD}`],
       ['Régime & Congé annuel', `${fmtNum(workDays, 0)} j/mois · ${fmtNum(workHours, 1)} h/jour · ${fmtNum(vacDays, 0)} j congé/an · Heures supp. ×${fmtNum(otMult, 2)}`],
-      ['Rémunération mensuelle', salDisplayFr]
+      ['Rémunération mensuelle', salDisplayFr, true]
     ], false);
 
     const contractArTable = kvTable([
@@ -9992,11 +10074,14 @@
       ['الوظيفة ونوع العقد', `${roleTitle} · ${contractType} (${contractStatus})`],
       ['تاريخ المباشرة / الانتهاء', `${startD} / ${endD}`],
       ['الدوام والإجازة السنوية', `${fmtNum(workDays, 0)} يوم/شهر · ${fmtNum(workHours, 1)} س/يوم · ${fmtNum(vacDays, 0)} يوم سنوياً · إضافي ×${fmtNum(otMult, 2)}`],
-      ['الأجر والبدلات الشهرية', salDisplayAr]
+      ['الأجر والبدلات الشهرية', salDisplayAr, true]
     ], true);
 
+    const contractDocIdAttr = `id="hrPackContractDoc${batchIdx ? '-' + (batchIdx + 1) : ''}"`;
+    const nssfDocIdAttr = `id="hrPackNssfDoc${batchIdx ? '-' + (batchIdx + 1) : ''}"`;
+
     const contractDocHtml = `
-      <div class="hr-pack-doc hr-pack-contract" id="hrPackContractDoc">
+      <div class="hr-pack-doc hr-pack-contract" ${contractDocIdAttr}>
         <div class="hr-pack-doc-hdr">
           ${showFr ? `<div class="hr-pack-doc-hdr-fr">CONTRAT INDIVIDUEL DE TRAVAIL (CODE DU TRAVAIL LIBANAIS)</div>` : ''}
           ${showAr ? `<div class="hr-pack-doc-hdr-ar" dir="rtl">عقد عمل فردي وفق قانون العمل اللبناني (وزارة العمل)</div>` : ''}
@@ -10013,7 +10098,7 @@
               <ol>
                 <li><b>Objet &amp; Fonction :</b> L’Employeur engage le Salarié en qualité de <b>${esc(roleTitle)}</b> à compter du <b>${esc(startD)}</b> conformément aux directives techniques et règlements intérieurs.</li>
                 <li><b>Durée du Travail &amp; Repos :</b> Horaire fixé à ${fmtNum(workHours, 1)} h/jour sur ${fmtNum(workDays, 0)} jours/mois; repos hebdomadaire et ${fmtNum(vacDays, 0)} jours de congé annuel payé après un an (Art. 39).</li>
-                <li><b>Rémunération &amp; Déclarations :</b> Salaire convenu de ${esc(salDisplayFr)}, déclaré auprès de la CNSS et soumis aux retenues légales applicables.</li>
+                <li><b>Rémunération &amp; Déclarations :</b> Salaire convenu de <span class="hr-salary-amt"${!canViewPayrollAmt ? ' data-masked-payroll="1"' : ''}>${esc(salDisplayFr)}</span>, déclaré auprès de la CNSS et soumis aux retenues légales applicables.</li>
                 <li><b>Obligations Légales &amp; Renouvellement :</b> Le Salarié s’engage à maintenir valides ses documents d’identité, permis de travail (${esc(wpExp)}) et titre de séjour (${esc(resExp)}).</li>
               </ol>
             </div>
@@ -10024,7 +10109,7 @@
               <ol>
                 <li><b>موضوع العقد والوظيفة:</b> يعين الفريق الأول الفريق الثاني بصفة <b>${esc(roleTitle)}</b> اعتباراً من <b>${esc(startD)}</b> للقيام بالمهام الموكلة إليه وفق النظام الداخلي.</li>
                 <li><b>الدوام والإجازات:</b> يحدد الدوام بـ ${fmtNum(workHours, 1)} ساعات يومياً على أساس ${fmtNum(workDays, 0)} يوم عمل شهرياً، مع إجازة سنوية مدفوعة مدتها ${fmtNum(vacDays, 0)} يوماً (المادة 39).</li>
-                <li><b>الأجر والتصريح القانوني:</b> يتقاضى الأجير أجراً شهرياً قدره ${esc(salDisplayAr)} خاضعاً للتصريح والضرائب والاقتطاعات القانونية المعمول بها.</li>
+                <li><b>الأجر والتصريح القانوني:</b> يتقاضى الأجير أجراً شهرياً قدره <span class="hr-salary-amt"${!canViewPayrollAmt ? ' data-masked-payroll="1"' : ''}>${esc(salDisplayAr)}</span> خاضعاً للتصريح والضرائب والاقتطاعات القانونية المعمول بها.</li>
                 <li><b>المستندات القانونية والتجديد:</b> يلتزم الأجير بالمحافظة على صلاحية بطاقة الهوية أو الجواز وإجازة العمل (${esc(wpExp)}) والإقامة (${esc(resExp)}) طوال مدة العقد.</li>
               </ol>
             </div>
@@ -10054,8 +10139,8 @@
       ['Titre de séjour (Sûreté Gén.)', `${resNo} · Exp. ${resExp}`],
       ['Statut Conformité Watchdog', (compEv && compEv.badgeText) ? compEv.badgeText : contractStatus],
       ['Date d’affiliation / Embauche', startD],
-      ['Salaire mensuel assujetti (USD / LBP)', canViewPayrollAmt ? `${fmtUsd(pkgUsd, 2)}${salaryLbp > 0 ? ' / ' + fmtNum(salaryLbp, 0) + ' LBP' : ''}` : maskedFr],
-      ['Retenue absence / jour', canViewPayrollAmt ? fmtUsd(dedUsd, 2) : maskedFr]
+      ['Salaire mensuel assujetti (USD / LBP)', canViewPayrollAmt ? `${fmtUsd(pkgUsd, 2)}${salaryLbp > 0 ? ' / ' + fmtNum(salaryLbp, 0) + ' LBP' : ''}` : maskedFr, true],
+      ['Retenue absence / jour', canViewPayrollAmt ? fmtUsd(dedUsd, 2) : maskedFr, true]
     ], false);
 
     const nssfArTable = kvTable([
@@ -10069,12 +10154,12 @@
       ['بطاقة الإقامة (الأمن العام)', `${resNo} · انتهاء ${resExp}`],
       ['حالة الصلاحية والمتابعة', (compEv && compEv.badgeText) ? compEv.badgeText : contractStatus],
       ['تاريخ الالتحاق بالعمل', startD],
-      ['الأجر الشهري المصرح عنه', canViewPayrollAmt ? `${fmtUsd(pkgUsd, 2)}${salaryLbp > 0 ? ' / ' + fmtNum(salaryLbp, 0) + ' ل.ل' : ''}` : maskedAr],
-      ['حسم الغياب اليومي', canViewPayrollAmt ? fmtUsd(dedUsd, 2) : maskedAr]
+      ['الأجر الشهري المصرح عنه', canViewPayrollAmt ? `${fmtUsd(pkgUsd, 2)}${salaryLbp > 0 ? ' / ' + fmtNum(salaryLbp, 0) + ' ل.ل' : ''}` : maskedAr, true],
+      ['حسم الغياب اليومي', canViewPayrollAmt ? fmtUsd(dedUsd, 2) : maskedAr, true]
     ], true);
 
     const nssfDocHtml = `
-      <div class="hr-pack-doc hr-pack-nssf${mode === 'both' ? ' hr-pack-page-break' : ''}" id="hrPackNssfDoc">
+      <div class="hr-pack-doc hr-pack-nssf${mode === 'both' ? ' hr-pack-page-break' : ''}" ${nssfDocIdAttr}>
         <div class="hr-pack-doc-hdr">
           ${showFr ? `<div class="hr-pack-doc-hdr-fr">DÉCLARATION INDIVIDUELLE CNSS / NSSF DU SALARIÉ</div>` : ''}
           ${showAr ? `<div class="hr-pack-doc-hdr-ar" dir="rtl">ملخص التصريح الفردي للصندوق الوطني للضمان الاجتماعي</div>` : ''}
@@ -10105,6 +10190,69 @@
       </div>
       ${sheetFooterHtml(effCoKey, mode === 'both' ? 2 : 1, mode === 'both' ? 2 : 1)}
     `;
+  }
+
+  function render28HrPrintPack(meta, ctx) {
+    const p = ctx.rdl.params || {};
+    const mode = ['both', 'contract', 'nssf', 'bordereau'].includes(p.hrPackMode) ? p.hrPackMode : 'both';
+    const lang = ['bi', 'ar', 'fr'].includes(p.hrPackLang) ? p.hrPackLang : 'bi';
+    if (mode === 'bordereau') {
+      return render28HrBordereauHtml(meta, ctx, lang);
+    }
+    const hasBatchReq = Array.isArray(p.hrBatchTargets) && p.hrBatchTargets.length >= 1;
+    const batchEntries = hasBatchReq
+      ? resolve28BatchEntries(ctx, p.hrBatchTargets)
+      : [];
+    if (hasBatchReq && batchEntries.length === 0) {
+      const uiLangRaw = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function')
+        ? String(window.MFG_I18N.getLang() || 'en').toLowerCase()
+        : 'en';
+      const effLang = (lang === 'ar' || lang === 'fr') ? lang : ((uiLangRaw === 'ar' || uiLangRaw === 'fr') ? uiLangRaw : 'bi');
+      const docDir = effLang === 'ar' ? 'rtl' : 'ltr';
+      const blockedMsg = effLang === 'ar'
+        ? 'لا يوجد أي موظف مصرّح بعرضه ضمن الدفعة المحددة وفق صلاحيات هذا المقعد.'
+        : (effLang === 'fr'
+          ? 'Aucun salarié sélectionné n’est accessible selon les droits de ce poste.'
+          : 'No selected employees are accessible under your seat permissions / لا يوجد أي موظف مصرّح بعرضه ضمن الدفعة المحددة.');
+      return `
+        <div class="hr-pack-batch-bar no-print">
+          <span><strong>Combined HR Pack (0 Selected Employees)</strong></span>
+          <button type="button" class="btn btn-sm" data-clear-hr-batch="1">Single Employee View</button>
+        </div>
+        <div class="hr-pack-doc hr-pack-locked" id="hrPackBatchBlockedDoc" data-hr-batch-blocked="1" data-no-i18n="1" dir="${docDir}">
+          <div class="rdl-alert">${esc(blockedMsg)}</div>
+        </div>
+      `;
+    }
+    if (batchEntries.length === 1) {
+      return renderSingle28HrPackHtml(meta, ctx, batchEntries[0].cand, batchEntries[0].empOverride, mode, lang);
+    }
+    if (batchEntries.length >= 2) {
+      return `
+        <div class="hr-pack-batch-bar no-print">
+          <span><strong>Combined HR Pack (${fmtNum(batchEntries.length, 0)} Selected Employees)</strong> <span aria-hidden="true">·</span> <span>Ready for Print / Save as PDF</span></span>
+          <button type="button" class="btn btn-sm" data-clear-hr-batch="1">Single Employee View</button>
+        </div>
+        <div class="hr-pack-batch-wrap" data-hr-batch-count="${batchEntries.length}">
+          ${batchEntries.map((entry, idx) => `
+            <div class="hr-pack-batch-entry${idx > 0 ? ' hr-pack-page-break' : ''}">
+              ${renderSingle28HrPackHtml(meta, ctx, entry.cand, entry.empOverride, mode, lang, idx)}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+    const candidates = Array.isArray(ctx.hrStaffCandidates) ? ctx.hrStaffCandidates : [];
+    let cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || candidates.find(c => String(c.id) === String(p.hrStaff || ''));
+    if (!cand && (p.hrStaff || p.hrEmp)) {
+      const crossSingle = resolve28BatchEntries(ctx, [{ staffId: p.hrStaff || '', empId: p.hrEmp || '' }]);
+      if (crossSingle.length) {
+        return renderSingle28HrPackHtml(meta, ctx, crossSingle[0].cand, crossSingle[0].empOverride, mode, lang);
+      }
+    }
+    cand = cand || candidates[0] || {};
+    const empOverride = (p.hrEmp && Array.isArray(cand.emps) && cand.emps.find(em => String(em.id) === String(p.hrEmp))) || cand.emp || {};
+    return renderSingle28HrPackHtml(meta, ctx, cand, empOverride, mode, lang);
   }
 
 
@@ -11430,48 +11578,111 @@
       ];
     } else if (stmtId === '28') {
       windowMode = 'document';
-      const cand = (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || (ctx.hrStaffCandidates || []).find(c => String(c.id) === String(p.hrStaff || '')) || (ctx.hrStaffCandidates || [])[0] || {};
-      const st = cand.staff || {};
-      const emp = cand.emp || {};
       const canViewPayrollAmt = (typeof window !== 'undefined' && typeof window.__mfgCanViewPayrollDollarAmounts === 'function')
         ? Boolean(window.__mfgCanViewPayrollDollarAmounts())
         : false;
-      const baseUsd = Number(emp.salary_usd != null ? emp.salary_usd : (emp.monthly_salary_usd || 0));
-      const pkgUsd = baseUsd + Number(emp.reimbursement || 0);
-      const compEv = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
-        ? window.__mfgEvaluateStaffComplianceRow(st, seedObj)
-        : null;
-      const stName = st.name || cand.name || '-';
-      windowLabelEn = `${stName} · Contract & NSSF`;
-      windowLabelAr = `${stName} · عقد العمل والضمان`;
-      windowLabelFr = `${stName} · Contrat et CNSS`;
-      facts = {
-        staffId: st.id || cand.id || '',
-        staffName: stName,
-        fatherName: st.father_name || '',
-        motherName: st.mother_name || '',
-        motherNameAr: st.mother_name_ar || '',
-        nationality: st.nationality || '',
-        dob: st.dob || '',
-        nssfNo: st.nssf_no || '',
-        idExpiryDate: st.id_expiry_date || '',
-        workPermitNo: st.work_permit_no || '',
-        workPermitExpiry: st.work_permit_expiry || '',
-        residencyNo: st.residency_no || '',
-        residencyExpiry: st.residency_expiry || '',
-        complianceTier: compEv ? compEv.tier : 'none',
-        salaryMasked: !canViewPayrollAmt,
-        baseSalaryUsd: canViewPayrollAmt ? Number(baseUsd.toFixed(2)) : undefined,
-        packageUsd: canViewPayrollAmt ? Number(pkgUsd.toFixed(2)) : undefined,
-        packMode: p.hrPackMode || 'both',
-        packLang: p.hrPackLang || 'bi'
-      };
-      kpis = [
-        mkKpi('emp', 'Employee', 'الموظف', 'Salarié(e)', _stmtCleanParty(stName), _stmtCleanParty(emp.role || st.role || 'Staff'), _stmtCleanParty(emp.role || st.role || 'موظف'), _stmtCleanParty(emp.role || st.role || 'Employé')),
-        mkKpi('nssf', 'NSSF / CNSS #', 'رقم الضمان الاجتماعي', 'N° CNSS / NSSF', st.nssf_no || 'Pending', st.nationality || '-', st.nationality || '-', st.nationality || '-'),
-        mkKpi('comp', 'Compliance Status', 'حالة الامتثال', 'Statut conformité', (compEv && compEv.badgeText) ? compEv.badgeText : 'Active', st.work_permit_expiry ? `WP ${st.work_permit_expiry}` : 'ID & Permit check', st.work_permit_expiry ? `إجازة ${st.work_permit_expiry}` : 'متابعة الصلاحية', st.work_permit_expiry ? `Permis ${st.work_permit_expiry}` : 'Suivi échéances', compEv && (compEv.tier === 'expired' || compEv.tier === 'critical_7') ? 'neg' : 'ok'),
-        mkKpi('sal', 'Monthly Package', 'الراتب الشهري', 'Rémunération mensuelle', canViewPayrollAmt ? fmtUsd(pkgUsd, 2) : 'Restricted', canViewPayrollAmt ? `Base ${fmtUsd(baseUsd, 2)}` : 'Masked for this role', canViewPayrollAmt ? `الأساسي ${fmtUsd(baseUsd, 2)}` : 'محجوب لهذه الصلاحية', canViewPayrollAmt ? `Base ${fmtUsd(baseUsd, 2)}` : 'Masqué pour ce rôle')
-      ];
+      const hasBatchReq = Array.isArray(p.hrBatchTargets) && p.hrBatchTargets.length >= 1;
+      const batchEntries = hasBatchReq
+        ? resolve28BatchEntries(ctx, p.hrBatchTargets)
+        : [];
+      if (hasBatchReq && batchEntries.length === 0) {
+        windowLabelEn = 'Restricted · Contract & NSSF';
+        windowLabelAr = 'مقيد · عقود والضمان';
+        windowLabelFr = 'Restreint · Contrats & CNSS';
+        facts = {
+          batchCount: 0,
+          staffIds: [],
+          nssfReadyCount: 0,
+          salaryMasked: true,
+          packMode: p.hrPackMode || 'both',
+          packLang: p.hrPackLang || 'bi'
+        };
+        kpis = [
+          mkKpi('emp', 'Selected Employees', 'الموظفون المحددون', 'Salariés sélectionnés', '0', 'Restricted', 'مقيد', 'Restreint'),
+          mkKpi('nssf', 'NSSF / CNSS #', 'رقم الضمان الاجتماعي', 'N° CNSS / NSSF', '0 / 0', 'Restricted', 'مقيد', 'Restreint'),
+          mkKpi('comp', 'Pack Mode', 'وضع الحزمة', 'Mode du pack', (p.hrPackMode || 'both').toUpperCase(), (p.hrPackLang || 'bi').toUpperCase(), (p.hrPackLang || 'bi').toUpperCase(), (p.hrPackLang || 'bi').toUpperCase(), 'neg'),
+          mkKpi('sal', 'Monthly Package', 'الراتب الشهري', 'Rémunération mensuelle', 'Restricted', 'Masked for this role', 'محجوب لهذه الصلاحية', 'Masqué pour ce rôle')
+        ];
+      } else if (batchEntries.length >= 2) {
+        let sumPkg = 0;
+        let sumBase = 0;
+        let nssfReady = 0;
+        batchEntries.forEach(({ cand: bc, empOverride: be }) => {
+          const stB = bc.staff || {};
+          const empB = be || bc.emp || {};
+          const bUsd = Number(empB.salary_usd != null ? empB.salary_usd : (empB.monthly_salary_usd || 0));
+          sumBase += bUsd;
+          sumPkg += bUsd + Number(empB.reimbursement || 0);
+          if (stB.nssf_no) nssfReady += 1;
+        });
+        windowLabelEn = `${batchEntries.length} Selected Employees · Contract & NSSF`;
+        windowLabelAr = `${batchEntries.length} موظفين محددين · عقود والضمان`;
+        windowLabelFr = `${batchEntries.length} salariés sélectionnés · Contrats & CNSS`;
+        facts = {
+          batchCount: batchEntries.length,
+          staffIds: batchEntries.map(e => (e.cand.staff && e.cand.staff.id) || e.cand.id || ''),
+          nssfReadyCount: nssfReady,
+          salaryMasked: !canViewPayrollAmt,
+          baseSalaryUsd: canViewPayrollAmt ? Number(sumBase.toFixed(2)) : undefined,
+          packageUsd: canViewPayrollAmt ? Number(sumPkg.toFixed(2)) : undefined,
+          packMode: p.hrPackMode || 'both',
+          packLang: p.hrPackLang || 'bi'
+        };
+        kpis = [
+          mkKpi('emp', 'Selected Employees', 'الموظفون المحددون', 'Salariés sélectionnés', fmtNum(batchEntries.length, 0), 'Combined Pack', 'حزمة مجمعة', 'Pack combiné'),
+          mkKpi('nssf', 'NSSF / CNSS #', 'رقم الضمان الاجتماعي', 'N° CNSS / NSSF', `${fmtNum(nssfReady, 0)} / ${fmtNum(batchEntries.length, 0)}`, 'Enrolled numbers', 'أرقام مسجلة', 'Immatriculés'),
+          mkKpi('comp', 'Pack Mode', 'وضع الحزمة', 'Mode du pack', (p.hrPackMode || 'both').toUpperCase(), (p.hrPackLang || 'bi').toUpperCase(), (p.hrPackLang || 'bi').toUpperCase(), (p.hrPackLang || 'bi').toUpperCase(), 'ok'),
+          mkKpi('sal', 'Combined Monthly Package', 'إجمالي الرواتب الشهرية', 'Masse salariale mensuelle', canViewPayrollAmt ? fmtUsd(sumPkg, 2) : 'Restricted', canViewPayrollAmt ? `Base ${fmtUsd(sumBase, 2)}` : 'Masked for this role', canViewPayrollAmt ? `الأساسي ${fmtUsd(sumBase, 2)}` : 'محجوب لهذه الصلاحية', canViewPayrollAmt ? `Base ${fmtUsd(sumBase, 2)}` : 'Masqué pour ce rôle')
+        ];
+      } else {
+        const singleEntry = batchEntries.length === 1
+          ? batchEntries[0]
+          : ((p.hrStaff || p.hrEmp) && !(ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || '')))
+            ? (resolve28BatchEntries(ctx, [{ staffId: p.hrStaff || '', empId: p.hrEmp || '' }])[0] || null)
+            : null);
+        const cand = (singleEntry && singleEntry.cand) || (ctx.hrStaffById && ctx.hrStaffById.get(String(p.hrStaff || ''))) || (ctx.hrStaffCandidates || []).find(c => String(c.id) === String(p.hrStaff || '')) || (ctx.hrStaffCandidates || [])[0] || {};
+        const st = cand.staff || {};
+        const emp = (singleEntry && singleEntry.empOverride)
+          || (p.hrEmp && Array.isArray(cand.emps) && cand.emps.find(em => String(em.id) === String(p.hrEmp)))
+          || cand.emp
+          || {};
+        const baseUsd = Number(emp.salary_usd != null ? emp.salary_usd : (emp.monthly_salary_usd || 0));
+        const pkgUsd = baseUsd + Number(emp.reimbursement || 0);
+        const compEv = (typeof window !== 'undefined' && typeof window.__mfgEvaluateStaffComplianceRow === 'function')
+          ? window.__mfgEvaluateStaffComplianceRow(st, seedObj)
+          : null;
+        const stName = st.name || cand.name || '-';
+        windowLabelEn = `${stName} · Contract & NSSF`;
+        windowLabelAr = `${stName} · عقد العمل والضمان`;
+        windowLabelFr = `${stName} · Contrat et CNSS`;
+        facts = {
+          staffId: st.id || cand.id || '',
+          staffName: stName,
+          fatherName: st.father_name || '',
+          motherName: st.mother_name || '',
+          motherNameAr: st.mother_name_ar || '',
+          nationality: st.nationality || '',
+          dob: st.dob || '',
+          nssfNo: st.nssf_no || '',
+          idExpiryDate: st.id_expiry_date || '',
+          workPermitNo: st.work_permit_no || '',
+          workPermitExpiry: st.work_permit_expiry || '',
+          residencyNo: st.residency_no || '',
+          residencyExpiry: st.residency_expiry || '',
+          complianceTier: compEv ? compEv.tier : 'none',
+          salaryMasked: !canViewPayrollAmt,
+          baseSalaryUsd: canViewPayrollAmt ? Number(baseUsd.toFixed(2)) : undefined,
+          packageUsd: canViewPayrollAmt ? Number(pkgUsd.toFixed(2)) : undefined,
+          packMode: p.hrPackMode || 'both',
+          packLang: p.hrPackLang || 'bi'
+        };
+        kpis = [
+          mkKpi('emp', 'Employee', 'الموظف', 'Salarié(e)', _stmtCleanParty(stName), _stmtCleanParty(emp.role || st.role || 'Staff'), _stmtCleanParty(emp.role || st.role || 'موظف'), _stmtCleanParty(emp.role || st.role || 'Employé')),
+          mkKpi('nssf', 'NSSF / CNSS #', 'رقم الضمان الاجتماعي', 'N° CNSS / NSSF', st.nssf_no || 'Pending', st.nationality || '-', st.nationality || '-', st.nationality || '-'),
+          mkKpi('comp', 'Compliance Status', 'حالة الامتثال', 'Statut conformité', (compEv && compEv.badgeText) ? compEv.badgeText : 'Active', st.work_permit_expiry ? `WP ${st.work_permit_expiry}` : 'ID & Permit check', st.work_permit_expiry ? `إجازة ${st.work_permit_expiry}` : 'متابعة الصلاحية', st.work_permit_expiry ? `Permis ${st.work_permit_expiry}` : 'Suivi échéances', compEv && (compEv.tier === 'expired' || compEv.tier === 'critical_7') ? 'neg' : 'ok'),
+          mkKpi('sal', 'Monthly Package', 'الراتب الشهري', 'Rémunération mensuelle', canViewPayrollAmt ? fmtUsd(pkgUsd, 2) : 'Restricted', canViewPayrollAmt ? `Base ${fmtUsd(baseUsd, 2)}` : 'Masked for this role', canViewPayrollAmt ? `الأساسي ${fmtUsd(baseUsd, 2)}` : 'محجوب لهذه الصلاحية', canViewPayrollAmt ? `Base ${fmtUsd(baseUsd, 2)}` : 'Masqué pour ce rôle')
+        ];
+      }
     }
 
     function uniqCount(arr) {
@@ -11481,7 +11692,7 @@
     }
 
     const uiLangSig = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
-    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|') + (stmtId === '28' ? `|hm:${p.hrPackMode || ''}|hl:${p.hrPackLang || ''}|uil:${uiLangSig}|sal:${_isBordereauPayrollAmtAllowed(STATE) ? 1 : 0}|bc:${p.hrBordereauCo || ''}|by:${p.hrBordereauYear || ''}|bp:${p.hrBordereauPeriod || ''}` : '');
+    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|') + (stmtId === '28' ? `|he:${p.hrEmp || ''}|hm:${p.hrPackMode || ''}|hl:${p.hrPackLang || ''}|uil:${uiLangSig}|sal:${_isBordereauPayrollAmtAllowed(STATE) ? 1 : 0}|bc:${p.hrBordereauCo || ''}|by:${p.hrBordereauYear || ''}|bp:${p.hrBordereauPeriod || ''}|hb:${Array.isArray(p.hrBatchTargets) ? p.hrBatchTargets.map(x => `${x.staffId || ''}:${x.empId || ''}:${x.staffName || ''}`).join(',') : ''}` : '');
     const customRev = (seedObj && (seedObj._customRev || seedObj._indCustomRev || seedObj._industryRev)) || 0;
     // Diesel rights of the reading seat are part of the key: a cover note written for a seat that reads fuel money
     // (Fuel Log, Driver Statement) is never served from the cache to a seat that may not.
@@ -12325,6 +12536,10 @@
           inp.dataset.displayLabel = opt.label;
           inp.value = opt.label;
           liveCtx.rdl.params[k] = opt.value;
+          if (k === 'hrStaff') {
+            liveCtx.rdl.params.hrBatchTargets = null;
+            liveCtx.rdl.params.hrEmp = '';
+          }
           closeAllCombos(null);
           refreshSheetAndParams();
         };
@@ -12457,6 +12672,10 @@
           const hit = cfg.options.find(o => String(o.value) === v || o.label === v || o.main === v);
           if (hit) {
             liveCtx.rdl.params[k] = hit.value;
+            if (k === 'hrStaff') {
+              liveCtx.rdl.params.hrBatchTargets = null;
+              liveCtx.rdl.params.hrEmp = '';
+            }
             refreshSheetAndParams();
           }
         });
@@ -12545,6 +12764,18 @@
           const idx = Math.max(0, cfg.options.findIndex(o => String(o.value) === cur));
           const nextIdx = (idx + dir + cfg.options.length) % cfg.options.length;
           liveCtx.rdl.params[k] = cfg.options[nextIdx].value;
+          if (k === 'hrStaff') {
+            liveCtx.rdl.params.hrBatchTargets = null;
+            liveCtx.rdl.params.hrEmp = '';
+          }
+          refreshSheetAndParams();
+        });
+      });
+
+      root.querySelectorAll('[data-clear-hr-batch]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          liveCtx.rdl.params.hrBatchTargets = null;
+          liveCtx.rdl.params.hrEmp = '';
           refreshSheetAndParams();
         });
       });

@@ -9886,6 +9886,9 @@
 
   // ---- multi-column filtering, relational cell resolution & sorting ----------
   const _tablePoolCache = {};
+  const _savedViewBasePool = {};
+  const _detSavedViewPoolCache = {};
+  const _svBasePoolKey = v => `${v}::${STATE.company || ''}::${typeof isDemoScopeActive === 'function' && isDemoScopeActive() ? (STATE.demoCompanyIndustry || '') : ''}::${(v && (v.startsWith('tbl_') || v.startsWith('ureg_')) && STATE.tableViews) ? (STATE.tableViews[v.replace(/^(?:tbl_|ureg_)/, '')] || 'all') : ''}::${STATE.period || ''}::${STATE.dateFrom || ''}::${STATE.dateTo || ''}::${STATE.basis || 'tx'}::${STATE.payrollCutoffMode || 'closed_month'}::${(STATE.payrollInProgressPick && STATE.payrollInProgressPick.sig + ':' + STATE.payrollInProgressPick.mode) || ''}::${STATE.demoVisitor ? 1 : 0}::${(typeof canViewPayrollDollarAmounts === 'function' && canViewPayrollDollarAmounts()) ? 1 : 0}::${(typeof allowedCompanyNames === 'function' ? allowedCompanyNames().join(',') : '')}::${(SEED && SEED._customRev) || 0}:${(SEED && SEED._indCustomRev) || 0}:${(SEED && SEED._industryRev) || 0}::${typeof isOfficialScopeActive === 'function' && isOfficialScopeActive() ? 1 : 0}::${(typeof activeUser === 'function' && activeUser() && activeUser().id) || ''}`;
   const MULTI_TOKEN_COLS = new Set(['companies_list', 'assigned_trucks', 'trucks_list', 'drivers_list', 'category1', 'category', 'sites_list', 'raw_parties']);
   const VIEW_TABLE_KEY_MAP = {
     sales: 'sales_tickets',
@@ -9919,6 +9922,9 @@
     tr_loans: 'loans',
     ext_entries: 'external_movements',
     external: 'external_movements',
+    hld_extended: 'external_movements',
+    hld_extd_entries: 'external_movements',
+    hld_extd_parties: 'external_movements',
     fx_conv: 'conversions',
     conversions: 'conversions',
     jvdist: 'jv_distributions',
@@ -10382,6 +10388,7 @@
       { key: 'company', label: 'Company' },
       { key: 'type', label: 'Contract Type' },
       { key: 'status', label: 'Status' },
+      { key: 'permit_status', label: 'Compliance' },
       { key: 'staff', label: 'Staff Member' },
       { key: 'salary_usd', label: 'Base ($)', kind: 'numeric' },
       { key: 'reimbursement', label: 'Reimb. ($)', kind: 'numeric' },
@@ -11205,6 +11212,22 @@
       if (colKey === 'direction') return String(r.side || r.type || r.direction || 'Loan Given');
       if (colKey === 'principal') return loanPrinUsd(r);
     }
+    if (view === 'pay_emp') {
+      if (colKey === 'status') {
+        const todayIso = todayISO();
+        const ended = r.status === 'Ended' || (r.end_date && String(r.end_date) < todayIso);
+        return ended ? 'Ended' : (r.status || 'Current');
+      }
+      if (colKey === 'package_usd') {
+        return r.package_usd != null ? r.package_usd : empContractPackageUsd(r, getLbpFxRate());
+      }
+      if (colKey === 'permit_status') {
+        const smList = (SEED && SEED.records && SEED.records.staff_members) || [];
+        const smRec = smList.find(s => s && !s.voided && !s.archived && ((r.staff_id && String(s.id) === String(r.staff_id)) || norm(s.name || '') === norm(r.staff || '')));
+        const ev = smRec ? evaluateStaffComplianceRow(smRec, SEED) : null;
+        return (ev && ev.badgeText) ? ev.badgeText : 'No Expiry Set';
+      }
+    }
     if (colKey === 'date' && r.date !== undefined) return isTxOnlyTableViewKey(view) ? recordDateFor(r, 'tx') : recordDate(r);
     if (colKey === 'tank_rem' || colKey === 'tank_remaining_litres') {
       const dt = getDieselTankLedger();
@@ -11657,7 +11680,8 @@
     hspPartnersPanel: 'hsp_partners',
     hspTariffsPanel: 'hsp_tariffs',
     hldDueMatrixPanel: 'hld_consolidation',
-    hldPartnerChronoPanel: 'hld_partners'
+    hldPartnerChronoPanel: 'hld_partner_chrono',
+    hldFacilitySchedulesPanel: 'hld_facility_schedules'
   };
   function hasDirectColFilter(view) {
     const cf = view && STATE.colFilters && STATE.colFilters[view];
@@ -11677,7 +11701,17 @@
       : ((mappedPanelView && hasDirectColFilter(mappedPanelView))
         ? mappedPanelView
         : (shownKey || mappedPanelView || panelId || ''));
-    if (cfKey) _tablePoolCache[cfKey] = allChartRows;
+    if (cfKey) {
+      _tablePoolCache[cfKey] = allChartRows;
+      const _curViewKey = String(STATE.view || '');
+      const hasIndDrawerF = Boolean((STATE.indDrawerFilters && STATE.indDrawerFilters[cfKey] && Object.keys(STATE.indDrawerFilters[cfKey]).some(k => STATE.indDrawerFilters[cfKey][k])) || (_curViewKey && _curViewKey !== cfKey && STATE.indDrawerFilters && STATE.indDrawerFilters[_curViewKey] && Object.keys(STATE.indDrawerFilters[_curViewKey]).some(k => STATE.indDrawerFilters[_curViewKey][k])));
+      const hasIndAssetF = Boolean(STATE.cfFocusParty || (STATE.indAssetFilter && Object.values(STATE.indAssetFilter).some(v => v && v !== 'ALL')));
+      const hasDrillF = Boolean((panelId && getRegDrill(panelId)) || (cfKey !== panelId && getRegDrill(cfKey)));
+      const hasWatchdogF = Boolean(STATE.permitWatchdogTier && STATE.permitWatchdogTier !== 'all');
+      if (!STATE.search && (!STATE.chipFilter || STATE.chipFilter === 'all') && !hasWatchdogF && !hasIndDrawerF && !hasIndAssetF && !hasDrillF) {
+        _savedViewBasePool[_svBasePoolKey(cfKey)] = allChartRows;
+      }
+    }
     if (cfKey && hasDirectColFilter(cfKey)) {
       const keptChart = applyColFiltersForView(chartRows, cfKey);
       const keptSet = new Set(keptChart);
@@ -11700,7 +11734,17 @@
   }
   function sortRowsPass(rows, view, defKey, defDir) {
     const rawPool = Array.isArray(rows) ? rows : [];
-    if (view) _tablePoolCache[view] = rawPool;
+    if (view) {
+      _tablePoolCache[view] = rawPool;
+      const _curSortV = String(STATE.view || '');
+      const hasDrawerF = Boolean((STATE.indDrawerFilters && STATE.indDrawerFilters[view] && Object.keys(STATE.indDrawerFilters[view]).some(k => STATE.indDrawerFilters[view][k])) || (_curSortV && _curSortV !== view && STATE.indDrawerFilters && STATE.indDrawerFilters[_curSortV] && Object.keys(STATE.indDrawerFilters[_curSortV]).some(k => STATE.indDrawerFilters[_curSortV][k])));
+      const hasIndAssetF = Boolean(STATE.cfFocusParty || (STATE.indAssetFilter && Object.values(STATE.indAssetFilter).some(v => v && v !== 'ALL')));
+      const hasWatchdogF = Boolean(STATE.permitWatchdogTier && STATE.permitWatchdogTier !== 'all');
+      const hasSiteAllowDrill = Boolean((view === 'pay_site_daily' || view === 'pay_log') && STATE.siteAllowStaffFilter && String(STATE.siteAllowStaffFilter).trim());
+      if (!STATE.search && (!STATE.chipFilter || STATE.chipFilter === 'all') && !hasWatchdogF && !(view === 'pay_staff' && STATE.payrollStaffStatus && STATE.payrollStaffStatus !== 'all') && !hasDrawerF && !hasIndAssetF && !hasSiteAllowDrill && !getRegDrill(view)) {
+        _savedViewBasePool[_svBasePoolKey(view)] = rawPool;
+      }
+    }
     const colFOn = Boolean(view && hasActiveColFilters(view));
     const drill = view ? getRegDrill(view) : null;
     const hasColF = Boolean(colFOn || drill);
@@ -12172,6 +12216,12 @@
     const numOpts = isNum ? buildNumericFilterOptions(pool, colKey, view) : [];
     const allOpts = isNum ? numOpts : catOpts;
     const distinctOpts = allOpts.filter(o => o.v !== '__nonempty__' && o.v !== '__empty__');
+    const optNumCount = o => {
+      if (o && o.count !== undefined && Number.isFinite(Number(o.count))) return Number(o.count);
+      const m = o && o.l ? String(o.l).match(/\(([\d,]+)\)\s*$/) : null;
+      return m ? (parseInt(m[1].replace(/,/g, ''), 10) || 0) : 0;
+    };
+    const cfBarDenom = Math.max(1, pool.length || 0, ...distinctOpts.map(optNumCount));
     const targetTh = thEl || document.querySelector(`th[data-sort-view="${CSS.escape(view)}"][data-sort-key="${CSS.escape(colKey)}"]`);
     const hasColTools = Boolean(targetTh && targetTh.querySelector('[data-th-hide]'));
 
@@ -12199,10 +12249,12 @@
       <div class="cf-pop-list" id="cfPopValuesList">
         ${distinctOpts.map(o => {
           const rawLabel = o.rawVal !== undefined ? o.rawVal : o.l.replace(/\s*\([\d,]+\)\s*$/, '');
+          const optCnt = optNumCount(o);
           const cntBadge = o.count !== undefined ? fmtNum(o.count) : ((o.l.match(/\(([\d,]+)\)\s*$/) || [])[1] || '');
+          const cfPct = optCnt > 0 ? Math.max(2, Math.min(100, (optCnt / cfBarDenom) * 100)) : 0;
           const isOptActive = curFilter === o.v || (curFilter.startsWith('=') && curFilter.slice(1) === o.v);
           return `
-            <button type="button" class="cf-pop-opt ${isOptActive ? 'active' : ''}" data-cf-pop-val="${esc(o.v)}">
+            <button type="button" class="cf-pop-opt ${isOptActive ? 'active' : ''}" data-cf-pop-val="${esc(o.v)}" data-cf-pct="${Math.round(cfPct)}" style="--cf-pct:${cfPct.toFixed(1)}%">
               <span class="cf-pop-opt-lbl">${esc(rawLabel)}</span>
               <span class="cf-pop-opt-meta">
                 ${cntBadge ? `<b class="cf-pop-opt-cnt">${esc(cntBadge)}</b>` : ''}
@@ -14301,7 +14353,7 @@
       const tag = cur.tagName;
       if (tag === 'STYLE' || tag === 'SCRIPT' || cur.hidden) return;
       if (cur.style && cur.style.display === 'none') return;
-      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill') || cur.classList.contains('void-btn') || cur.classList.contains('row-sel-dot') || cur.classList.contains('raw-fleet-deduct-pill') || cur.classList.contains('raw-leg-stmt-actions'))) return;
+      if (cur.classList && (cur.classList.contains('ind-agr-pill') || cur.classList.contains('cf-cand-pill') || cur.classList.contains('void-btn') || cur.classList.contains('row-sel-dot') || cur.classList.contains('raw-fleet-deduct-pill') || cur.classList.contains('raw-leg-stmt-actions') || cur.classList.contains('staff-hr-pack-inline-btn') || cur.classList.contains('emp-hr-pack-btn') || cur.classList.contains('tkt-print-mini') || cur.classList.contains('tbl-th-tools') || cur.classList.contains('th-filter-btn') || cur.classList.contains('tbl-col-resizer') || cur.classList.contains('btn-ind-wf') || cur.hasAttribute('data-open-prepayday-card') || cur.hasAttribute('data-set-pending-salary-id'))) return;
       if (tag === 'BR') { out += ' '; return; }
       const isBlock = tag === 'DIV' || tag === 'P' || tag === 'LI' || tag === 'SMALL' || tag === 'TR' || tag === 'SECTION' || tag === 'BLOCKQUOTE' || /^H[1-6]$/.test(tag);
       if (isBlock) out += ' ';
@@ -14325,13 +14377,9 @@
       Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
         .map(td => {
-          let txt = td.innerText;
-          if (td.querySelector('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions')) {
-            const clone = td.cloneNode(true);
-            clone.querySelectorAll('.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions').forEach(n => n.remove());
-            txt = clone.textContent;
-          }
-          return _csvQuoteCell(txt);
+          if (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
+          if (td.tagName === 'TH' && td.dataset && td.dataset.colCleanLabel) return _csvQuoteCell(td.dataset.colCleanLabel);
+          return _csvQuoteCell(_extractDetachedCellText(td));
         }).join(',')
     ).join('\r\n');
   }
@@ -14342,7 +14390,7 @@
     liveHeadRows.forEach(tr => {
       const cells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
-        .map(td => _csvQuoteCell(td.innerText));
+        .map(td => (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) ? _csvQuoteCell('Restricted') : ((td.tagName === 'TH' && td.dataset && td.dataset.colCleanLabel) ? _csvQuoteCell(td.dataset.colCleanLabel) : _csvQuoteCell(_extractDetachedCellText(td))));
       if (cells.length) lines.push(cells.join(','));
     });
     const tbody = tmpTable ? ((tmpTable.tBodies && tmpTable.tBodies[0]) || tmpTable.querySelector('tbody')) : null;
@@ -14361,7 +14409,7 @@
           if (td.classList.contains('tbl-col-hidden')) continue;
           if (!td.hasAttribute('colspan') && td.style && td.style.display === 'none') continue;
         }
-        rowCells.push(_csvQuoteCell(_extractDetachedCellText(td)));
+        rowCells.push((td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) ? _csvQuoteCell('Restricted') : _csvQuoteCell(_extractDetachedCellText(td)));
       }
       if (rowCells.length) lines.push(rowCells.join(','));
     }
@@ -14369,7 +14417,7 @@
     liveFootRows.forEach(tr => {
       const cells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
         .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
-        .map(td => _csvQuoteCell(td.innerText));
+        .map(td => (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) ? _csvQuoteCell('Restricted') : _csvQuoteCell(_extractDetachedCellText(td)));
       if (cells.length) lines.push(cells.join(','));
     });
     return lines.join('\r\n');
@@ -14387,6 +14435,21 @@
 
   function exportBtn(panelId, name) {
     return `<button type="button" class="btn" data-export-csv="${esc(panelId)}" data-export-name="${esc(name)}" title="Download the rows shown as CSV (Excel, UTF-8)">${ic('download')} CSV</button>`;
+  }
+
+  function regNameMonogram(rawName) {
+    const clean = String(rawName || '').trim().replace(/^[^A-Za-z\u0600-\u06FF0-9]+/, '');
+    if (!clean || clean === '—' || clean === '-') return '';
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+
+  function wrapMonogramNameHtml(innerHtml, rawName) {
+    const mono = regNameMonogram(rawName);
+    if (!mono) return `<strong>${innerHtml}</strong>`;
+    return `<b class="reg-primary-name" data-monogram="${esc(mono)}">${innerHtml}</b>`;
   }
 
   function searchBox(placeholder) {
@@ -38618,7 +38681,7 @@
                   </span>` : '';
                 return `
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(r._rid)}">
-                  <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtActsHtml}</td>
+                  <td class="td-raw-leg-party">${wrapMonogramNameHtml(relLink('suppliers', r.supplier, r.supplier, true), r.supplier)}${stmtActsHtml}</td>
                   <td>${sitesCellHtml}</td>
                   <td><span class="badge ${basisCls}">${esc(r.supply_basis)}</span>${unpMatSupHtml}</td>
                   <td class="r">${fmtNum(r.quarry_loads)}</td>
@@ -38697,7 +38760,7 @@
                   : '';
                 return `
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(r._rid)}">
-                  <td class="td-raw-leg-party"><strong>${relLink('suppliers', r.supplier, r.supplier, true)}</strong>${stmtTrActsHtml}${fleetDedHtml}</td>
+                  <td class="td-raw-leg-party">${wrapMonogramNameHtml(relLink('suppliers', r.supplier, r.supplier, true), r.supplier)}${stmtTrActsHtml}${fleetDedHtml}</td>
                   <td><span class="badge ${scopeCls}">${esc(r.trans_scope)}</span>${unpHaulSupHtml}</td>
                   <td class="r">${r.trans_sup_loads ? fmtNum(r.trans_sup_loads) : '—'}</td>
                   <td class="r">${r.trans_cust_loads ? fmtNum(r.trans_cust_loads) : '—'}</td>
@@ -47242,7 +47305,7 @@
             <tbody>
               ${shownDrv.map(d => `
                 <tr class="rrow" data-rkey="drivers" data-rid="${esc((driverInfo(d.driver) || {}).id || d.driver)}">
-                  <td><strong>${relLink('drivers', d.driver, d.driver, true)}</strong></td>
+                  <td>${wrapMonogramNameHtml(relLink('drivers', d.driver, d.driver, true), d.driver)}</td>
                   <td><span class="badge ${d.is_company === 'Yes' ? 'badge-ok' : 'badge-info'}">${esc(d.is_company)}</span></td>
                   <td class="mono">${d.trucksStr ? esc(d.trucksStr) : '—'}</td>
                   <td class="r"><strong>${fmtNum(d.trips)}</strong></td>
@@ -47293,7 +47356,7 @@
               <tbody>
                 ${sliceShown('codrv', coDriversRows).map(cd => `
                   <tr class="rrow" data-rkey="company_drivers" data-rid="${esc(cd.id || cd.driver)}">
-                    <td><strong>${relLink('drivers', cd.driver, cd.driver, true)}</strong>${appCell(cd, 'company_drivers')}</td>
+                    <td>${wrapMonogramNameHtml(relLink('drivers', cd.driver, cd.driver, true), cd.driver)}${appCell(cd, 'company_drivers')}</td>
                     <td>${coBadge(cd.company)}</td>
                     <td>${cd.staff ? relLink('employments', cd.staff) : '—'}</td>
                     <td class="mono">${cd.start_date ? esc(fmtDateDMY(cd.start_date)) : '—'}</td>
@@ -48844,7 +48907,7 @@
             <tbody>
               ${shownCusts.map(c => `
                 <tr class="rrow" data-rkey="customers" data-rid="${esc((customerInfo(c.Customer) || {}).id || c.Customer)}">
-                  <td class="td-raw-leg-party">${relLink('customers', c.Customer, c.Customer, true)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}${renderCustStmtActionsHtml(c.Customer, 'custPanel', canArBooks)}</td>
+                  <td class="td-raw-leg-party">${wrapMonogramNameHtml(relLink('customers', c.Customer, c.Customer, true), c.Customer)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}${renderCustStmtActionsHtml(c.Customer, 'custPanel', canArBooks)}</td>
                   ${showTaxCols
                     ? `<td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${canArBooks && c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>`
                     : `<td><span class="mono">${fmtNum(c.credit_days || 30)}d${canArBooks && c.credit_limit > 0 ? ' · ' + fmtUSDk(c.credit_limit) : ''}</span></td>`}
@@ -49338,7 +49401,7 @@
                     </span>` : '';
                   return `
                   <tr class="${isUnassigned ? '' : 'rrow'}" ${isUnassigned ? '' : `data-rkey="suppliers" data-rid="${esc((supObj || {}).id || s.Supplier)}"`}>
-                    <td${isUnassigned ? '' : ' class="td-raw-leg-party"'}>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}${supStmtActsHtml}`}</td>
+                    <td${isUnassigned ? '' : ' class="td-raw-leg-party"'}>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${wrapMonogramNameHtml(relLink('suppliers', s.Supplier, s.Supplier, true), s.Supplier)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}${supStmtActsHtml}`}</td>
                     <td><span class="badge ${roleCls}">${esc(s.role || 'Supplier')}</span></td>
                     <td>${s.IVA === 'Yes' ? '<span class="badge badge-info">IVA</span>' : '—'}</td>
                     <td class="r">${fmtNum(s.raw_loads)}</td>
@@ -50048,7 +50111,7 @@
             <tbody>
               ${shownExpSup.map(s => `
                 <tr class="rrow" data-rkey="suppliers" data-rid="${esc(s.supplier)}">
-                  <td><strong>${relLink('suppliers', s.supplier, s.supplier, true)}</strong></td>
+                  <td>${wrapMonogramNameHtml(relLink('suppliers', s.supplier, s.supplier, true), s.supplier)}</td>
                   <td class="r mono">${fmtUSD(s.credit_usd, 2)}</td>
                   <td class="r mono">${fmtLBP(s.credit_lbp)}</td>
                   <td class="r mono">${fmtUSD(s.payment_usd, 2)}</td>
@@ -56969,6 +57032,72 @@
     openContract: id => openRecordFromTableRow('employments', id)
   };
 
+  function ensurePaySalRowsEnriched(payIdxArg) {
+    const payIdx = payIdxArg || _getPayrollIntelIndex();
+    const today = SEED_DATE;
+    const fxRate = getLbpFxRate();
+    const salRunCacheKey = `${payIdx.rev}|${STATE.company}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${fxRate}`;
+    if (payIdx._salRunKey === salRunCacheKey) return;
+    payIdx._salRunKey = salRunCacheKey;
+    const salRunMap = new Map();
+    const salScopeForRun = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: true });
+    salScopeForRun.slice().sort((a, b) => {
+      const da = String(a.date || ''), db = String(b.date || '');
+      if (da !== db) return da < db ? -1 : 1;
+      const ia = String(a.id || ''), ib = String(b.id || '');
+      return ia === ib ? 0 : (ia < ib ? -1 : 1);
+    }).forEach(s => {
+      const sk = norm(s.staff);
+      const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
+      const mk = `${sk}|${ym}`;
+      const prevCum = salRunMap.get(mk) || 0;
+      const amt = round2(salaryVoucherUsd895(s, fxRate));
+      const cumPaid = round2(prevCum + amt);
+      salRunMap.set(mk, cumPaid);
+      const pos = computeStaffMonthPayrollPosition(s.staff, s.company, ym, s.date ? s.date.slice(0, 7) + '-15' : today, null, true);
+      const txYm = String(s.date || '').slice(0, 7);
+      const isFut = Boolean(ym && txYm && ym > txYm);
+      s.month_cum_paid = cumPaid;
+      s.month_has_contract = Boolean(pos && pos.hasContract);
+      s.month_is_future = isFut;
+      s.month_earnings = (pos && pos.hasContract) ? round2(isFut ? pos.baseNet : pos.monthNetEarned) : 0;
+      if (!pos || !pos.hasContract) {
+        s.sal_status_lbl = 'No Contract';
+        s.sal_status_cls = 'badge-warn';
+        s.sal_status_tip = `No active contract on file for ${s.staff || 'staff'} · Month total paid: ${fmtUSD(pos ? pos.paidSoFar : cumPaid, 2)}`;
+        s.is_advance_sal = false;
+      } else if (isFut) {
+        s.sal_status_lbl = `Future Advance (${pos.ymLabel})`;
+        s.sal_status_cls = 'badge-brass';
+        s.sal_status_tip = `Paid on ${String(s.date || '').slice(0, 10)} in advance for ${pos.ymLabel} · Contract Base: ${fmtUSD(pos.baseNet, 2)}`;
+        s.is_advance_sal = true;
+      } else if (pos.salaryPending) {
+        s.sal_status_lbl = 'Advance (Salary Pending)';
+        s.sal_status_cls = 'badge-warn';
+        s.sal_status_tip = `Active contract has Salary Pending ($0.00) · Paid as advance (${fmtUSD(cumPaid, 2)}) until final salary is entered`;
+        s.is_advance_sal = true;
+      } else if (cumPaid > pos.monthNetEarned + 1) {
+        const over = round2(cumPaid - pos.monthNetEarned);
+        s.sal_status_lbl = `Advance +${fmtUSD(over, 0)}`;
+        s.sal_status_cls = 'badge-warn';
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Cumulative paid: ${fmtUSD(cumPaid, 2)} (+${fmtUSD(over, 2)} above month net)`;
+        s.is_advance_sal = true;
+      } else if (Math.abs(pos.monthNetEarned - cumPaid) <= 25) {
+        s.sal_status_lbl = 'Settled';
+        s.sal_status_cls = 'badge-ok';
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid in full (${fmtUSD(cumPaid, 2)})`;
+        s.is_advance_sal = false;
+      } else {
+        const remAfterThis = round2(Math.max(0, pos.monthNetEarned - cumPaid));
+        const remMonthNow = round2(Math.max(0, pos.remainingNet));
+        s.sal_status_lbl = `Partial · ${fmtUSD(remAfterThis, 0)} rem`;
+        s.sal_status_cls = 'badge-info';
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid through this entry: ${fmtUSD(cumPaid, 2)} (${fmtUSD(remAfterThis, 2)} remaining then · ${fmtUSD(remMonthNow, 2)} remaining now)`;
+        s.is_advance_sal = false;
+      }
+    });
+  }
+
   function renderPayroll(subMode = 'main') {
     const k = getKPI();
     const { fleet, pricing } = sentinelSlice();
@@ -57264,68 +57393,7 @@
     const filteredUnmatched = sortRows(unmatchedRowsDetailed, 'pay_unmatched', canShowAttDollars ? 'unmatched_usd' : 'staff', canShowAttDollars ? 'desc' : 'asc');
     const shownUnmatched = filteredUnmatched.slice(0, shownCount('pay_unmatched'));
 
-    // Annotate each salary payment with its full-month running entitlement & settlement / advance posture (main payroll view only, memoized on payIdx)
-    const salRunCacheKey = `${payIdx.rev}|${STATE.company}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${fxRate}`;
-    if (subMode === 'main' && payIdx._salRunKey !== salRunCacheKey) {
-      payIdx._salRunKey = salRunCacheKey;
-      const salRunMap = new Map();
-      const salScopeForRun = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: true });
-      salScopeForRun.slice().sort((a, b) => {
-        const da = String(a.date || ''), db = String(b.date || '');
-        if (da !== db) return da < db ? -1 : 1;
-        const ia = String(a.id || ''), ib = String(b.id || '');
-        return ia === ib ? 0 : (ia < ib ? -1 : 1);
-      }).forEach(s => {
-      const sk = norm(s.staff);
-      const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
-      const mk = `${sk}|${ym}`;
-      const prevCum = salRunMap.get(mk) || 0;
-      const amt = round2(salaryVoucherUsd895(s, fxRate));
-      const cumPaid = round2(prevCum + amt);
-      salRunMap.set(mk, cumPaid);
-      const pos = computeStaffMonthPayrollPosition(s.staff, s.company, ym, s.date ? s.date.slice(0, 7) + '-15' : today, null, true);
-      const txYm = String(s.date || '').slice(0, 7);
-      const isFut = Boolean(ym && txYm && ym > txYm);
-      s.month_cum_paid = cumPaid;
-      s.month_has_contract = Boolean(pos && pos.hasContract);
-      s.month_is_future = isFut;
-      s.month_earnings = (pos && pos.hasContract) ? round2(isFut ? pos.baseNet : pos.monthNetEarned) : 0;
-      if (!pos || !pos.hasContract) {
-        s.sal_status_lbl = 'No Contract';
-        s.sal_status_cls = 'badge-warn';
-        s.sal_status_tip = `No active contract on file for ${s.staff || 'staff'} · Month total paid: ${fmtUSD(pos ? pos.paidSoFar : cumPaid, 2)}`;
-        s.is_advance_sal = false;
-      } else if (isFut) {
-        s.sal_status_lbl = `Future Advance (${pos.ymLabel})`;
-        s.sal_status_cls = 'badge-brass';
-        s.sal_status_tip = `Paid on ${String(s.date || '').slice(0, 10)} in advance for ${pos.ymLabel} · Contract Base: ${fmtUSD(pos.baseNet, 2)}`;
-        s.is_advance_sal = true;
-      } else if (pos.salaryPending) {
-        s.sal_status_lbl = 'Advance (Salary Pending)';
-        s.sal_status_cls = 'badge-warn';
-        s.sal_status_tip = `Active contract has Salary Pending ($0.00) · Paid as advance (${fmtUSD(cumPaid, 2)}) until final salary is entered`;
-        s.is_advance_sal = true;
-      } else if (cumPaid > pos.monthNetEarned + 1) {
-        const over = round2(cumPaid - pos.monthNetEarned);
-        s.sal_status_lbl = `Advance +${fmtUSD(over, 0)}`;
-        s.sal_status_cls = 'badge-warn';
-        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Cumulative paid: ${fmtUSD(cumPaid, 2)} (+${fmtUSD(over, 2)} above month net)`;
-        s.is_advance_sal = true;
-      } else if (Math.abs(pos.monthNetEarned - cumPaid) <= 25) {
-        s.sal_status_lbl = 'Settled';
-        s.sal_status_cls = 'badge-ok';
-        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid in full (${fmtUSD(cumPaid, 2)})`;
-        s.is_advance_sal = false;
-      } else {
-        const remAfterThis = round2(Math.max(0, pos.monthNetEarned - cumPaid));
-        const remMonthNow = round2(Math.max(0, pos.remainingNet));
-        s.sal_status_lbl = `Partial · ${fmtUSD(remAfterThis, 0)} rem`;
-        s.sal_status_cls = 'badge-info';
-        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid through this entry: ${fmtUSD(cumPaid, 2)} (${fmtUSD(remAfterThis, 2)} remaining then · ${fmtUSD(remMonthNow, 2)} remaining now)`;
-        s.is_advance_sal = false;
-      }
-      });
-    }
+    if (subMode === 'main') ensurePaySalRowsEnriched(payIdx);
     const advanceSalCount = subMode === 'main' ? salAll.filter(s => Boolean(s.is_advance_sal)).length : 0;
 
     const salFilteredBase = subMode === 'main'
@@ -57936,7 +58004,7 @@
               <tbody>
                 ${shownAttStaff.map(r => `
                   <tr class="rrow" data-rkey="employments" data-rid="${esc(r.staff)}">
-                    <td>${relLink('employments', r.staff, r.staff, true)}</td>
+                    <td>${wrapMonogramNameHtml(relLink('employments', r.staff, r.staff, true), r.staff)}</td>
                     <td>${coBadge(r.company)}</td>
                     <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.contract_status)}</span></td>
                     <td class="r">${fmtNum(r.logs_cnt, 0)}</td>
@@ -58163,6 +58231,11 @@
       const staffDrill = String(STATE.siteAllowStaffFilter || '').trim();
       const staffDrillNorm = staffDrill ? norm(staffDrill) : '';
       const canTallySiteDay = canEnterForm('attendance') || canEnterForm('logistics');
+      if (typeof _savedViewBasePool === 'object' && typeof _svBasePoolKey === 'function') {
+        _savedViewBasePool[_svBasePoolKey('pay_site_daily')] = siteDailyRows;
+        _savedViewBasePool[_svBasePoolKey('pay_site_staff')] = siteStaffRowsBase;
+        _savedViewBasePool[_svBasePoolKey('pay_log')] = siteLogRows.length ? siteLogRows : logAll;
+      }
 
       const matchAllowSearch = vals => {
         if (!qRaw) return true;
@@ -58515,22 +58588,29 @@
                   const pkgVal = empContractPackageUsd(e, fxRate);
                   const dedVal = empContractDedUsd(e, fxRate);
                   return `
+                  ${(() => {
+                    const smRec = (SEED.records && SEED.records.staff_members || []).find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
+                    const ev = smRec ? evaluateStaffComplianceRow(smRec, SEED) : null;
+                    const cls = ev ? (ev.tier === 'expired' || ev.tier === 'critical_7' ? 'badge-bad' : (ev.tier === 'due_30' || ev.tier === 'watch_60' || ev.tier === 'missing_permit' ? 'badge-warn' : (ev.tier === 'renewal_submitted' ? 'badge-info' : (ev.tier === 'ok' ? 'badge-ok' : 'badge-muted')))) : 'badge-muted';
+                    const lbl = (ev && ev.badgeText) ? ev.badgeText : 'No Expiry Set';
+                    const packBtn = canAccessRdlReport('28') ? `<button type="button" class="btn-xs staff-hr-pack-inline-btn emp-hr-pack-btn" data-open-hr-pack data-hr-pack-staff="${esc((smRec && smRec.id) || e.staff_id || '')}" data-hr-pack-emp="${esc(e.id || '')}" data-hr-pack-name="${esc(e.staff || '')}" data-hr-pack-company="${esc(e.company || '')}" data-ui-tip="Contract &amp; NSSF Pack" aria-label="Contract &amp; NSSF Pack">${ic('printer')}</button>` : '';
+                    const empCf = (STATE.colFilters && STATE.colFilters.pay_emp) || {};
+                    const stLbl = ended ? 'Ended' : (e.status || 'Current');
+                    const stQfVal = '=' + stLbl;
+                    const stActive = empCf.status === stQfVal;
+                    const pmQfVal = '=' + lbl;
+                    const pmActive = empCf.permit_status === pmQfVal;
+                    return `
                   <tr class="rrow ${ended ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(e.id)}">
-                    <td><strong>${esc(e.staff)}</strong>${appCell(e, 'employments')}</td>
+                    <td>${wrapMonogramNameHtml(esc(e.staff), e.staff)}${appCell(e, 'employments')}${packBtn}</td>
                     <td>${coBadge(e.company)}</td>
                     <td>${e.role ? relLink('staff_roles', e.role) : '-'}</td>
                     <td>${esc(e.type || 'Staff')}</td>
                     <td class="mono">${esc(fmtDateDMY(e.start_date))}</td>
                     <td class="mono">${esc(e.end_date ? fmtDateDMY(e.end_date) : 'Open')}</td>
-                    <td><span class="badge ${ended ? 'badge-warn' : 'badge-ok'}">${ended ? 'Ended' : (e.status || 'Current')}</span></td>
-                    ${(() => {
-                      const smRec = (SEED.records && SEED.records.staff_members || []).find(s => s && !s.voided && !s.archived && ((e.staff_id && String(s.id) === String(e.staff_id)) || norm(s.name || '') === norm(e.staff || '')));
-                      const ev = smRec ? evaluateStaffComplianceRow(smRec, SEED) : null;
-                      const cls = ev ? (ev.tier === 'expired' || ev.tier === 'critical_7' ? 'badge-bad' : (ev.tier === 'due_30' || ev.tier === 'watch_60' || ev.tier === 'missing_permit' ? 'badge-warn' : (ev.tier === 'renewal_submitted' ? 'badge-info' : (ev.tier === 'ok' ? 'badge-ok' : 'badge-muted')))) : 'badge-muted';
-                      const lbl = (ev && ev.badgeText) ? ev.badgeText : 'No Expiry Set';
-                      const packBtn = canAccessRdlReport('28') ? `<button type="button" class="btn-xs emp-hr-pack-btn" data-open-hr-pack data-hr-pack-staff="${esc((smRec && smRec.id) || e.staff_id || '')}" data-hr-pack-emp="${esc(e.id || '')}" data-hr-pack-name="${esc(e.staff || '')}" data-hr-pack-company="${esc(e.company || '')}" data-ui-tip="Contract &amp; NSSF Pack">${ic('printer')}</button>` : '';
-                      return `<td><div class="emp-compliance-cell"><span class="badge permit-status-badge permit-tier-${esc((ev && ev.tier) || 'none')} ${cls}">${esc(lbl)}</span>${packBtn}</div></td>`;
-                    })()}
+                    <td><span class="badge ${ended ? 'badge-warn' : 'badge-ok'} is-quick-filterable${stActive ? ' is-qf-active' : ''}" data-quick-col-filter="pay_emp" data-qcf-col="status" data-qcf-val="${esc(stQfVal)}" data-ui-tip="Click to filter column (click again to clear)">${esc(stLbl)}</span></td>
+                    <td><div class="emp-compliance-cell"><span class="badge permit-status-badge permit-tier-${esc((ev && ev.tier) || 'none')} ${cls} is-quick-filterable${pmActive ? ' is-qf-active' : ''}" data-quick-col-filter="pay_emp" data-qcf-col="permit_status" data-qcf-val="${esc(pmQfVal)}" data-ui-tip="Click to filter column (click again to clear)">${esc(lbl)}</span></div></td>`;
+                  })()}
                     <td class="r">${fmtNum(e.working_days || 26, 0)}d</td>
                     <td class="r">${fmtNum(e.working_hours || 9, 0)}h</td>
                     <td class="r">${fmtNum(vacVal, vacVal % 1 ? 1 : 0)}d</td>
@@ -58654,7 +58734,7 @@
                     <td class="mono">${esc(recordDateDMY(f))}${repDateShiftBadge(f)}${appCell(f, 'freelance_entries')}</td>
                     <td class="mono"><strong>${esc(f.name || f.id || '—')}</strong></td>
                     <td>${coBadge(f.company || 'WTC')}</td>
-                    <td><strong>${relLink('employments', f.staff, f.staff, true)}</strong></td>
+                    <td>${wrapMonogramNameHtml(relLink('employments', f.staff, f.staff, true), f.staff)}</td>
                     <td>${f.site ? relLink('sites', f.site) : '—'}</td>
                     <td class="r">${fmtNum(f.hours || 0, 1).replace(/\.0$/, '')}</td>
                     <td class="r">${Number(f.extra_hours || 0) > 0 ? fmtNum(f.extra_hours, 1).replace(/\.0$/, '') : '—'}</td>
@@ -58766,7 +58846,7 @@
                   <td class="mono">${esc(recordDateDMY(s))}${repDateShiftBadge(s)}${appCell(s, 'salaries')}</td>
                   <td class="mono">${esc(s.payroll_month)}</td>
                   <td>${coBadge(s.company)}</td>
-                  <td>${relLink('employments', s.staff, s.staff, true)}</td>
+                  <td>${wrapMonogramNameHtml(relLink('employments', s.staff, s.staff, true), s.staff)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
                   ${canShowAttDollars ? `<td class="mono sal-paid-earned-cell"${safeSalTip}>${monthEarnHtml}</td>` : ''}
                   <td><div class="sal-status-cell-wrap"><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${safeSalTip}>${esc(safeSalLbl)}</span>${(!s.voided && canShowAttDollars) ? `<button type="button" class="hld-share-btn sal-receipt-inline-btn" data-sal-receipt-id="${esc(s.id)}" data-ui-tip="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}" aria-label="${esc(s.is_advance_sal ? 'Advance Receipt' : 'Payment Receipt')}">${ic('receipt')}</button>` : ''}${(!s.voided && canShowAttDollars && bpBatchId) ? `<button type="button" class="hld-share-btn bp-signoff-inline-btn" data-bp-signoff-batch="${esc(bpBatchId)}" data-ui-tip="Batch Sign-Off Sheet" aria-label="Batch Sign-Off Sheet">${ic('printer')}</button>` : ''}</div></td>
@@ -58813,7 +58893,7 @@
                 const canSetRegPend = canShowAttDollars && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')) && Boolean(r.pending_emp_id);
                 return `
                 <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.salary_pending && r.pending_emp_id ? r.pending_emp_id : r.staff)}">
-                  <td>${relLink('employments', r.staff, r.staff, true)} <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px;margin-inline-start:4px" data-open-prepayday-card="${esc(r.staff)}" data-open-prepayday-co="${esc(r.company || '')}" title="Open Pre-Payday Attendance Card">Card</button>${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="${canShowAttDollars ? 'Active contract awaiting final salary assignment ($0.00)' : 'Active contract awaiting final salary assignment'}">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-inline-start:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
+                  <td>${wrapMonogramNameHtml(relLink('employments', r.staff, r.staff, true), r.staff)} <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px;margin-inline-start:4px" data-open-prepayday-card="${esc(r.staff)}" data-open-prepayday-co="${esc(r.company || '')}" title="Open Pre-Payday Attendance Card">Card</button>${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="${canShowAttDollars ? 'Active contract awaiting final salary assignment ($0.00)' : 'Active contract awaiting final salary assignment'}">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-inline-start:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
                   <td>${coBadge(r.company)}</td>
                   <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
                   ${canShowAttDollars ? `<td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.reimb ? ` · Package Base + Reimb: ${fmtUSD(round2(r.base + r.reimb), 2)}` : ''}${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}${r.cap_days > 0 ? (r.cap_days_ahead
@@ -60686,7 +60766,7 @@
                   <tr class="rrow" data-rkey="employments" data-rid="${esc(r.staff)}">
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                     <td>${coBadge(r.company)}</td>
-                    <td>${relLink('employments', r.staff, r.staff, true)}</td>
+                    <td>${wrapMonogramNameHtml(relLink('employments', r.staff, r.staff, true), r.staff)}</td>
                     <td><span class="badge ${zCls}">${esc(r.zoneLabel)}</span></td>
                     <td style="white-space:normal;max-width:220px;font-size:11.5px">${esc(r.stationLabel)}</td>
                     <td style="white-space:normal;max-width:195px">${opM || asM || '<span class="mu">—</span>'}</td>
@@ -66674,7 +66754,7 @@
     `;
 
     const hldSched = computeHoldingSchedules({ respectPeriod: true });
-    const chronoPrts = regPanelRows('hldPartnerChronoPanel', hldSched.partnerAgreements || []);
+    const chronoPrts = regPanelRows('hldPartnerChronoPanel', hldSched.partnerAgreements || [], 'hld_partner_chrono');
     const sumPrtEnt = round2(holdingInForceRows(chronoPrts).reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
     const sumPrtDrw = round2(holdingInForceRows(chronoPrts).reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
     const sumPrtOpn = round2(holdingInForceRows(chronoPrts).reduce((a, r) => a + Number(r.open_usd || 0), 0));
@@ -66835,7 +66915,7 @@
             <tbody>
               ${shownPartners.length ? shownPartners.map(p => `
                 <tr class="rrow">
-                  <td><strong>${esc(p.partner)}</strong></td>
+                  <td>${wrapMonogramNameHtml(esc(p.partner), p.partner)}</td>
                   <td>${Array.from(p.companies).map(c => coBadge(c)).join(' ')}</td>
                   <td class="r mono">${fmtNum(p.count)}</td>
                   <td class="r mono ${canHldPrt ? 'good' : ''}">${canHldPrt ? fmtUSD(p.inUsd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -70530,7 +70610,7 @@
     const loanFootUsd = round2(loanRows.reduce((a, l) => a + loanPrinUsd(l), 0));
     const shownLoans = loanRows.slice(0, shownCount('hld_loans'));
     recordSliceMeta('hld_loans', loanRows.length, shownLoans.length);
-    const hldFacs = regPanelRows('hldFacilitySchedulesPanel', (computeHoldingSchedules({ respectPeriod: true }).facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty));
+    const hldFacs = regPanelRows('hldFacilitySchedulesPanel', (computeHoldingSchedules({ respectPeriod: true }).facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty), 'hld_facility_schedules');
     const hideFacCo = STATE.company === 'bdeirholding';
     const facCoStyle = hideFacCo ? ' style="display:none"' : '';
     const sumFacPrin = round2(holdingInForceRows(hldFacs).reduce((a, r) => a + Number(r.principal_usd || 0), 0));
@@ -71547,7 +71627,7 @@
                 <tr class="rrow" data-ind-row-tbl="hsp_memberships" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                   <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_memberships', r.id)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
-                  <td class="td-raw-leg-party"><strong>${esc(r.member)}</strong>${renderCustStmtActionsHtml(r.member, 'hspMembershipsPanel', canHspMemBooks)}</td>
+                  <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.member), r.member)}${renderCustStmtActionsHtml(r.member, 'hspMembershipsPanel', canHspMemBooks)}</td>
                   <td>${esc(r.unit)}</td>
                   <td class="mono">${esc(r.season)}</td>
                   <td class="r mono"><strong>${fmtUSD(r.contract_usd, 2)}</strong></td>
@@ -73196,7 +73276,7 @@
                   <tr class="rrow" data-ind-row-tbl="trd_receivables" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company || '')}">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td${coStyle}>${coBadge(r.company)}</td>
-                    <td class="td-raw-leg-party"><strong>${esc(r.customer)}</strong>${renderCustStmtActionsHtml(r.customer, 'trdReceivablesPanel', canTrdSalBooks)}</td>
+                    <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.customer), r.customer)}${renderCustStmtActionsHtml(r.customer, 'trdReceivablesPanel', canTrdSalBooks)}</td>
                     <td class="r mono">${fmtUSD(r.invoiced_ttc, 2)}</td>
                     <td class="r mono">${canTrdSalBooks ? fmtUSD(r.settled_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono ${canTrdSalBooks && r.gross_ar_usd > 0 ? 'warn' : ''}">${canTrdSalBooks ? `<strong>${fmtUSD(r.gross_ar_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
@@ -73291,7 +73371,7 @@
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.month)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
-                    <td><strong>${esc(r.rep)}</strong></td>
+                    <td>${wrapMonogramNameHtml(esc(r.rep), r.rep)}</td>
                     <td>${esc(r.segment)}</td>
                     <td class="mono">${esc(r.price_list)}</td>
                     <td class="r mono">${fmtUSD(r.list_floor_usd, 0)}</td>
@@ -73389,7 +73469,7 @@
                   <td class="mono">${esc(r.book)} #${r.seq}</td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
-                  <td><strong>${esc(r.customer)}</strong></td>
+                  <td>${wrapMonogramNameHtml(esc(r.customer), r.customer)}</td>
                   <td>${esc(r.item)} <span class="mono" style="font-size:11px;color:var(--mu)">(${esc(r.chassis)})</span></td>
                   <td class="r mono">${fmtNum(r.qty)}</td>
                   <td class="r mono">${canTrdSalTax ? fmtUSD(r.net_usd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -73839,8 +73919,8 @@
                 </thead>
                 <tbody>
                   ${shownOem.length ? shownOem.map(r => `
-                    <tr>
-                      <td class="td-raw-leg-party"><strong>${esc(r.supplier)}</strong>${trdActionBtns(r.supplier, 'material', 'trdOemPayablesPanel')}</td>
+                    <tr class="rrow">
+                      <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.supplier), r.supplier)}${trdActionBtns(r.supplier, 'material', 'trdOemPayablesPanel')}</td>
                       ${hideCo ? '' : `<td>${coBadge(r.company)}</td>`}
                       <td><span class="badge badge-neutral">${esc(r.incoterm_summary)}</span></td>
                       <td class="r mono">${fmtNum(r.files_cnt)}</td>
@@ -73891,8 +73971,8 @@
                 </thead>
                 <tbody>
                   ${shownFrt.length ? shownFrt.map(r => `
-                    <tr>
-                      <td class="td-raw-leg-party"><strong>${esc(r.payee)}</strong>${trdActionBtns(r.payee, 'transport', 'trdFreightPayablesPanel')}</td>
+                    <tr class="rrow">
+                      <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.payee), r.payee)}${trdActionBtns(r.payee, 'transport', 'trdFreightPayablesPanel')}</td>
                       ${hideCo ? '' : `<td>${coBadge(r.company)}</td>`}
                       <td class="r mono">${fmtNum(r.files_cnt)}</td>
                       <td class="r mono">${canTrdPurExp ? (Math.abs(r.freight_usd) >= 0.005 ? fmtUSD(r.freight_usd, 2) : '-') : '<span class="muted">Restricted</span>'}</td>
@@ -75133,7 +75213,7 @@
             <button type="button" class="${submode === 'receipts' ? 'active' : ''}" data-nav-jump="re_receipts">Tenant Receipts &amp; Advances (${data.receipts.length})</button>
           </div>
           ${canReLBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="re_leases" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>` : ''}
-          ${exportBtn(submode === 'invoicing' ? 're_invoicing' : submode === 'receipts' ? 're_receipts' : 're_leases')}
+          ${exportBtn(submode === 'invoicing' ? 're_invoicing' : (submode === 'receipts' ? 're_receipts' : 're_leases'), submode === 'invoicing' ? 'Re_Rent_Invoicing' : (submode === 'receipts' ? 'Re_Tenant_Receipts' : 'Re_Lease_Contracts'))}
         </div>
       </div>
 
@@ -75241,7 +75321,7 @@
                     <td class="mono">${esc(r.date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.tax_seq)}</td>
-                    <td class="td-raw-leg-party"><strong>${esc(r.tenant)}</strong>${renderCustStmtActionsHtml(r.tenant, 'reInvoicingPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
+                    <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.tenant), r.tenant)}${renderCustStmtActionsHtml(r.tenant, 'reInvoicingPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
                     <td>${esc(r.period)}</td>
                     <td class="r mono">${canReLTax ? fmtUSD(r.net_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLTax ? fmtUSD(r.vat_usd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -75283,7 +75363,7 @@
       const sumDep = filteredRct.reduce((a, r) => a + r.deposit_gl4196_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reReceiptsPanel">
           <div class="panel-head">
             <div>
               <h3>Tenant Settlements, Security Deposits &amp; Advance Pool ${shownCount('re_receipts', filteredRct.length, data.receipts.length)}</h3>
@@ -75314,7 +75394,7 @@
                     <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('re_receipts', r.id)}</td>
                     <td class="mono">${esc(r.date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
-                    <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
+                    <td>${wrapMonogramNameHtml(esc(r.tenant), r.tenant)}<div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
                     <td>${esc(r.property)}</td>
                     <td>${esc(r.method)}</td>
                     <td class="r mono">${canReLBooks ? `<strong>${fmtUSD(r.gross_usd, 2)}</strong>${Number(r.discount_usd || 0) > 0 ? `<div class="muted" style="font-size:10.5px">Disc ${fmtUSD(r.discount_usd, 2)}</div>` : ''}` : '<span class="muted">Restricted</span>'}</td>
@@ -75455,7 +75535,7 @@
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
-                  <td class="td-raw-leg-party"><strong>${esc(r.tenant)}</strong>${renderCustStmtActionsHtml(r.tenant, 'reLeasesPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
+                  <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.tenant), r.tenant)}${renderCustStmtActionsHtml(r.tenant, 'reLeasesPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
                   <td>${esc(r.frequency)}${r.start_date ? `<div class="muted mono" style="font-size:11px">${esc(r.start_date)} .. ${esc(r.end_date || 'Open')}</div>` : ''}${r.next_payment_date ? `<div class="muted mono" style="font-size:11px">Next Due: ${esc(r.next_payment_date)}</div>` : ''}</td>
                   <td class="r mono">${canReLTax ? fmtUSD(r.net_period_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                   <td class="r mono"><strong>${fmtUSD(r.ttc_period_usd, 2)}</strong></td>
@@ -75521,7 +75601,6 @@
             <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="re_sales">Property Sales Contracts (${data.sales.length})</button>
             <button type="button" class="${submode === 'instalments' ? 'active' : ''}" data-nav-jump="re_instalments">Buyer Instalments &amp; Deeds (${data.instalments.length})</button>
           </div>
-          ${exportBtn(submode === 'instalments' ? 're_instalments' : 're_sales')}
         </div>
       </div>
 
@@ -75555,13 +75634,13 @@
       const sumOpen = filteredInst.reduce((a, r) => a + r.open_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reInstalmentsPanel">
           <div class="panel-head">
             <div>
               <h3>Buyer Instalment Schedule &amp; Notary Deed Recognition Ledger ${shownCount('re_instalments', filteredInst.length, data.instalments.length)}</h3>
               <p>Instalments post to Client Advances until notary title transfer recognizes disposal proceeds</p>
             </div>
-            <div class="panel-actions">${searchBox('Search instalment, buyer, milestone...')}</div>
+            <div class="panel-actions">${searchBox('Search instalment, buyer, milestone...')} ${exportBtn('reInstalmentsPanel', 'Re_Buyer_Instalments')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -75587,7 +75666,7 @@
                     <td class="mono">${esc(r.due_date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.sale_ref)}</td>
-                    <td><strong>${esc(r.buyer)}</strong></td>
+                    <td>${wrapMonogramNameHtml(esc(r.buyer), r.buyer)}</td>
                     <td>${esc(r.milestone)}</td>
                     <td class="mono">${esc(r.gl_account)}</td>
                     <td class="r mono">${fmtUSD(r.scheduled_usd, 2)}</td>
@@ -75632,7 +75711,7 @@
             <h3>Property &amp; Unit Sales Contracts ${shownCount('re_sales', filteredSales.length, data.sales.length)}</h3>
             <p>Tracks buyer sales agreements, collected instalments, broker commissions, and deed recognition stage</p>
           </div>
-          <div class="panel-actions">${searchBox('Search sale contract, buyer, property...')}</div>
+          <div class="panel-actions">${searchBox('Search sale contract, buyer, property...')} ${exportBtn('reSalesPanel', 'Re_Property_Sales')}</div>
         </div>
         <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
           <div class="chip-bar">
@@ -75667,7 +75746,7 @@
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
-                  <td class="td-raw-leg-party"><strong>${esc(r.buyer)}</strong>${renderCustStmtActionsHtml(r.buyer, 'reSalesPanel', canReSBooks)}<div class="muted" style="font-size:11px">${esc(r.gl_stage)}</div></td>
+                  <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.buyer), r.buyer)}${renderCustStmtActionsHtml(r.buyer, 'reSalesPanel', canReSBooks)}<div class="muted" style="font-size:11px">${esc(r.gl_stage)}</div></td>
                   <td class="r mono"><strong>${fmtUSD(r.contract_usd, 2)}</strong></td>
                   <td class="r mono">${canReSBooks ? fmtUSD(r.paid_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                   <td class="r mono ${canReSBooks && r.balance_usd > 0 ? 'crit' : ''}">${canReSBooks ? `<strong>${fmtUSD(r.balance_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
@@ -75745,7 +75824,6 @@
             <button type="button" class="${submode === 'ownership' ? 'active' : ''}" data-nav-jump="re_ownership">Co-Ownership /2400 (${data.ownership.length})</button>
           </div>
           ${(canRePExp && (canRePProfit || canRePBooks)) ? `<button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="re_properties" aria-expanded="false" data-ui-tip="Open Building MEP Maintenance Stock &amp; Utility Pool Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>` : ''}
-          ${exportBtn(submode === 'units' ? 're_units' : submode === 'valuations' ? 're_valuations' : submode === 'ownership' ? 're_ownership' : 're_properties')}
         </div>
       </div>
 
@@ -75780,13 +75858,13 @@
       const sumRent = filteredUnits.reduce((a, r) => a + r.annual_rent_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reUnitsPanel">
           <div class="panel-head">
             <div>
               <h3>Building Units &amp; Rentable Space Inventory ${shownCount('re_units', filteredUnits.length, data.units.length)}</h3>
               <p>Sub-property blocks across 4235 Msaytbeh (Blocks 0A, 0B, Main GF, 1A, 1B, 1C, 2A, 2E) and regional commercial assets</p>
             </div>
-            <div class="panel-actions">${searchBox('Search unit code, property, tenant, occupancy...')}</div>
+            <div class="panel-actions">${searchBox('Search unit code, property, tenant, occupancy...')} ${exportBtn('reUnitsPanel', 'Re_Building_Units')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -75847,13 +75925,13 @@
       const sumNetVal = filteredVals.reduce((a, r) => a + r.net_share_val_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reValuationsPanel">
           <div class="panel-head">
             <div>
               <h3>LGB Bank Certified Appraisal &amp; Market Valuation Ledger ${shownCount('re_valuations', filteredVals.length, data.valuations.length)}</h3>
               <p>Dated 2024-08-13 certified appraisal baseline ($51.48M gross / $28.78M share-adjusted) with implied capitalization rates</p>
             </div>
-            <div class="panel-actions">${searchBox('Search valuation, property, appraiser...')}</div>
+            <div class="panel-actions">${searchBox('Search valuation, property, appraiser...')} ${exportBtn('reValuationsPanel', 'Re_Appraisals_Valuations')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -75916,13 +75994,13 @@
       const sumRet = filteredOwn.reduce((a, r) => a + r.retained_reserve_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="reOwnershipPanel">
           <div class="panel-head">
             <div>
               <h3>Lebanese Cadastral Co-Ownership Shares (/2400) &amp; NOI Distribution Ledger ${shownCount('re_ownership', filteredOwn.length, data.ownership.length)}</h3>
               <p>Computes group-entitled Net Operating Income by /2400 title deed share and tracks partner distributions vs capital reserves</p>
             </div>
-            <div class="panel-actions">${searchBox('Search property, co-owner, share...')}</div>
+            <div class="panel-actions">${searchBox('Search property, co-owner, share...')} ${exportBtn('reOwnershipPanel', 'Re_CoOwnership_Shares')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -75947,7 +76025,7 @@
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.property)}</strong></td>
-                    <td>${esc(r.holder)}</td>
+                    <td>${wrapMonogramNameHtml(esc(r.holder), r.holder)}</td>
                     <td class="r mono">${fmtNum(r.deed_shares)} / 2400</td>
                     <td class="r mono">${fmtPct(r.share_pct, 2)}</td>
                     <td class="r mono">${canRePProfit ? fmtUSD(r.gross_noi_usd, 0) : '<span class="muted">Restricted</span>'}</td>
@@ -75989,13 +76067,13 @@
 
     return `
       ${bannerHtml}
-      <div class="panel">
+      <div class="panel" id="rePropertiesPanel">
         <div class="panel-head">
           <div>
             <h3>Master Property &amp; Cadastral Plot Registry ${shownCount('re_properties', filteredProps.length, data.properties.length)}</h3>
             <p>12 portfolio assets encompassing 13 LGB certified Lebanese plots plus Cannes Croisette and Baghdad Mansour commercial units</p>
           </div>
-          <div class="panel-actions">${searchBox('Search property, plot #, cadastry, asset class...')}</div>
+          <div class="panel-actions">${searchBox('Search property, plot #, cadastry, asset class...')} ${exportBtn('rePropertiesPanel', 'Re_Master_Properties')}</div>
         </div>
         <div class="table-wrap">
           <table class="data-table">
@@ -76090,7 +76168,6 @@
             <button type="button" class="${submode === 'recharges' ? 'active' : ''}" data-nav-jump="re_recharges">Tenant Recharges &amp; Utilities (${data.recharges.length})</button>
           </div>
           ${(canReWExp && (canReWProfit || canReWBooks)) ? `<button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="re_workorders" aria-expanded="false" data-ui-tip="Open Building MEP Maintenance Stock &amp; Utility Pool Optimizer Studio">${ic('warehouse')} Stock &amp; EOQ</button>` : ''}
-          ${exportBtn(submode === 'recharges' ? 're_recharges' : 're_workorders')}
         </div>
       </div>
 
@@ -76132,7 +76209,7 @@
               <h3>Tenant Utility, Generator Diesel &amp; Common-Area Recharges ${shownCount('re_recharges', filteredRch.length, data.recharges.length)}</h3>
               <p>Tracks recoverable landlord expenses and flags unbilled tenant recharges before period close</p>
             </div>
-            <div class="panel-actions">${searchBox('Search recharge, tenant, property, expense ref...')}</div>
+            <div class="panel-actions">${searchBox('Search recharge, tenant, property, expense ref...')} ${exportBtn('reRechargesPanel', 'Re_Tenant_Recharges')}</div>
           </div>
           <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
             <div class="chip-bar">
@@ -76208,13 +76285,13 @@
     return `
       ${bannerHtml}
       ${renderJobOtSnapBannerHtml(allocRe, { id: 'reWoOtSnapBanner', title: 'Maintenance Work Orders OT Snap Allocation' })}
-      <div class="panel">
+      <div class="panel" id="reWorkordersPanel">
         <div class="panel-head">
           <div>
             <h3>Work Orders, Fit-Out &amp; Facility Maintenance Ledger ${shownCount('re_workorders', filteredWo.length, data.workorders.length)}</h3>
             <p>Tracks contractor scope, capitalization vs expense routing, and tenant recharge eligibility</p>
           </div>
-          <div class="panel-actions">${searchBox('Search work order, property, unit, contractor...')}</div>
+          <div class="panel-actions">${searchBox('Search work order, property, unit, contractor...')} ${exportBtn('reWorkordersPanel', 'Re_Work_Orders')}</div>
         </div>
         <div class="table-wrap">
           <table class="data-table">
@@ -76816,7 +76893,7 @@
             <button type="button" class="${submode === 'items' ? 'active' : ''}" data-nav-jump="ins_items">Insured Items (${data.items.length})</button>
           </div>
           ${canInsPBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_policies" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>` : ''}
-          ${exportBtn(submode === 'renewals' ? 'ins_renewals' : (submode === 'items' ? 'ins_items' : 'ins_policies'))}
+          ${submode === 'main' ? exportBtn('ins_policies', 'Ins_Policies') : ''}
         </div>
       </div>
 
@@ -76855,7 +76932,7 @@
               <h3>30 / 60 / 90-Day Policy Renewal Queue &amp; Lapsed Policy Tracker ${shownCount('ins_renewals', filteredRen.length, data.renewals.length)}</h3>
               <p>Automated daily expiry sweep flags policies at 90, 60, and 30 days prior to expiration and tracks quote conversion</p>
             </div>
-            <div class="panel-actions">${searchBox('Search renewal, client, carrier, bucket...')}</div>
+            <div class="panel-actions">${searchBox('Search renewal, client, carrier, bucket...')} ${exportBtn('insRenewalsPanel', 'Ins_Renewal_Pipeline')}</div>
           </div>
           <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
             <div class="chip-bar">
@@ -76886,7 +76963,7 @@
                   <tr class="rrow">
                     <td class="mono"><strong>${esc(r.policy_no)}</strong></td>
                     <td style="display:none">${coBadge(r.company)}</td>
-                    <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">Producer: ${esc(r.producer)}</div></td>
+                    <td>${wrapMonogramNameHtml(esc(r.client), r.client)}<div class="muted" style="font-size:11px">Producer: ${esc(r.producer)}</div></td>
                     <td>${esc(r.carrier)}</td>
                     <td>${esc(r.line)}</td>
                     <td class="mono">${esc(r.expiry_date)}</td>
@@ -76925,13 +77002,13 @@
       const sumPr = filteredItm.reduce((a, r) => a + r.annual_prem_usd, 0);
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="insItemsPanel">
           <div class="panel-head">
             <div>
               <h3>Insured Items, Vehicles (VIN/Plate), Medical Census &amp; Commercial Locations ${shownCount('ins_items', filteredItm.length, data.items.length)}</h3>
               <p>Granular risk schedule linked to underlying policies for motor certificates, group medical censuses, and property surveys</p>
             </div>
-            <div class="panel-actions">${searchBox('Search VIN, plate, location, census, policy...')}</div>
+            <div class="panel-actions">${searchBox('Search VIN, plate, location, census, policy...')} ${exportBtn('insItemsPanel', 'Ins_Insured_Items')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -76955,7 +77032,7 @@
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.policy_no)}</td>
                     <td style="display:none">${coBadge(r.company)}</td>
-                    <td><strong>${esc(r.client)}</strong></td>
+                    <td>${wrapMonogramNameHtml(esc(r.client), r.client)}</td>
                     <td>${esc(r.category)}</td>
                     <td><strong>${esc(r.identifier)}</strong></td>
                     <td class="mono">${esc(r.location_or_vin)}</td>
@@ -77036,7 +77113,7 @@
                 <tr class="rrow" data-ind-row-tbl="ins_policies" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                   <td class="mono"><strong>${esc(r.id)}</strong><div class="muted" style="font-size:11px">${esc(r.type)}</div></td>
                   <td style="display:none">${coBadge(r.company)}</td>
-                  <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.product)} · ${esc(r.producer)}</div></td>
+                  <td>${wrapMonogramNameHtml(esc(r.client), r.client)}<div class="muted" style="font-size:11px">${esc(r.product)} · ${esc(r.producer)}</div></td>
                   <td>${esc(r.carrier)}</td>
                   <td>${esc(r.line)}</td>
                   <td class="mono">${esc(r.expiry)}</td>
@@ -77123,7 +77200,7 @@
             <button type="button" class="${submode === 'statements' ? 'active' : ''}" data-nav-jump="ins_statements">Statement Recon (${data.statements.length})</button>
           </div>
           ${canInsBBooks ? `<button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_billing" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>` : ''}
-          ${exportBtn(submode === 'remittances' ? 'ins_remittances' : (submode === 'statements' ? 'ins_statements' : 'ins_billing'))}
+          ${exportBtn(submode === 'remittances' ? 'ins_remittances' : (submode === 'statements' ? 'ins_statements' : 'ins_billing'), submode === 'remittances' ? 'Ins_Remittances' : (submode === 'statements' ? 'Ins_Statements' : 'Ins_Billing'))}
         </div>
       </div>
 
@@ -77426,7 +77503,7 @@
           <div class="seg" role="tablist" aria-label="Claims Sub-Views">
             <button type="button" class="active" data-nav-jump="ins_claims">Claims &amp; Recoveries (${data.claims.length})</button>
           </div>
-          ${exportBtn('ins_claims')}
+          ${exportBtn('ins_claims', 'Ins_Claims')}
         </div>
       </div>
 
@@ -77458,7 +77535,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="insClaimsPanel">
         <div class="panel-head">
           <div>
             <h3>FNOL Claims, Loss Adjusters &amp; Carrier Indemnity Settlement Ledger ${shownCount('ins_claims', filteredClm.length, data.claims.length)}</h3>
@@ -77490,7 +77567,7 @@
                   <td class="mono">${esc(r.loss_date)}</td>
                   <td style="display:none">${coBadge(r.company)}</td>
                   <td class="mono">${esc(r.policy_no)}</td>
-                  <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.line)}</div></td>
+                  <td>${wrapMonogramNameHtml(esc(r.client), r.client)}<div class="muted" style="font-size:11px">${esc(r.line)}</div></td>
                   <td>${esc(r.carrier)}</td>
                   <td><strong>${esc(r.peril)}</strong><div class="muted" style="font-size:11px">Adjuster: ${esc(r.adjuster)}</div></td>
                   <td class="r mono">${canInsCExp ? fmtUSD(r.claimed_usd, 0) : '<span class="muted">Restricted</span>'}</td>
@@ -77553,7 +77630,6 @@
             <button type="button" class="${submode === 'agreements' ? 'active' : ''}" data-nav-jump="ins_agreements">Commission Agreements (${s.agreementsCount} Rules)</button>
           </div>
           ${(canInsCatExp && (canInsCatProf || canInsCatBooks)) ? `<button type="button" class="btn cf-liquidity-brief-btn cf-inventory-btn" id="indInventoryOptimizerBtn" data-inventory-optimizer-open="1" data-io-source="ins_catalogue" aria-expanded="false" data-ui-tip="Open Carrier Policy Float, Bordereau Turnover &amp; Working-Capital Studio">${ic('warehouse')} Stock &amp; EOQ</button>` : ''}
-          ${exportBtn(submode === 'agreements' ? 'ins_agreements' : 'ins_catalogue')}
         </div>
       </div>
 
@@ -77586,13 +77662,13 @@
       const avgRen = filteredAgr.length ? (filteredAgr.reduce((a, r) => a + r.renewal_pct, 0) / filteredAgr.length) : 0;
       return `
         ${bannerHtml}
-        <div class="panel">
+        <div class="panel" id="insAgreementsPanel">
           <div class="panel-head">
             <div>
               <h3>Chronological Carrier Commission Rate Agreements &amp; Retroactive Backfill ${shownCount('ins_agreements', filteredAgr.length, data.agreements.length)}</h3>
               <p>Enforces strict forward effective dates, auto-closes prior Open rate windows, and backfills affected policy commissions</p>
             </div>
-            <div class="panel-actions">${searchBox('Search agreement #, carrier, line, effective date...')}</div>
+            <div class="panel-actions">${searchBox('Search agreement #, carrier, line, effective date...')} ${exportBtn('insAgreementsPanel', 'Ins_Commission_Agreements')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -77654,13 +77730,13 @@
 
     return `
       ${bannerHtml}
-      <div class="panel">
+      <div class="panel" id="insCataloguePanel">
         <div class="panel-head">
           <div>
             <h3>12 Insurance Lines &amp; Carrier Product Catalogue ${shownCount('ins_catalogue', filteredCat.length, data.catalogue.length)}</h3>
             <p>Standardized product hierarchy across Motor, Medical, Property, Engineering, Marine, Liability, Workmen Comp, Life, PA, Travel &amp; Fidelity</p>
           </div>
-          <div class="panel-actions">${searchBox('Search product code, line, carrier, product name...')}</div>
+          <div class="panel-actions">${searchBox('Search product code, line, carrier, product name...')} ${exportBtn('insCataloguePanel', 'Ins_Product_Catalogue')}</div>
         </div>
         <div class="table-wrap">
           <table class="data-table">
@@ -85558,6 +85634,15 @@
       : [];
     const strong = tdEl.querySelector ? tdEl.querySelector('strong, b, .badge:not(.att-inline-badge)') : null;
     const mutedEl = tdEl.querySelector ? tdEl.querySelector('.muted') : null;
+    const syncStrongText = (el, txt) => {
+      if (!el) return;
+      el.textContent = txt;
+      if (el.classList && el.classList.contains('reg-primary-name')) {
+        const mono = typeof regNameMonogram === 'function' ? regNameMonogram(txt) : '';
+        if (mono) el.setAttribute('data-monogram', mono);
+        else el.removeAttribute('data-monogram');
+      }
+    };
     const syncStmtBtnParty = partyOverride => {
       const src = partyOverride != null ? String(partyOverride) : v;
       const cleanParty = src.split(/\r?\n|\s+·\s+/)[0].trim();
@@ -85569,17 +85654,17 @@
       const sepIdx = v.indexOf(' · ');
       const mainText = sepIdx >= 0 ? v.slice(0, sepIdx).trim() : v.split(/\r?\n/)[0].trim();
       if (sepIdx >= 0) mutedEl.textContent = v.slice(sepIdx + 3).trim();
-      strong.textContent = mainText;
+      syncStrongText(strong, mainText);
       syncStmtBtnParty(mainText);
       return;
     }
     if (trailingNodes.length) {
       if (strong && tdEl.children.length <= trailingNodes.length + 1) {
-        strong.textContent = v;
+        syncStrongText(strong, v);
       } else {
         const clones = trailingNodes.map(n => n.cloneNode(true));
         if (strong) {
-          strong.textContent = v;
+          syncStrongText(strong, v);
           tdEl.textContent = '';
           tdEl.appendChild(strong);
         } else {
@@ -85595,7 +85680,7 @@
       syncStmtBtnParty();
       return;
     }
-    if (strong && tdEl.children.length === 1) strong.textContent = v;
+    if (strong && tdEl.children.length === 1) syncStrongText(strong, v);
     else tdEl.textContent = v;
     syncStmtBtnParty();
   }
@@ -104458,7 +104543,7 @@
       for (let i = 0; i < headers.length; i++) {
         if (rx.test(String(headers[i] || '')) && cells[i] != null && String(cells[i]).trim() !== '') {
           if (preferStrong && visTds[i]) {
-            const st = visTds[i].querySelector('strong');
+            const st = visTds[i].querySelector('strong, b.reg-primary-name, b');
             if (st && st.textContent.trim()) return st.textContent.trim();
           }
           return String(cells[i]).trim();
@@ -153452,9 +153537,10 @@
     return true;
   }
 
-  function getViewFilterPool(view, coKeyOverride) {
+  function getViewFilterPool(view, coKeyOverride, opts) {
+    const nullOnUnknown = Boolean(opts && opts.nullOnUnknown);
     const v = String(view || '').trim();
-    if (!v) return [];
+    if (!v) return nullOnUnknown ? null : [];
     const targetCo = coKeyOverride || STATE.company;
     const prevCo = STATE.company;
     try {
@@ -153467,6 +153553,7 @@
           re_units: d.units, re_valuations: d.valuations, re_ownership: d.ownership,
           re_workorders: d.workorders, re_recharges: d.recharges
         };
+        if (!(v in mapRe)) return nullOnUnknown ? null : [];
         return Array.isArray(mapRe[v]) ? mapRe[v] : [];
       }
       if (v.startsWith('trd_') && typeof computeTradingOperations === 'function') {
@@ -153475,8 +153562,10 @@
           trd_sales: d.salesRows, trd_receivables: d.receivableRows, trd_targets: d.targetRows,
           trd_purchases: d.importRows, trd_landed: d.landedRows, trd_grn: d.grnRows,
           trd_trucks: d.serialUnits, trd_warranty: d.warrantyRows, trd_stock: d.stockRows,
-          trd_movements: d.movementRows, trd_recon: d.reconRows
+          trd_movements: d.movementRows, trd_recon: d.reconRows,
+          trd_oem_payables: d.oemPayableRows, trd_freight_payables: d.freightPayableRows
         };
+        if (!(v in mapTrd)) return nullOnUnknown ? null : [];
         return Array.isArray(mapTrd[v]) ? mapTrd[v] : [];
       }
       if (v.startsWith('hsp_') && typeof computeHospitalityOperations === 'function') {
@@ -153487,6 +153576,7 @@
           hsp_partners: d.partnerSplitRows, hsp_stock: d.stockRows,
           hsp_menu: d.menuRows, hsp_energy: d.energyRows, hsp_maint: d.maintRows
         };
+        if (!(v in mapHsp)) return nullOnUnknown ? null : [];
         return Array.isArray(mapHsp[v]) ? mapHsp[v] : [];
       }
       if (v.startsWith('ins_') && typeof computeInsuranceOperations === 'function') {
@@ -153496,6 +153586,7 @@
           ins_billing: d.billing, ins_remittances: d.remittances, ins_statements: d.statements,
           ins_claims: d.claims, ins_catalogue: d.catalogue, ins_agreements: d.agreements
         };
+        if (!(v in mapIns)) return nullOnUnknown ? null : [];
         return Array.isArray(mapIns[v]) ? mapIns[v] : [];
       }
       if (v === 'hld_interactions' || v === 'hld_consolidation' || v === 'hld_open_recon') {
@@ -153508,12 +153599,52 @@
         const d = window.MFG_HOLDING.compute({ company: STATE.company, ignoreSearch: true }) || {};
         return Array.isArray(d.partners) ? d.partners : [];
       }
+      if (v === 'hld_partner_chrono' && typeof computeHoldingSchedules === 'function') {
+        const d = computeHoldingSchedules({ respectPeriod: true }) || {};
+        return Array.isArray(d.partnerAgreements) ? d.partnerAgreements : [];
+      }
       if (v === 'hld_loans') {
         return filterRecords((SEED.records && SEED.records.loans) || [], { ignoreSearch: true, ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
       }
-      return [];
+      if (v === 'hld_facility_schedules' && typeof computeHoldingSchedules === 'function') {
+        const d = computeHoldingSchedules({ respectPeriod: true }) || {};
+        return Array.isArray(d.facilitySchedules) ? d.facilitySchedules : [];
+      }
+      if (v === 'hld_assets') {
+        const allExps = filterRecords((SEED.records && SEED.records.expenses) || [], { ignoreSearch: true, ignoreCompany: true, includeGroupMfg: true });
+        const rawAssetExps = allExps.filter(x => /capex|asset|land|building|equipment|vehicle|invest|legal|audit|holding/i.test(`${x.category || ''} ${x.subcategory || ''} ${x.notes || ''}`));
+        return rawAssetExps.map(x => Object.assign({}, x, { _asset_amount: Number(x.total || x.amount || 0), _asset_cat: [x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay' }));
+      }
+      if (v === 'hld_distributions') {
+        const jvRules = filterRecords((SEED.records && SEED.records.jv_partnerships) || [], { ignoreSearch: true, ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
+        return jvRules.map(j => Object.assign({}, j, {
+          _jv_partner: String(j.partner || j.supplier || '').trim(),
+          _jv_scope: String(j.product || j.site || j.scope || 'All Operations').trim()
+        }));
+      }
+      if ((v === 'hld_entities' || v === 'hldEntitiesScorecardPanel') && typeof computeEnterpriseRollup === 'function') {
+        const rollup = computeEnterpriseRollup() || {};
+        return (Array.isArray(rollup.entities) ? rollup.entities : []).map(e => ({
+          name: e.name,
+          industry: e.industry,
+          sector: e.sector,
+          loads: Number((e.k && e.k.loads) || 0),
+          sales_ttc: Number((e.k && e.k.sales_ttc) || 0),
+          gross_margin: Number((e.k && e.k.gross_margin) || 0),
+          expenses: round2(Number((e.k && e.k.expenses) || 0) + Number((e.k && e.k.salaries) || 0)),
+          operating_profit: Number((e.k && e.k.operating_profit) || 0),
+          ar_balance: Number((e.k && e.k.ar_balance) || 0),
+          ap_balance: Number((e.k && e.k.ap_balance) || 0)
+        }));
+      }
+      if ((v === 'hld_extd_entries' || v === 'hld_extd_parties') && typeof computeHoldingExtendedSummary === 'function') {
+        const d = computeHoldingExtendedSummary({ basis: 'tx', ignoreSearch: true }) || {};
+        const arr = v === 'hld_extd_parties' ? d.partyRows : d.rows;
+        return Array.isArray(arr) ? arr : [];
+      }
+      return nullOnUnknown ? null : [];
     } catch (_) {
-      return [];
+      return nullOnUnknown ? null : [];
     } finally {
       if (targetCo && targetCo !== prevCo) STATE.company = prevCo;
     }
@@ -153622,20 +153753,25 @@
   }
 
   const ASK_SLICE_BOOKS_VIEWS = new Set([
-    'customers', 'custs', 'receipts', 'vatinv', 'suppliers', 'sups', 'settle',
-    're_invoicing', 're_receipts', 'trd_receivables',
-    'ins_policies', 'ins_billing', 'ins_remittances', 'ins_statements',
-    'hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_loans',
-    'cashflow', 'ledger', 'external', 'ledger_treasury', 'conversions'
+    'customers', 'custs', 'receipts', 'vatinv', 'vat_invoices', 'suppliers', 'sups', 'settle', 'settlements',
+    'credit_terms', 'gl_accounts', 'loans', 'loan_settlements',
+    're_leases', 're_invoicing', 're_receipts', 're_sales', 're_instalments', 're_units',
+    'trd_receivables', 'trd_oem_payables', 'trd_freight_payables', 'trd_targets', 'hsp_memberships', 'hsp_tariffs', 'hsp_menu', 'hsp_vat',
+    'ins_policies', 'ins_renewals', 'ins_items', 'ins_billing', 'ins_remittances', 'ins_statements', 'ins_catalogue', 'ins_agreements',
+    'hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_loans', 'hld_facility_schedules',
+    'hld_extended', 'hld_extd_entries', 'hld_extd_parties',
+    'cashflow', 'ledger', 'external', 'external_movements', 'ledger_treasury', 'conversions'
   ]);
-  const ASK_SLICE_PARTNER_VIEWS = new Set(['hld_partners', 'hld_distributions', 'hsp_partners']);
-  const ASK_SLICE_PAYROLL_VIEWS = new Set(['payroll', 'pay_sal', 'payroll_contracts', 'payroll_allowances']);
+  const ASK_SLICE_PARTNER_VIEWS = new Set(['hld_partners', 'hld_partner_chrono', 'hld_distributions', 'hsp_partners', 'jv_partnerships', 'jv_distributions', 're_ownership']);
+  const ASK_SLICE_PAYROLL_VIEWS = new Set(['payroll', 'pay_emp', 'pay_sal', 'pay_staff', 'pay_site_daily', 'pay_site_staff', 'pay_log', 'pay_freelance', 'pay_driver_ot', 'payroll_contracts', 'payroll_allowances', 'reg_staff', 'ureg_staff_members', 'ureg_employments', 'tbl_staff_members', 'tbl_employments', 'tbl_salaries', 'tbl_attendance', 'tbl_freelance_entries', 'tbl_logistics_allowances', 'tbl_overtime_rates']);
   const ASK_SLICE_EXPENSE_VIEWS = new Set([
-    'expenses', 'raw', 'raw_pricing', 'trd_purchases', 'trd_landed',
+    'expenses', 'expense_items', 'raw', 'raw_purchases', 'raw_pricing', 'trd_purchases', 'trd_landed', 'trd_grn', 'trd_movements',
     're_workorders', 're_recharges', 'hsp_stock', 'hsp_energy', 'hsp_maint',
-    'ins_claims', 'fleet', 'fuel'
+    'ins_claims', 'fleet', 'fuel', 'fuel_intakes', 'hld_assets'
   ]);
   const ASK_SLICE_PROFIT_EXP_VIEWS = new Set(['trd_trucks', 'trd_stock']);
+  const ASK_SLICE_PROFIT_BOOKS_EXP_VIEWS = new Set(['trd_recon']);
+  const ASK_SLICE_PROFIT_VIEWS = new Set(['re_valuations', 'hld_entities']);
   const ASK_SLICE_NON_DOLLAR_VIEWS = new Set([
     'payroll_attendance', 'pay_att', 'fleet_maint', 'defects',
     'warehouse', 'whitems', 're_properties', 'trd_warranty'
@@ -153685,11 +153821,15 @@
     if (!v || !canViewView(dv, usr)) return false;
     const lens = typeof seatLens === 'function' ? seatLens(usr) : {};
     if (ASK_SLICE_NON_DOLLAR_VIEWS.has(v) || ASK_SLICE_NON_DOLLAR_VIEWS.has(dv)) return false;
-    if (ASK_SLICE_PAYROLL_VIEWS.has(v) || ASK_SLICE_PAYROLL_VIEWS.has(dv)) return Boolean(lens.payrollDollars);
-    if (ASK_SLICE_PARTNER_VIEWS.has(v) || ASK_SLICE_PARTNER_VIEWS.has(dv)) return Boolean(lens.books && lens.partnerSplits);
-    if (ASK_SLICE_BOOKS_VIEWS.has(v) || ASK_SLICE_BOOKS_VIEWS.has(dv)) return Boolean(lens.books);
-    if (ASK_SLICE_PROFIT_EXP_VIEWS.has(v) || ASK_SLICE_PROFIT_EXP_VIEWS.has(dv)) return Boolean(lens.profit && lens.expenses);
-    if (ASK_SLICE_EXPENSE_VIEWS.has(v) || ASK_SLICE_EXPENSE_VIEWS.has(dv)) return Boolean(lens.expenses || lens.books);
+    const vTk = viewToTableKey(v);
+    const dvTk = viewToTableKey(dv);
+    if (ASK_SLICE_PAYROLL_VIEWS.has(v) || ASK_SLICE_PAYROLL_VIEWS.has(dv) || Object.prototype.hasOwnProperty.call(_PAYROLL_MASKED_COL_RE, vTk) || Object.prototype.hasOwnProperty.call(_PAYROLL_MASKED_COL_RE, dvTk)) return Boolean(lens.payrollDollars);
+    if (ASK_SLICE_PARTNER_VIEWS.has(v) || ASK_SLICE_PARTNER_VIEWS.has(dv) || ASK_SLICE_PARTNER_VIEWS.has(vTk) || ASK_SLICE_PARTNER_VIEWS.has(dvTk)) return Boolean(lens.books && lens.partnerSplits);
+    if (ASK_SLICE_BOOKS_VIEWS.has(v) || ASK_SLICE_BOOKS_VIEWS.has(dv) || ASK_SLICE_BOOKS_VIEWS.has(vTk) || ASK_SLICE_BOOKS_VIEWS.has(dvTk)) return Boolean(lens.books);
+    if (ASK_SLICE_PROFIT_BOOKS_EXP_VIEWS.has(v) || ASK_SLICE_PROFIT_BOOKS_EXP_VIEWS.has(dv) || ASK_SLICE_PROFIT_BOOKS_EXP_VIEWS.has(vTk) || ASK_SLICE_PROFIT_BOOKS_EXP_VIEWS.has(dvTk)) return Boolean(lens.profit && lens.books && lens.expenses);
+    if (ASK_SLICE_PROFIT_VIEWS.has(v) || ASK_SLICE_PROFIT_VIEWS.has(dv) || ASK_SLICE_PROFIT_VIEWS.has(vTk) || ASK_SLICE_PROFIT_VIEWS.has(dvTk)) return Boolean(lens.profit);
+    if (ASK_SLICE_PROFIT_EXP_VIEWS.has(v) || ASK_SLICE_PROFIT_EXP_VIEWS.has(dv) || ASK_SLICE_PROFIT_EXP_VIEWS.has(vTk) || ASK_SLICE_PROFIT_EXP_VIEWS.has(dvTk)) return Boolean(lens.profit && lens.expenses);
+    if (ASK_SLICE_EXPENSE_VIEWS.has(v) || ASK_SLICE_EXPENSE_VIEWS.has(dv) || ASK_SLICE_EXPENSE_VIEWS.has(vTk) || ASK_SLICE_EXPENSE_VIEWS.has(dvTk)) return Boolean(lens.expenses || lens.books);
     const cf = STATE.colFilters && STATE.colFilters[v];
     if (cf && Object.keys(cf).some(k => /^(?:open_ar_usd|open_ar_4112_usd|ar_balance|ap_balance|balance_usd|gross_ar_usd|net_payable_4017_usd)$/i.test(k))) {
       return Boolean(lens.books);
@@ -153791,9 +153931,15 @@
       }
     }
 
-    const expBtn = panel
-      ? (Array.from(panel.querySelectorAll('[data-export-csv]')).find(b => b.closest('.panel-card, .panel') === panel) || panel.querySelector('[data-export-csv]'))
-      : null;
+    const wsRoot = $('workspace');
+    const bannerTargets = new Set([panel && panel.id, cfView, sortView, view].filter(Boolean));
+    const isVisExpBtn = b => Boolean(b && !b.hidden && b.style.display !== 'none');
+    const expBtn = (panel
+      ? (Array.from(panel.querySelectorAll('[data-export-csv]')).find(b => isVisExpBtn(b) && b.closest('.panel-card, .panel') === panel) || Array.from(panel.querySelectorAll('[data-export-csv]')).find(isVisExpBtn))
+      : null)
+      || (wsRoot && bannerTargets.size
+        ? Array.from(wsRoot.querySelectorAll('[data-export-csv]')).find(b => isVisExpBtn(b) && !b.closest('.panel-card, .panel') && bannerTargets.has(String(b.getAttribute('data-export-csv') || '').trim()))
+        : null);
     const canExport = Boolean(expBtn && canExportAskSliceCsv(view, cfView || sortView, usr));
     return {
       ok: Boolean(panel && table),
@@ -153805,14 +153951,93 @@
     };
   }
 
+  let _exportPanelCfMapCache = null;
+  function _getExportPanelCfMap() {
+    if (_exportPanelCfMapCache) return _exportPanelCfMapCache;
+    const map = {};
+    Object.keys(CF_VIEW_TO_PANEL_ID || {}).forEach(cfv => {
+      const pid = CF_VIEW_TO_PANEL_ID[cfv];
+      if (pid && !map[pid]) map[pid] = cfv;
+    });
+    Object.assign(map, PANEL_TO_CF_VIEW || {}, {
+      payEmpPanel: 'pay_emp',
+      paySalPanel: 'pay_sal',
+      payStaffRegPanel: 'pay_staff',
+      paySiteDailyPanel: 'pay_site_daily',
+      paySiteStaffPanel: 'pay_site_staff',
+      payAllowLogPanel: 'pay_log',
+      payFreelancePanel: 'pay_freelance',
+      payDriverOtPanel: 'pay_driver_ot',
+      payAttPanel: 'pay_att',
+      payAttStaffSumPanel: 'pay_att',
+      custPanel: 'custs',
+      supPanel: 'sups',
+      salesPanel: 'sales',
+      rawPanel: 'raw',
+      expPanel: 'expenses',
+      fuelPanel: 'fuel',
+      rcptPanel: 'receipts',
+      settlePanel: 'settle',
+      vatInvPanel: 'vatinv',
+      cfSalesPanel: 'sales',
+      cfExpPanel: 'expenses',
+      cfBorPanel: 'external_movements',
+      cfSalPanel: 'pay_sal',
+      cfExtPanel: 'external_movements',
+      treasuryOpenLoansPanel: 'ledger_treasury',
+      treasuryLoansPanel: 'ledger_treasury',
+      treasuryExtPanel: 'external_movements',
+      rawSiteOwnersPanel: 'raw',
+      rawTransPayPanel: 'raw'
+    });
+    _exportPanelCfMapCache = map;
+    return map;
+  }
+  function _canExportPanelCsv(csvTarget, panel, tables, u) {
+    const usr = u === undefined ? activeUser() : u;
+    if (!STATE.authed || STATE.kioskLocked || !usr) return false;
+    const panelMap = _getExportPanelCfMap();
+    const cfViews = new Set();
+    const list = Array.isArray(tables) ? tables : [];
+    list.forEach(tbl => {
+      if (!tbl || !tbl.querySelector) return;
+      const sortTh = tbl.querySelector('thead th[data-sort-view]');
+      const sv = sortTh ? String(sortTh.getAttribute('data-sort-view') || '').trim() : '';
+      const indRow = tbl.querySelector('tbody tr[data-ind-row-tbl]');
+      const indV = indRow ? String(indRow.getAttribute('data-ind-row-tbl') || '').trim() : '';
+      const regAttr = tbl.getAttribute ? String(tbl.getAttribute('data-regc-table') || '').trim() : '';
+      const tblPanel = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+      const tpId = (tblPanel && tblPanel.id) || '';
+      const pv = (tpId && panelMap[tpId]) || '';
+      const chosen = sv || indV || regAttr || pv;
+      if (chosen) cfViews.add(chosen);
+    });
+    if (!cfViews.size) {
+      const pid = (panel && panel.id) || '';
+      const tgt = String(csvTarget || '').trim();
+      const directTgt = (tgt && !panelMap[tgt] && (CF_VIEW_TO_PANEL_ID[tgt] || ASK_SLICE_BOOKS_VIEWS.has(tgt) || ASK_SLICE_PARTNER_VIEWS.has(tgt) || ASK_SLICE_PAYROLL_VIEWS.has(tgt) || ASK_SLICE_EXPENSE_VIEWS.has(tgt) || ASK_SLICE_PROFIT_VIEWS.has(tgt) || ASK_SLICE_PROFIT_EXP_VIEWS.has(tgt) || ASK_SLICE_PROFIT_BOOKS_EXP_VIEWS.has(tgt) || ASK_SLICE_NON_DOLLAR_VIEWS.has(tgt))) ? tgt : '';
+      const fallbackCfv = (pid && panelMap[pid]) || (tgt && panelMap[tgt]) || directTgt;
+      if (fallbackCfv) cfViews.add(fallbackCfv);
+    }
+    if (!cfViews.size) return canExportAskSliceCsv(STATE.view, '', usr);
+    for (const cfv of cfViews) {
+      if (!canExportAskSliceCsv(STATE.view, cfv, usr)) return false;
+    }
+    return true;
+  }
+
   function exportRegisterPanelCsv(csvTarget, exportNameOverride, fallbackBtnEl) {
     const wsEl = $('workspace');
-    const panel = $(csvTarget)
-      || (fallbackBtnEl && fallbackBtnEl.closest('.panel-card, .panel, .workspace'))
-      || (wsEl && findRegisterPanelAndTable(wsEl, csvTarget)?.panel)
+    const panel = (csvTarget && $(csvTarget))
+      || (wsEl && csvTarget && findRegisterPanelAndTable(wsEl, csvTarget)?.panel)
+      || (fallbackBtnEl && fallbackBtnEl.closest('.panel-card, .panel'))
       || wsEl;
     const tables = panel ? Array.from(panel.querySelectorAll('table')) : [];
     if (!tables.length) { toast('Nothing to export', 'err'); return false; }
+    if (!_canExportPanelCsv(csvTarget, panel, tables)) {
+      toast('Your seat has no access to export CSV from this register', 'err');
+      return false;
+    }
     // A register narrowed by a chart drill, a column filter or the search box says so in the file name
     // and in a first line, so the extract never passes for the full register.
     const filt = registerExportFilterParts(panel, tables, csvTarget);
@@ -162712,7 +162937,9 @@
     hld_partners: 'hldPartnersTablePanel',
     hld_distributions: 'hldJvAgreementsPanel',
     hld_loans: 'hldLoansPanel',
+    hld_facility_schedules: 'hldFacilitySchedulesPanel',
     hld_assets: 'hldAssetsPanel',
+    hld_entities: 'hldEntitiesScorecardPanel',
     hsp_revenue: 'hspRevenuePanel',
     hsp_pos: 'hspPosPanel',
     hsp_vat: 'hspVatPanel',
@@ -162734,7 +162961,25 @@
     trd_movements: 'trdMovementsPanel',
     trd_recon: 'trdReconPanel',
     re_leases: 'reLeasesPanel',
-    ins_policies: 'insPoliciesPanel'
+    re_invoicing: 'reInvoicingPanel',
+    re_receipts: 'reReceiptsPanel',
+    re_instalments: 'reInstalmentsPanel',
+    re_sales: 'reSalesPanel',
+    re_units: 'reUnitsPanel',
+    re_valuations: 'reValuationsPanel',
+    re_ownership: 'reOwnershipPanel',
+    re_properties: 'rePropertiesPanel',
+    re_workorders: 'reWorkordersPanel',
+    re_recharges: 'reRechargesPanel',
+    ins_policies: 'insPoliciesPanel',
+    ins_renewals: 'insRenewalsPanel',
+    ins_items: 'insItemsPanel',
+    ins_billing: 'insBillingPanel',
+    ins_remittances: 'insRemittancesPanel',
+    ins_statements: 'insStatementsPanel',
+    ins_claims: 'insClaimsPanel',
+    ins_catalogue: 'insCataloguePanel',
+    ins_agreements: 'insAgreementsPanel'
   };
   function findRegisterPanelAndTable(container, view) {
     let panel = container.querySelector(`[data-regc-panel="${CSS.escape(view)}"]`);
@@ -171159,6 +171404,12 @@
         try { window.MFG_RDL.resetStmt16CompareState({ preserveStorage: true }); } catch (_) {}
       }
     }
+    if (prevInd !== indId || !prevDemo) {
+      if (STATE.rdl && STATE.rdl.params) {
+        if (STATE.rdl.params.hrBatchTargets) STATE.rdl.params.hrBatchTargets = null;
+        if (STATE.rdl.params.hrEmp) STATE.rdl.params.hrEmp = '';
+      }
+    }
     STATE.cfTillScrubDate = '';
     STATE.cfTillScrubKey = '';
     STATE.cfFocusDate = '';
@@ -171253,6 +171504,7 @@
       STATE.cfFocusDateFromScrub = false;
       STATE.rawPricingGradeFilter = 'ALL';
       clearCfScrubChipState();
+      if (STATE.rdl && STATE.rdl.params && STATE.rdl.params.hrBatchTargets) STATE.rdl.params.hrBatchTargets = null;
     }
     FORM_UI.unpricedQueueSession = null;
     FORM_UI.unpricedSiteCtx = null;
@@ -171995,6 +172247,11 @@
       }
       const searchInp = $('companySwitchSearch');
       if (searchInp) searchInp.value = '';
+      if (hadPrevRlsUser) {
+        Object.keys(_savedViewBasePool).forEach(k => { delete _savedViewBasePool[k]; });
+        Object.keys(_detSavedViewPoolCache).forEach(k => { delete _detSavedViewPoolCache[k]; });
+        if (STATE.rdl && STATE.rdl.params) STATE.rdl.params.hrBatchTargets = null;
+      }
       if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
     }
     const allowedCos = getAllowedCompanyKeys(user);
@@ -172491,6 +172748,9 @@
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.close === 'function') {
       window.MFG_CMD_PALETTE.close({ clearCache: true });
     }
+    const ws = $('workspace');
+    if (ws) ws.querySelectorAll('tr.rrow.is-row-selected').forEach(tr => tr.classList.remove('is-row-selected'));
+    if (typeof updateLiveSelectionBar === 'function') updateLiveSelectionBar(null);
   }
 
   function captureEntryModalControlsForIdleLock(containerEl) {
@@ -172884,6 +173144,9 @@
     // session can still cancel a waiting request (idle lock or expiry reach here without signOut).
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
+    Object.keys(_savedViewBasePool).forEach(k => { delete _savedViewBasePool[k]; });
+    Object.keys(_detSavedViewPoolCache).forEach(k => { delete _detSavedViewPoolCache[k]; });
+    if (STATE.rdl && STATE.rdl.params) STATE.rdl.params.hrBatchTargets = null;
     if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
     if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
       try { window.MFG_RDL.resetStmt16CompareState({ preserveStorage: true }); } catch (_) {}
@@ -173119,6 +173382,7 @@
     STATE.stmt14ReturnCtx = null;
     STATE.stmt16ReturnCtx = null;
     STATE.ovkMoversReturn = null;
+    if (STATE.rdl && STATE.rdl.params) STATE.rdl.params.hrBatchTargets = null;
     if (STATE.authed) STATE.authed = false;
     purgeOverlaysOnSessionOrKioskLock();
     // Withdraw a waiting unlock request while this session can still cancel it (before the logout call).
@@ -192031,35 +192295,105 @@
     const o = opts || {};
     const wantMode = String(o.hrPackMode || o.packMode || '').trim().toLowerCase();
     const isBordereau = wantMode === 'bordereau';
+    const rawBatch = !isBordereau && Array.isArray(o.batchTargets) ? o.batchTargets : null;
     let staffId = String(o.staffId || (o.staff && typeof o.staff === 'object' ? o.staff.id : '') || '').trim();
-    const empId = String(o.empId || '').trim();
+    let empId = String(o.empId || '').trim();
     const staffName = String(o.staffName || (typeof o.staff === 'string' ? o.staff : (o.staff && o.staff.name)) || '').trim();
+    let resolvedBatch = null;
     if (!isBordereau) {
-      const scopedEmps = typeof filterRecords === 'function'
-        ? filterRecords((SEED.records && SEED.records.employments) || [], { tableKey: 'employments', ignorePeriod: true, ignoreSearch: true })
-        : ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && !e.archived);
+      const allowedEmpCos = isDemoScopeActive() ? null : (typeof allowedCompanyNames === 'function' ? allowedCompanyNames() : []);
+      const isAllowedEmpCo = rc => {
+        if (allowedEmpCos === null) return true;
+        if (!allowedEmpCos.length) return false;
+        const s = String(rc || '').trim();
+        return !s || allowedEmpCos.includes(s) || allowedEmpCos.some(ac => norm(ac) === norm(s) || norm(canonCompany(ac)) === norm(canonCompany(s)));
+      };
+      const scopedEmps = (typeof filterRecords === 'function'
+        ? filterRecords((SEED.records && SEED.records.employments) || [], { tableKey: 'employments', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
+        : ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && !e.archived)).filter(e => e && !e.archived && isAllowedEmpCo(e.company));
       const scopedStaff = (typeof filterRecords === 'function'
         ? filterRecords((SEED.records && SEED.records.staff_members) || [], { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
         : ((SEED.records && SEED.records.staff_members) || [])).filter(s => isStaffMemberAllowedForSeat(s, SEED));
-      if (!staffId && empId) {
-        const empRec = scopedEmps.find(e => e && String(e.id || '') === empId);
-        if (empRec) staffId = String(empRec.staff_id || '').trim() || staffId;
+      const resolveTarget = tgt => {
+        let sid = String(tgt.staffId || '').trim();
+        const eid = String(tgt.empId || '').trim();
+        const sname = String(tgt.staffName || '').trim();
+        const empDirect = eid ? scopedEmps.find(e => e && String(e.id || '') === eid) : null;
+        if (eid && !empDirect && !sid && !sname) return null;
+        const validEid = empDirect ? eid : '';
+        let stRec = sid ? scopedStaff.find(s => s && String(s.id || '') === sid) : null;
+        if (!stRec && empDirect) {
+          sid = String(empDirect.staff_id || '').trim() || sid;
+          stRec = sid ? scopedStaff.find(s => s && String(s.id || '') === sid) : null;
+          if (!stRec && empDirect.staff) stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(empDirect.staff));
+        }
+        if (!stRec && sname) {
+          stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(sname));
+        }
+        if (!stRec || !stRec.id) return null;
+        return { staffId: String(stRec.id), empId: validEid, staffName: String(stRec.name || sname || '') };
+      };
+      if (rawBatch && rawBatch.length >= 1) {
+        const seenB = new Set();
+        const batchOut = [];
+        rawBatch.forEach(t => {
+          const resT = resolveTarget(t || {});
+          if (!resT) return;
+          const k = resT.empId ? ('emp:' + resT.empId) : ('staff:' + resT.staffId);
+          if (seenB.has(k)) return;
+          seenB.add(k);
+          batchOut.push(resT);
+        });
+        if (batchOut.length >= 1) {
+          resolvedBatch = batchOut;
+        } else {
+          toast('Your seat has no access to that company', 'err');
+          return false;
+        }
       }
-      if (!staffId && staffName) {
-        const stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(staffName));
-        if (stRec) staffId = String(stRec.id || '').trim();
-      }
-      if (!staffId) {
-        const firstStaff = scopedStaff[0];
-        if (firstStaff && firstStaff.id) staffId = String(firstStaff.id);
+      if (!resolvedBatch) {
+        const hadExplicitTarget = Boolean(staffId || empId || staffName);
+        if (empId) {
+          const empRec = scopedEmps.find(e => e && String(e.id || '') === empId);
+          if (!empRec) {
+            empId = '';
+          } else {
+            if (!staffId) staffId = String(empRec.staff_id || '').trim() || staffId;
+            if (!staffId && empRec.staff) {
+              const stByEmpName = scopedStaff.find(s => s && norm(s.name || '') === norm(empRec.staff));
+              if (stByEmpName && stByEmpName.id) staffId = String(stByEmpName.id);
+            }
+          }
+        }
+        if (!staffId && staffName) {
+          const stRec = scopedStaff.find(s => s && norm(s.name || '') === norm(staffName));
+          if (stRec) staffId = String(stRec.id || '').trim();
+        }
+        if (staffId && !scopedStaff.some(s => s && String(s.id || '') === staffId)) {
+          staffId = '';
+        }
+        if (hadExplicitTarget && !staffId) {
+          toast('Your seat has no access to that company', 'err');
+          return false;
+        }
+        if (!staffId) {
+          const firstStaff = scopedStaff[0];
+          if (firstStaff && firstStaff.id) staffId = String(firstStaff.id);
+        }
       }
     }
     if (!STATE.rdl) STATE.rdl = {};
     STATE.activeStatement = '28';
     STATE.rdl.activeCode = '28';
     if (!STATE.rdl.params) STATE.rdl.params = {};
-    if (staffId) STATE.rdl.params.hrStaff = staffId;
-    STATE.rdl.params.hrPackMode = wantMode || STATE.rdl.params.hrPackMode || 'both';
+    if (resolvedBatch) {
+      STATE.rdl.params.hrBatchTargets = resolvedBatch;
+    } else {
+      if (staffId) STATE.rdl.params.hrStaff = staffId;
+      STATE.rdl.params.hrEmp = isBordereau ? '' : (empId || '');
+      STATE.rdl.params.hrBatchTargets = null;
+    }
+    STATE.rdl.params.hrPackMode = wantMode || (resolvedBatch && STATE.rdl.params.hrPackMode === 'bordereau' ? 'both' : STATE.rdl.params.hrPackMode) || 'both';
     if (o.hrPackLang) STATE.rdl.params.hrPackLang = String(o.hrPackLang);
     if (isBordereau) {
       const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames() : [];
@@ -211284,6 +211618,108 @@
     }, 4000);
   }
 
+  function _canExportSelectedRowsCsv(selRows) {
+    const u = activeUser();
+    if (!selRows || !selRows.length) return false;
+    const cfViews = new Set();
+    selRows.forEach(tr => {
+      const tbl = tr && tr.closest ? tr.closest('table') : null;
+      if (!tbl) return;
+      const sortTh = tbl.querySelector('thead th[data-sort-view]');
+      const sv = sortTh ? String(sortTh.getAttribute('data-sort-view') || '').trim() : '';
+      const indRow = tbl.querySelector('tbody tr[data-ind-row-tbl]');
+      const indV = indRow ? String(indRow.getAttribute('data-ind-row-tbl') || '').trim() : '';
+      const panel = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+      const pv = (panel && panel.id && _getExportPanelCfMap()[panel.id]) || '';
+      cfViews.add(sv || indV || pv || '');
+    });
+    if (!cfViews.size) return canExportAskSliceCsv(STATE.view, '', u);
+    for (const cfv of cfViews) {
+      if (!canExportAskSliceCsv(STATE.view, cfv, u)) return false;
+    }
+    return true;
+  }
+
+  function exportSelectedRowsCsv(selRows) {
+    if (!STATE.authed || STATE.kioskLocked || !Array.isArray(selRows) || !selRows.length) return false;
+    if (!_canExportSelectedRowsCsv(selRows)) {
+      toast('Your seat has no access to export CSV from this register', 'err');
+      return false;
+    }
+    const byTbl = new Map();
+    selRows.forEach(tr => {
+      const tbl = tr && tr.closest ? tr.closest('table') : null;
+      if (!tbl) return;
+      if (!byTbl.has(tbl)) byTbl.set(tbl, []);
+      byTbl.get(tbl).push(tr);
+    });
+    if (!byTbl.size) return false;
+    const stripSel = '.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .staff-hr-pack-inline-btn, .emp-hr-pack-btn, .tkt-print-mini, .tbl-th-tools, .th-filter-btn, .tbl-col-resizer, .btn-ind-wf, [data-open-prepayday-card], [data-set-pending-salary-id]';
+    const blocks = [];
+    byTbl.forEach((rows, tbl) => {
+      const lines = [];
+      const headTr = tbl.querySelector('thead tr:first-child');
+      if (headTr) {
+        const hCells = Array.from(headTr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+          .filter(th => th.hasAttribute('colspan') || getComputedStyle(th).display !== 'none')
+          .map(th => {
+            if (th.hasAttribute('data-masked-payroll') || th.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
+            if (th.dataset && th.dataset.colCleanLabel) return _csvQuoteCell(th.dataset.colCleanLabel);
+            const clone = th.cloneNode(true);
+            clone.querySelectorAll(stripSel + ', i').forEach(n => n.remove());
+            return _csvQuoteCell(clone.textContent);
+          });
+        if (hCells.length) lines.push(hCells.join(','));
+      }
+      rows.forEach(tr => {
+        const rCells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+          .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
+          .map(td => {
+            if (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
+            return _csvQuoteCell(_extractDetachedCellText(td));
+          });
+        if (rCells.length) lines.push(rCells.join(','));
+      });
+      if (lines.length) blocks.push(lines.join('\r\n'));
+    });
+    if (!blocks.length) return false;
+    const csv = blocks.join('\r\n\r\n');
+    downloadCsv(`ISABI_Selected_${String(STATE.view || 'table').replace(/[^A-Za-z0-9_-]/g, '_')}_${STATE.company}_${todayISO()}.csv`, csv);
+    toast(wsUiT(`Exported ${selRows.length} selected rows to CSV`), 'ok');
+    return true;
+  }
+
+  function collectSelectedHrPackTargets(selRows) {
+    if (typeof canAccessRdlReport !== 'function' || !canAccessRdlReport('28')) return [];
+    const out = [];
+    const seen = new Set();
+    (selRows || []).forEach(tr => {
+      if (!tr) return;
+      const rkey = tr.getAttribute('data-rkey') || '';
+      const rid = tr.getAttribute('data-rid') || '';
+      const packBtn = tr.querySelector('[data-open-hr-pack]');
+      if (!packBtn && rkey !== 'staff_members' && rkey !== 'employments') return;
+      let staffId = packBtn ? String(packBtn.dataset.hrPackStaff || packBtn.dataset.staffId || '').trim() : '';
+      let empId = packBtn ? String(packBtn.dataset.hrPackEmp || packBtn.dataset.empId || '').trim() : '';
+      let staffName = packBtn ? String(packBtn.dataset.hrPackName || packBtn.dataset.staffName || '').trim() : '';
+      const company = packBtn ? String(packBtn.dataset.hrPackCompany || '').trim() : '';
+      if (!staffId && rkey === 'staff_members' && rid) staffId = rid;
+      if (!empId && rkey === 'employments' && rid) {
+        if (/^emp-|^MEMP|^EMP|^SEED-|^custom-|^ind-/i.test(rid) || ((SEED.records && SEED.records.employments) || []).some(e => e && String(e.id || '') === rid)) {
+          empId = rid;
+        } else if (!staffName) {
+          staffName = rid;
+        }
+      }
+      if (!staffId && !empId && !staffName) return;
+      const dKey = empId ? ('emp:' + empId) : (staffId ? ('staff:' + staffId) : ('name:' + norm(staffName)));
+      if (seen.has(dKey)) return;
+      seen.add(dKey);
+      out.push({ staffId, empId, staffName, company });
+    });
+    return out;
+  }
+
   function updateLiveSelectionBar(container) {
     let bar = $('liveSelectionBar');
     if (!bar) {
@@ -211312,10 +211748,10 @@
       const tbl = tr.closest('table');
       const ths = tbl
         ? Array.from(tbl.querySelectorAll('thead tr:first-child th'))
-          .filter(th => !th.classList.contains('tbl-col-hidden') && th.style.display !== 'none')
+          .filter(th => !th.classList.contains('tbl-col-hidden') && getComputedStyle(th).display !== 'none')
           .map(th => getCanonicalEnDomText(th).toUpperCase())
         : [];
-      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && td.style.display !== 'none');
+      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none');
       const rowUsdVals = [];
       const rowLbpVals = [];
       const parseMoneyCell = s => {
@@ -211364,6 +211800,8 @@
           return isVoidableIndDomainRowTr(tr, { requireChronoAuth: false });
         }).length
       : 0;
+    const allowSelCsvExport = _canExportSelectedRowsCsv(selRows);
+    const hrPackTargets = collectSelectedHrPackTargets(selRows);
     bar.innerHTML = `
       <div class="lsb-head">
         <span class="lsb-badge">${selRows.length} ${selRows.length === 1 ? 'Row' : 'Rows'} Selected</span>
@@ -211379,6 +211817,8 @@
       <div class="lsb-actions">
         <button type="button" class="lsb-btn" id="lsbSelectTop10Btn" data-ui-tip="Select first 10 visible rows">Top 10</button>
         <button type="button" class="lsb-btn" id="lsbCopySumBtn" data-ui-tip="Copy live sum summary to clipboard">Copy Sum</button>
+        ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbExportCsvBtn" data-ui-tip="Download selected rows as CSV (Excel, UTF-8)">${ic('download')} <span>Export Selected CSV</span></button>` : ''}
+        ${hrPackTargets.length >= 2 ? `<button type="button" class="lsb-btn lsb-hr-pack-btn" id="lsbPrintHrPacksBtn" data-hr-count="${hrPackTargets.length}" data-ui-tip="Open combined Bilingual Contract &amp; NSSF print pack for selected employees">${ic('printer')} <span>Print Selected HR Packs (${hrPackTargets.length})</span></button>` : ''}
         ${bulkVoidEligibleCount > 0 ? `<button type="button" class="lsb-btn btn-danger-outline lsb-void-btn" id="lsbBulkVoidBtn" data-void-count="${bulkVoidEligibleCount}" data-ui-tip="Void selected records (click once to arm, click again to confirm)" aria-label="Void Selected (${bulkVoidEligibleCount})">${ic('trash')} <span>Void Selected (${bulkVoidEligibleCount})</span></button>` : ''}
         <button type="button" class="lsb-btn lsb-clear" id="lsbClearSelBtn" data-ui-tip="Clear row selection (Esc)">Clear ✕</button>
       </div>
@@ -211392,8 +211832,8 @@
       e.stopPropagation();
       const firstTbl = selRows[0] ? selRows[0].closest('table') : container.querySelector('table.ledger-table, table.data-table');
       if (firstTbl) {
-        Array.from(firstTbl.querySelectorAll('tbody tr.rrow[data-rid], tbody tr.rrow[data-ind-row-id]:not([data-ind-inspect-surface="kiosk_recent"])'))
-          .filter(r => r.style.display !== 'none' && !r.hidden && !r.classList.contains('total-row') && !r.classList.contains('totals-row') && !r.hasAttribute('data-dops-expand'))
+        Array.from(firstTbl.querySelectorAll('tbody tr.rrow'))
+          .filter(r => r.querySelector('u.row-sel-dot') && r.style.display !== 'none' && !r.hidden && !r.classList.contains('total-row') && !r.classList.contains('totals-row') && !r.hasAttribute('data-dops-expand'))
           .slice(0, 10)
           .forEach(r => r.classList.add('is-row-selected'));
         updateLiveSelectionBar(container);
@@ -211404,6 +211844,16 @@
       e.stopPropagation();
       try { navigator.clipboard.writeText(summaryCopyText); } catch (_) {}
       toast('Copied live selection sum: ' + summaryCopyText);
+    };
+    const expCsvBtn = $('lsbExportCsvBtn');
+    if (expCsvBtn) expCsvBtn.onclick = e => {
+      e.stopPropagation();
+      exportSelectedRowsCsv(selRows);
+    };
+    const hrPacksBtn = $('lsbPrintHrPacksBtn');
+    if (hrPacksBtn) hrPacksBtn.onclick = e => {
+      e.stopPropagation();
+      if (hrPackTargets.length >= 2) openHrPrintPack({ batchTargets: hrPackTargets });
     };
     const bulkVoidBtn = $('lsbBulkVoidBtn');
     if (bulkVoidBtn) bulkVoidBtn.onclick = e => {
@@ -211661,7 +212111,7 @@
           if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') _translateVoidEl(vBtn);
         }
       }
-      const rrows = container.querySelectorAll('tr.rrow[data-rid], tr.rrow[data-ind-row-id]:not([data-ind-inspect-surface="kiosk_recent"])');
+      const rrows = container.querySelectorAll('table:is(.ledger-table, .data-table) tbody tr.rrow, tr.rrow[data-rid], tr.rrow[data-ind-row-id]');
       if (rrows.length) {
         let protoDot = enhanceVisualWorkspace._protoDot;
         if (!protoDot) {
@@ -211677,8 +212127,9 @@
         const needDotI18n = Boolean(window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en');
         for (let i = 0; i < rrows.length; i++) {
           const tr = rrows[i];
-          if (tr._hasSelDot || tr.hasAttribute('data-dops-expand') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) continue;
-          if (tr.closest('#kioskRecentTable')) continue;
+          if (tr._hasSelDot || tr.hasAttribute('data-dops-expand') || tr.hasAttribute('data-jump-co') || tr.classList.contains('total-row') || tr.classList.contains('totals-row') || tr.classList.contains('extd-sum-row') || tr.classList.contains('empty-row')) continue;
+          const surf = tr.getAttribute('data-ind-inspect-surface') || '';
+          if (surf === 'kiosk_recent' || surf.startsWith('daily_ops') || tr.closest('#kioskRecentTable')) continue;
           const firstTd = Array.from(tr.children).find(c => c.tagName === 'TD' && !c.classList.contains('tbl-col-hidden') && c.style.display !== 'none') || tr.firstElementChild;
           if (firstTd && firstTd.tagName === 'TD') {
             tr._hasSelDot = true;
@@ -211694,6 +212145,142 @@
           }
         }
       }
+    }
+    // 3. Universal .cell-empty / .cell-zero muting + verified 1-click [data-quick-col-filter] status badges
+    const uxTables = container.querySelectorAll('table:is(.ledger-table, .data-table)');
+    if (uxTables.length) {
+      const qfVerifyCache = new Map();
+      const verifyQuickVal = (sortView, sortKey, valTxt) => {
+        const pool = _tablePoolCache[sortView];
+        if (!Array.isArray(pool) || !pool.length) return false;
+        const cKey = `${sortView}|${sortKey}|${valTxt}`;
+        if (qfVerifyCache.has(cKey)) return qfVerifyCache.get(cKey);
+        const matched = withRelPass(() => {
+          const spec = '=' + valTxt;
+          for (let j = 0; j < pool.length; j++) {
+            if (matchColFilterValue(resolveColVal(pool[j], sortKey, sortView), spec, sortKey, pool[j], sortView)) {
+              return true;
+            }
+          }
+          return false;
+        });
+        qfVerifyCache.set(cKey, matched);
+        return matched;
+      };
+      const PLAIN_TH_KEY_MAP = {
+        status: 'status',
+        direction: 'direction',
+        'tax classification': 'tax_rule',
+        category: 'category',
+        method: 'method',
+        stage: 'stage',
+        type: 'type',
+        line: 'line'
+      };
+      for (let ti = 0; ti < uxTables.length; ti++) {
+        const tbl = uxTables[ti];
+        const tbody = tbl.tBodies && tbl.tBodies[0];
+        if (!tbody || tbl.closest('#kioskRecentTable')) continue;
+        const panelEl = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+        const regRowMeta = panelEl && panelEl.id ? _regPanelRows[panelEl.id] : null;
+        const fallbackSv = (panelEl && panelEl.id && (PANEL_TO_CF_VIEW[panelEl.id] || (regRowMeta && regRowMeta.shownKey)))
+          || (tbl.getAttribute && tbl.getAttribute('data-regc-table'))
+          || '';
+        const headTr = tbl.querySelector('thead tr:first-child');
+        const colMeta = [];
+        let hasAnyQfCol = false;
+        let headColCount = 0;
+        if (headTr) {
+          const ths = headTr.children;
+          for (let ci = 0; ci < ths.length; ci++) {
+            const th = ths[ci];
+            const span = Math.max(1, Number((th.getAttribute && th.getAttribute('colspan')) || 1));
+            headColCount += span;
+            const sv = (th.getAttribute && th.getAttribute('data-sort-view')) || fallbackSv || '';
+            let sk = (th.getAttribute && (th.getAttribute('data-sort-key') || th.getAttribute('data-regc-col-key'))) || '';
+            if (!sk && sv && Array.isArray(_tablePoolCache[sv]) && _tablePoolCache[sv].length > 0 && _tablePoolCache[sv][0] && typeof _tablePoolCache[sv][0] === 'object') {
+              const thEn = (typeof englishTextOf === 'function' ? englishTextOf(th) : (th.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+              const guessed = PLAIN_TH_KEY_MAP[thEn] || '';
+              if (guessed && guessed in _tablePoolCache[sv][0]) sk = guessed;
+            }
+            const ok = Boolean(sv && sk && !isNumericColKey(sk) && !isMaskedFieldAccessBlocked(viewToTableKey(sv), sk) && Array.isArray(_tablePoolCache[sv]) && _tablePoolCache[sv].length > 0);
+            if (ok) hasAnyQfCol = true;
+            const meta = ok ? { sv, sk, cf: (STATE.colFilters && STATE.colFilters[sv]) || {} } : null;
+            for (let si = 0; si < span; si++) colMeta.push(meta);
+          }
+        }
+        const rows = tbody.rows;
+        for (let ri = 0; ri < rows.length; ri++) {
+          const tr = rows[ri];
+          if (tr.classList.contains('total-row') || tr.classList.contains('totals-row') || tr.classList.contains('empty-row')) continue;
+          const cells = tr.children;
+          const isRrow = tr.classList.contains('rrow');
+          let rowSpan = 0;
+          let hiddenTdCount = 0;
+          for (let ci = 0; ci < cells.length; ci++) {
+            const cell = cells[ci];
+            if (!cell || cell.tagName !== 'TD') continue;
+            rowSpan += Math.max(1, Number((cell.getAttribute && cell.getAttribute('colspan')) || 1));
+            if (cell.style && cell.style.display === 'none') hiddenTdCount += 1;
+          }
+          let remExcess = (headColCount > 0 && rowSpan > headColCount) ? (rowSpan - headColCount) : 0;
+          const canQfRow = Boolean(hasAnyQfCol && isRrow && headTr && (rowSpan - Math.min(remExcess, hiddenTdCount)) === headColCount);
+          let colCursor = 0;
+          for (let ci = 0; ci < cells.length; ci++) {
+            const td = cells[ci];
+            if (!td || td.tagName !== 'TD') continue;
+            if (!td._mutedChecked) {
+              td._mutedChecked = true;
+              if (!td.classList.contains('is-editable-cell') && !td.querySelector('input, select, textarea, button, u, .badge, .rel-link, [data-masked-payroll], .cell-empty, .cell-zero')) {
+                const txt = (td.textContent || '').trim();
+                if (txt === '-' || txt === '—') {
+                  td.classList.add('cell-empty');
+                } else if ((td.classList.contains('r') || td.classList.contains('num')) && /^[+-]?(?:\$0(?:\.00)?|0(?:\.00)?\s*(?:LL|LBP|USD)?)$/i.test(txt)) {
+                  td.classList.add('cell-zero');
+                }
+              }
+            }
+            if (remExcess > 0 && td.style && td.style.display === 'none') {
+              remExcess -= 1;
+              continue;
+            }
+            const tdSpan = Math.max(1, Number((td.getAttribute && td.getAttribute('colspan')) || 1));
+            if (canQfRow && tdSpan === 1 && colMeta[colCursor]) {
+              const cm = colMeta[colCursor];
+              const b = td.querySelector('span.badge:not([data-quick-col-filter]):not([data-rel-key])');
+              if (b && !b.closest('button, a') && !b.querySelector('.sr-only')) {
+                const rawTxt = (typeof getCanonicalEnDomText === 'function' ? getCanonicalEnDomText(b) : (b.textContent || '')).trim();
+                if (rawTxt && rawTxt !== '—' && rawTxt !== '-' && !/^\d+$/.test(rawTxt) && verifyQuickVal(cm.sv, cm.sk, rawTxt)) {
+                  const qfVal = '=' + rawTxt;
+                  b.classList.add('is-quick-filterable');
+                  b.classList.toggle('is-qf-active', cm.cf[cm.sk] === qfVal);
+                  b.setAttribute('data-quick-col-filter', cm.sv);
+                  b.setAttribute('data-qcf-col', cm.sk);
+                  b.setAttribute('data-qcf-val', qfVal);
+                  b.setAttribute('data-ui-tip', 'Click to filter column (click again to clear)');
+                }
+              }
+            }
+            colCursor += tdSpan;
+          }
+        }
+      }
+    }
+    container.querySelectorAll('[data-export-csv]').forEach(btn => {
+      const tgt = String(btn.getAttribute('data-export-csv') || '').trim();
+      const btnPanel = btn.closest('.panel-card, .panel');
+      const targetEl = (tgt && $(tgt))
+        || (tgt && findRegisterPanelAndTable(container, tgt)?.panel)
+        || btnPanel
+        || null;
+      const tbls = targetEl ? Array.from(targetEl.querySelectorAll('table')) : [];
+      const allowed = _canExportPanelCsv(tgt, targetEl, tbls, activeUserRow);
+      btn.hidden = !allowed;
+      if (!allowed) btn.style.display = 'none';
+      else if (btn.style.display === 'none') btn.style.display = '';
+    });
+    if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.refreshPinned === 'function') {
+      window.MFG_SAVED_VIEWS.refreshPinned();
     }
     updateLiveSelectionBar(container);
   }
@@ -212244,7 +212831,7 @@
       if (watchdogChip && container.contains(watchdogChip)) {
         e.stopPropagation();
         const tier = String(watchdogChip.dataset.permitWatchdogTier || 'all').trim() || 'all';
-        STATE.permitWatchdogTier = (STATE.permitWatchdogTier === tier && tier !== 'all') ? 'all' : tier;
+        STATE.permitWatchdogTier = (tier === 'all' || STATE.permitWatchdogTier === tier) ? '' : tier;
         const wsEl = $('workspace');
         const keepY = wsEl ? wsEl.scrollTop : 0;
         renderApp();
@@ -213137,6 +213724,18 @@
         }
       }
 
+      const anySelDot = t.closest('[data-row-sel]');
+      if (anySelDot) {
+        const selTr = anySelDot.closest('tr.rrow');
+        if (selTr && container.contains(selTr)) {
+          e.preventDefault();
+          e.stopPropagation();
+          selTr.classList.toggle('is-row-selected');
+          updateLiveSelectionBar(container);
+          return;
+        }
+      }
+
       const rrow = t.closest('tr.rrow[data-rid]');
       if (rrow && container.contains(rrow)) {
         const selDot = t.closest('[data-row-sel]');
@@ -213164,6 +213763,17 @@
         }
         openRecordFromTableRow(rrow.getAttribute('data-rkey'), rrow.getAttribute('data-rid'), rrow);
         return;
+      }
+
+      const genericRrow = !t.closest('tr.rrow[data-rid], tr.rrow[data-ind-row-id]') ? t.closest('tr.rrow') : null;
+      if (genericRrow && container.contains(genericRrow) && genericRrow.querySelector('u.row-sel-dot') && (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey)) {
+        if (!t.closest('[data-rel-key], [data-ind-agr-pill], button, a, input, select, label')) {
+          e.preventDefault();
+          e.stopPropagation();
+          genericRrow.classList.toggle('is-row-selected');
+          updateLiveSelectionBar(container);
+          return;
+        }
       }
 
       const indPartyTr = t.closest('tr[data-ind-tbl-party]');
@@ -218538,7 +219148,179 @@
       });
     }
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.init === 'function') {
-      window.MFG_SAVED_VIEWS.init({ STATE, toast, render: renderApp, activeUser, hasServerApi, isDemoScopeActive, edgeApiFetch });
+      const resolveSavedViewBasePool = (cfView, table) => {
+        const detKey = cfView ? _svBasePoolKey(cfView) : '';
+        if (detKey && Array.isArray(_detSavedViewPoolCache[detKey])) {
+          return _detSavedViewPoolCache[detKey];
+        }
+        if (cfView && SEED && SEED.records && typeof filterRecords === 'function') {
+          if ((cfView.startsWith('ureg_') || cfView.startsWith('tbl_')) && window.MFG_PBI && typeof window.MFG_PBI.getUnshrunkHubRegistryRows === 'function') {
+            const isU = cfView.startsWith('ureg_');
+            const tkHub = cfView.slice(isU ? 5 : 4);
+            const hubRows = window.MFG_PBI.getUnshrunkHubRegistryRows({
+              mode: isU ? 'ureg' : 'tbl',
+              tableKey: tkHub,
+              STATE,
+              SEED,
+              activeIndustry: getActiveIndustry(STATE.company),
+              activeUser,
+              seatLens,
+              filterRecords,
+              canAccessTable,
+              canAccessRdlReport,
+              canViewPayrollDollarAmounts,
+              allowedCompanyNames,
+              isStaffMemberAllowedForSeat
+            });
+            if (Array.isArray(hubRows)) {
+              const outHub = (!isU || tkHub !== 'staff_members') ? hubRows : hubRows.filter(s => typeof isStaffInSelectedCompanyScope !== 'function' || isStaffInSelectedCompanyScope(s, SEED));
+              _detSavedViewPoolCache[detKey] = outHub;
+              return outHub;
+            }
+          }
+          if (cfView === 'pay_emp' && Array.isArray(SEED.records.employments)) {
+            const empPool = filterRecords(SEED.records.employments, { tableKey: 'employments', ignorePeriod: true, ignoreSearch: true });
+            _detSavedViewPoolCache[detKey] = empPool;
+            return empPool;
+          }
+          const DIRECT_SEED_SV_VIEWS = { sales: 'sales_tickets', raw: 'raw_purchases', fuel: 'fuel_intakes', receipts: 'receipts', settle: 'settlements', expenses: 'expenses' };
+          const mappedTk = DIRECT_SEED_SV_VIEWS[cfView];
+          if (mappedTk && Array.isArray(SEED.records[mappedTk])) {
+            const dirPool = filterRecords(SEED.records[mappedTk], { tableKey: mappedTk, ignoreSearch: true });
+            _detSavedViewPoolCache[detKey] = dirPool;
+            return dirPool;
+          }
+          if (cfView === 'pay_sal' && Array.isArray(SEED.records.salaries)) {
+            ensurePaySalRowsEnriched();
+            const salPool = filterRecords(SEED.records.salaries, { tableKey: 'salaries', ignoreSearch: true });
+            _detSavedViewPoolCache[detKey] = salPool;
+            return salPool;
+          }
+          if ((cfView === 'pricing' || cfView === 'raw_pricing') && Array.isArray(SEED.records.price_rules)) {
+            const isRawPr = cfView === 'raw_pricing';
+            const canSeeComm = Boolean(seatLens().profit);
+            const prPool = filterRecords(SEED.records.price_rules, { tableKey: 'price_rules', ignorePeriod: true, ignoreSearch: true }).filter(r => {
+              const isQ = Boolean(r && (r.rule_type === 'Purchase Price (Site)' || r.rule_type === 'Transport Price (Site)'));
+              const isC = Boolean(r && /^commission$/i.test(String(r.rule_type || '').trim()));
+              return isRawPr ? isQ : (!isQ && (canSeeComm || !isC));
+            });
+            _detSavedViewPoolCache[detKey] = prPool;
+            return prPool;
+          }
+        }
+        if (cfView === 'pay_staff' && typeof computeStaffPayrollRegister === 'function') {
+          const pr = computeStaffPayrollRegister({ ignoreSearch: true });
+          if (pr && Array.isArray(pr.staffRows)) {
+            _detSavedViewPoolCache[detKey] = pr.staffRows;
+            return pr.staffRows;
+          }
+        }
+        if (cfView && /^(?:re_|trd_|hsp_|ins_|hld_|hldEntitiesScorecardPanel)/.test(cfView) && typeof getViewFilterPool === 'function') {
+          const vp = getViewFilterPool(cfView, undefined, { nullOnUnknown: true });
+          if (Array.isArray(vp)) {
+            _detSavedViewPoolCache[detKey] = vp;
+            return vp;
+          }
+        }
+        if (detKey && Array.isArray(_savedViewBasePool[detKey])) {
+          return _savedViewBasePool[detKey];
+        }
+        const panel = table && table.closest ? table.closest('.panel-card, .panel') : null;
+        const curViewKey = String(STATE.view || '');
+        const hasDrawerF = Boolean((cfView && STATE.indDrawerFilters && STATE.indDrawerFilters[cfView] && Object.keys(STATE.indDrawerFilters[cfView]).some(k => STATE.indDrawerFilters[cfView][k])) || (curViewKey && curViewKey !== cfView && STATE.indDrawerFilters && STATE.indDrawerFilters[curViewKey] && Object.keys(STATE.indDrawerFilters[curViewKey]).some(k => STATE.indDrawerFilters[curViewKey][k])));
+        const hasIndAssetF = Boolean(STATE.cfFocusParty || (STATE.indAssetFilter && Object.values(STATE.indAssetFilter).some(v => v && v !== 'ALL')));
+        const hasTransientF = Boolean(STATE.search || (STATE.chipFilter && STATE.chipFilter !== 'all') || (STATE.permitWatchdogTier && STATE.permitWatchdogTier !== 'all') || (cfView === 'pay_staff' && STATE.payrollStaffStatus && STATE.payrollStaffStatus !== 'all') || hasDrawerF || hasIndAssetF || (cfView && getRegDrill(cfView)) || (panel && panel.id && getRegDrill(panel.id)) || (STATE.siteAllowStaffFilter && String(STATE.siteAllowStaffFilter).trim()));
+        if (!hasTransientF) {
+          if (panel && panel.id && _regPanelRows[panel.id] && Array.isArray(_regPanelRows[panel.id].all)) {
+            return _regPanelRows[panel.id].all;
+          }
+          return (cfView && Array.isArray(_tablePoolCache[cfView]) && _tablePoolCache[cfView]) || null;
+        }
+        return null;
+      };
+      const countSavedViewRows = (cfView, payload, table) => {
+        const pool = resolveSavedViewBasePool(cfView, table);
+        if (!Array.isArray(pool)) return null;
+        const p = payload && typeof payload === 'object' ? payload : {};
+        const tk = viewToTableKey(cfView);
+        const rawEntries = Object.entries(p.filters || {}).filter(([, spec]) => Boolean(spec && String(spec).trim()));
+        const activeEntries = rawEntries.filter(([k]) => !isMaskedFieldAccessBlocked(tk, k));
+        if (rawEntries.length > 0 && activeEntries.length === 0) return null;
+        const qStr = String(p.search || '').trim();
+        const qTokens = qStr ? parseSearchTokens(qStr) : [];
+        if (!activeEntries.length && !qTokens.length) return pool.length;
+        const canPay = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
+        return withRelPass(() => {
+          let cnt = 0;
+          for (let i = 0; i < pool.length; i++) {
+            const r = pool[i];
+            if (!r) continue;
+            let ok = true;
+            for (let j = 0; j < activeEntries.length; j++) {
+              const [ck, spec] = activeEntries[j];
+              if (!matchColFilterValue(resolveColVal(r, ck, cfView), spec, ck, r, cfView)) {
+                ok = false;
+                break;
+              }
+            }
+            if (!ok) continue;
+            if (qTokens.length) {
+              let hay = null;
+              for (let ti = 0; ti < qTokens.length; ti++) {
+                const t = qTokens[ti];
+                if (t.col) {
+                  const cks = COL_KEY_ALIASES[t.col] || [t.col];
+                  const hit = cks.some(ck => {
+                    if (isMaskedFieldAccessBlocked(tk, ck) || (!canPay && isMaskedPayrollField(tk, ck))) return false;
+                    const v = resolveColVal(r, ck, cfView);
+                    return v !== undefined && v !== null && v !== '' && matchColFilterValue(v, t.val, ck, r, cfView);
+                  });
+                  if (!hit) { ok = false; break; }
+                } else {
+                  if (hay === null) {
+                    const parts = [];
+                    const keys = Object.keys(r);
+                    for (let ki = 0; ki < keys.length; ki++) {
+                      const k = keys[ki];
+                      if (k === 'id' || k === 'notes' || isMaskedFieldAccessBlocked(tk, k) || (!canPay && isMaskedPayrollField(tk, k))) continue;
+                      const val = r[k];
+                      if (val != null && val !== '') parts.push(val);
+                    }
+                    parts.push(recordDateDMY(r));
+                    hay = parts.join(' ').toLowerCase();
+                  }
+                  if (!hay.includes(t.val)) { ok = false; break; }
+                }
+              }
+            }
+            if (ok) cnt += 1;
+          }
+          return cnt;
+        });
+      };
+      const suggestSavedViewName = (cfView) => {
+        const cf = (STATE.colFilters && STATE.colFilters[cfView]) || {};
+        const bits = [];
+        Object.entries(cf).forEach(([, spec]) => {
+          const s = String(spec || '').trim();
+          if (s) bits.push(formatFilterSpecHuman(s));
+        });
+        if (STATE.search && String(STATE.search).trim()) bits.push(String(STATE.search).trim());
+        return bits.join(' · ').slice(0, 60);
+      };
+      window.MFG_SAVED_VIEWS.init({
+        STATE,
+        toast,
+        render: renderApp,
+        activeUser,
+        hasServerApi,
+        isDemoScopeActive,
+        edgeApiFetch,
+        panelToCfView: id => PANEL_TO_CF_VIEW[id] || '',
+        fmtNum: n => fmtNum(n, 0),
+        countViewRows: countSavedViewRows,
+        suggestFilterViewName: suggestSavedViewName
+      });
     }
     if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.init === 'function') {
       window.MFG_VOID_LOG.init({
@@ -220101,6 +220883,8 @@
     _dateActivityCacheKey = '';
     _dateActivityCacheVal = null;
     Object.keys(_tablePoolCache).forEach(k => { delete _tablePoolCache[k]; });
+    Object.keys(_savedViewBasePool).forEach(k => { delete _savedViewBasePool[k]; });
+    Object.keys(_detSavedViewPoolCache).forEach(k => { delete _detSavedViewPoolCache[k]; });
     _filterRecordsWeakCache = new WeakMap();
     _sortedRowsCache.clear();
     _colFilterOptsCache.clear();
@@ -221462,6 +222246,7 @@
     buildDailyTillSheetRows: typeof buildDailyTillSheetRows === 'function' ? buildDailyTillSheetRows : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
     setView: typeof setView === 'function' ? setView : null,
+    inspectActiveRegisterSlice: typeof inspectActiveRegisterSlice === 'function' ? inspectActiveRegisterSlice : null,
     safeRender: typeof safeRender === 'function' ? safeRender : null,
     uiBusy: typeof uiBusy === 'function' ? uiBusy : null,
     upgradeSelects: typeof wireModalSuggestions === 'function' ? wireModalSuggestions : null,

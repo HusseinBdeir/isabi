@@ -16763,7 +16763,17 @@
       "IN (m):": "الحضور (د):",
       "OUT (m):": "الانصراف (د):",
       "Enter both Start and End time, or leave both blank for grace-only": "أدخل وقتي البدء والانتهاء معاً، أو اتركهما فارغين للسماح فقط",
-      "Enter weekday hours or arrival/leaving grace first": "أدخل ساعات يوم العمل أو سماح الحضور/الانصراف أولاً"
+      "Enter weekday hours or arrival/leaving grace first": "أدخل ساعات يوم العمل أو سماح الحضور/الانصراف أولاً",
+      "Export Selected CSV": "تصدير المحدد CSV",
+      "Download selected rows as CSV (Excel, UTF-8)": "تنزيل الأسطر المحددة بصيغة CSV (Excel, UTF-8)",
+      "Open combined Bilingual Contract & NSSF print pack for selected employees": "فتح ملف طباعة العقد والضمان الاجتماعي الثنائي اللغة المجمّع للموظفين المحددين",
+      "Your seat has no access to export CSV from this register": "صلاحية حسابك لا تسمح بتصدير ملف CSV من هذا السجل",
+      "Selected Rows": "الأسطر المحددة",
+      "Single Employee View": "عرض موظف واحد",
+      "Ready for Print / Save as PDF": "جاهز للطباعة / الحفظ كملف PDF",
+      "Pin beside Views": "تثبيت بجانب العروض",
+      "Pin beside Views with live count": "تثبيت بجانب العروض مع عدّاد مباشر",
+      "Unpin from toolbar": "إلغاء التثبيت من شريط الأدوات"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -33508,7 +33518,17 @@
       "IN (m):": "Entrée (m) :",
       "OUT (m):": "Sortie (m) :",
       "Enter both Start and End time, or leave both blank for grace-only": "Saisissez les heures de début et de fin, ou laissez-les vides pour la tolérance seule",
-      "Enter weekday hours or arrival/leaving grace first": "Saisissez d'abord les heures du jour ou la tolérance d'arrivée/départ"
+      "Enter weekday hours or arrival/leaving grace first": "Saisissez d'abord les heures du jour ou la tolérance d'arrivée/départ",
+      "Export Selected CSV": "Exporter sélection CSV",
+      "Download selected rows as CSV (Excel, UTF-8)": "Télécharger les lignes sélectionnées en CSV (Excel, UTF-8)",
+      "Open combined Bilingual Contract & NSSF print pack for selected employees": "Ouvrir le dossier d'impression bilingue Contrat & CNSS groupé pour les salariés sélectionnés",
+      "Your seat has no access to export CSV from this register": "Votre rôle n'est pas autorisé à exporter ce registre en CSV",
+      "Selected Rows": "Lignes sélectionnées",
+      "Single Employee View": "Vue salarié unique",
+      "Ready for Print / Save as PDF": "Prêt à imprimer / Enregistrer en PDF",
+      "Pin beside Views": "Épingler près de Vues",
+      "Pin beside Views with live count": "Épingler près de Vues avec compteur en direct",
+      "Unpin from toolbar": "Désépingler de la barre d'outils"
     }
   };
 
@@ -40420,6 +40440,36 @@
     if (m) {
       return {
         out: lang === 'ar' ? `إلغاء المحدد (${m[1]})` : `Annuler la sélection (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Print Selected HR Packs\s*\((\d[\d,]*)\)$/i);
+    if (m) {
+      return {
+        out: lang === 'ar' ? `طباعة ملفات الموارد البشرية المحددة (${m[1]})` : `Imprimer les dossiers RH sélectionnés (${m[1]})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Combined HR Pack\s*\((\d[\d,]*)\s+Selected Employees?\)$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? `ملف الموارد البشرية المجمّع (${m[1]} ${n === 1 ? 'موظف محدد' : 'موظفين محددين'})`
+          : `Dossier RH groupé (${m[1]} ${n === 1 ? 'salarié sélectionné' : 'salariés sélectionnés'})`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Exported\s+(\d[\d,]*)\s+selected\s+rows?\s+to\s+CSV$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? `تم تصدير ${m[1]} ${n === 1 ? 'سطر محدد' : 'أسطر محددة'} إلى CSV`
+          : `${m[1]} ${n === 1 ? 'ligne sélectionnée exportée' : 'lignes sélectionnées exportées'} en CSV`,
         ok: true
       };
     }

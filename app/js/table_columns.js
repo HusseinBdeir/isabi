@@ -279,7 +279,8 @@
     const ucv = String(stateObj.univConnView || '');
     const taxBrk = stateObj.showSalesTaxBreakdown ? 'tax1' : 'tax0';
     const offBk = (stateObj._officialScopeActive || stateObj.officialBookScope) ? 'off1' : 'off0';
-    return [v, co, uk, tk, pp, st, tv, uck, ucv, taxBrk, offBk].join('|');
+    const demoInd = co === 'democompany' ? String(stateObj.demoCompanyIndustry || '') : '';
+    return [v, co, demoInd, uk, tk, pp, st, tv, uck, ucv, taxBrk, offBk].join('|');
   }
 
   function getOrCreateState(tableId, createIfMissing) {
@@ -450,11 +451,13 @@
     bodyRows.forEach(tr => {
       let col0Td = null;
       let firstVisTd = null;
+      const hasIndexed = tr.querySelector('td[data-col-start]') !== null;
       for (let i = 0; i < tr.children.length; i++) {
         const cell = tr.children[i];
         if (cell.tagName !== 'TD') continue;
         const origSpan = Number(cell.getAttribute('data-col-orig-span') || cell.getAttribute('colspan') || 1);
         if (origSpan > 1) return;
+        if (hasIndexed && !cell.hasAttribute('data-col-start')) continue;
         const start = cell.hasAttribute('data-col-start') ? Number(cell.getAttribute('data-col-start') || 0) : i;
         if (start === 0) col0Td = cell;
         if (start === firstVisCol) firstVisTd = cell;
@@ -520,6 +523,26 @@
         return false;
       }
     }
+    const tbody = table.tBodies && table.tBodies[0];
+    if (tbody) {
+      const bRows = tbody.rows;
+      for (let r = 0; r < bRows.length; r++) {
+        const br = bRows[r];
+        if (!br || br.classList.contains('total-row') || br.classList.contains('totals-row') || br.classList.contains('empty-row') || br.classList.contains('extd-sum-row')) continue;
+        let cc = 0;
+        let spanSum = 0;
+        for (let c = 0; c < br.children.length; c++) {
+          const ch = br.children[c];
+          if (ch.tagName !== 'TD' && ch.tagName !== 'TH') continue;
+          cc += 1;
+          spanSum += Number(ch.getAttribute('data-col-orig-span') || ch.getAttribute('colspan') || 1);
+        }
+        if (cc > 1) {
+          if (cc !== colCount || spanSum !== colCount) return false;
+          break;
+        }
+      }
+    }
     return true;
   }
 
@@ -544,9 +567,14 @@
     table._hadColCustom = hiddenSet.size > 0 || widthMap.size > 0;
     ensureFirstVisStyle();
 
+    const headRowForVis = table.querySelector('thead tr');
+    const headThsForVis = headRowForVis
+      ? Array.from(headRowForVis.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD')
+      : [];
     let firstVisCol = 0;
     for (let c = 0; c < colCount; c++) {
-      if (!hiddenSet.has(c)) {
+      const preHidTh = headThsForVis[c] && headThsForVis[c].style && headThsForVis[c].style.display === 'none';
+      if (!hiddenSet.has(c) && !preHidTh) {
         firstVisCol = c;
         break;
       }
@@ -1093,6 +1121,10 @@
       }
       const panelHead = parentCard.querySelector(':scope > .panel-head');
       if (panelHead) {
+        const panelActions = panelHead.querySelector(':scope > .panel-actions, :scope > .panel-meta');
+        if (panelActions) {
+          return { host: panelActions, prepend: true };
+        }
         return { host: panelHead, prepend: false };
       }
       const sgBar = parentCard.querySelector(':scope > .pa-subgrid-bar');
@@ -1462,15 +1494,31 @@
     }
 
     const root = rootContainer || document;
-    const selector = 'table.ledger-table, table.m-grid, table.rdl-table';
-    const tables = Array.from(root.querySelectorAll(selector)).filter(t => {
+    const isSortableDataTable = t => Boolean(
+      t.classList.contains('data-table')
+      && t.id !== 'kioskRecentTable'
+      && t.id !== 'kioskAttFeedTable'
+      && !t.hasAttribute('data-no-col-mgr')
+      && !t.hasAttribute('data-no-mob-pin')
+      && !t.classList.contains('ceo-scorecard-table')
+      && !t.closest('.modal-card, #mobRowPeekSheet, #pocketBriefOverlay, .thermal-paper-roll, .a4-sheet, .ceo-entities-panel')
+      && t.closest('.table-wrap, .table-scroll')
+      && t.querySelector('thead tr:only-child th[data-sort-view]')
+      && !t.querySelector('thead th[colspan]')
+    );
+    const tables = Array.from(root.querySelectorAll('table.ledger-table, table.m-grid, table.rdl-table, table.data-table')).filter(t => {
       if (t.id === 'kioskRecentTable' || t.id === 'kioskAttFeedTable') return false;
       if (t.hasAttribute('data-no-col-mgr') || t.classList.contains('ceo-scorecard-table')) return false;
       if (t.closest('.thermal-paper-roll')) return false;
+      if (t.classList.contains('data-table') && !t.classList.contains('ledger-table') && !t.classList.contains('m-grid') && !t.classList.contains('rdl-table')) {
+        if (!isSortableDataTable(t)) return false;
+      }
       return Boolean(t.querySelector('thead tr th'));
     });
 
+    const tableSet = new Set(tables);
     const dataTables = Array.from(root.querySelectorAll('table.data-table')).filter(t => {
+      if (tableSet.has(t)) return false;
       if (t.classList.contains('ledger-table') || t.classList.contains('m-grid') || t.classList.contains('rdl-table')) return false;
       if (t.id === 'kioskRecentTable' || t.id === 'kioskAttFeedTable') return false;
       if (t.hasAttribute('data-no-mob-pin') || t.classList.contains('ceo-scorecard-table')) return false;
@@ -1512,7 +1560,7 @@
     isSingleCorporationScope,
     getMobilePinnedCol: table => (table && table.dataset && table.dataset.mobPinCol !== undefined && table.dataset.mobPinCol !== '') ? Number(table.dataset.mobPinCol) : -1,
     getStateForTable: table => table ? getOrCreateState(table.dataset.colMgrId, false) : null,
-    getEffectiveHiddenCols: table => (table && table.matches && table.matches('table.ledger-table, table.m-grid, table.rdl-table'))
+    getEffectiveHiddenCols: table => (table && table.matches && table.matches('table.ledger-table, table.m-grid, table.rdl-table, table.data-table[data-col-mgr-id]'))
       ? computeEffectiveHidden(table, getOrCreateState(table.dataset.colMgrId, false), extractHeaderLabels(table).length).eff
       : new Set()
   };

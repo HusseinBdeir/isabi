@@ -85,6 +85,45 @@
 /* ---------- Saved views: "Views" beside "Columns" on every workspace table ---------- */
 .tbl-col-mgr-wrap .sv-wrap { position: relative; display: inline-flex; }
 .sv-trigger-btn { display: inline-flex; align-items: center; gap: 5px; }
+.sv-pinned-strip {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  max-width: 100%; min-width: 0;
+}
+.sv-pin-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3.5px 8px; border-radius: 999px;
+  border: 1px solid var(--brass-border); background: var(--surface); color: var(--ink);
+  font-size: 11px; font-weight: 600; line-height: 1.2; cursor: pointer;
+  max-width: 190px; white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.sv-pin-pill svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--brass); }
+.sv-pin-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sv-pin-cnt {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; padding: 0.5px 5px; border-radius: 999px;
+  background: var(--brass-tint); color: var(--brass);
+  font-family: "Archivo", sans-serif; font-size: 10px; font-weight: 800;
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.sv-pin-pill.is-zero .sv-pin-cnt {
+  background: var(--surface-2); color: var(--muted);
+}
+.sv-pin-pill:hover, .sv-pin-pill:focus-visible {
+  border-color: var(--brass); background: var(--brass-tint); outline: none;
+}
+.sv-pin-pill.is-active {
+  background: var(--brass); border-color: var(--brass); color: #0B1730;
+  box-shadow: 0 2px 6px rgba(192, 137, 47, 0.25);
+}
+.sv-pin-pill.is-active svg { color: #0B1730; }
+.sv-pin-pill.is-active .sv-pin-cnt { background: rgba(11, 23, 48, 0.16); color: #0B1730; }
+:root[data-theme="dark"] .sv-pin-pill {
+  background: var(--surface); border-color: rgba(217, 165, 74, 0.42); color: var(--ink);
+}
+:root[data-theme="dark"] .sv-pin-pill.is-active {
+  background: var(--brass); border-color: var(--brass); color: #0B1730;
+}
 @media (min-width: 861px) {
   .panel-card:has(.sv-pop:not([hidden])),
   .pbi-panel:has(.sv-pop:not([hidden])),
@@ -96,7 +135,7 @@
   }
 }
 .sv-pop {
-  position: absolute; top: calc(100% + 6px); inset-inline-end: 0; width: 300px; max-width: calc(100vw - 24px);
+  position: absolute; top: calc(100% + 6px); inset-inline-end: 0; width: 316px; max-width: calc(100vw - 24px);
   background: var(--surface); color: var(--ink); border: 1px solid var(--brass-border); border-top: 3px solid var(--brass);
   border-radius: 8px; box-shadow: var(--shadow-lg); z-index: 96; padding: 10px; text-align: start;
   font-weight: 400; text-transform: none; letter-spacing: normal;
@@ -111,19 +150,36 @@
 .sv-apply:hover, .sv-apply:focus-visible { border-color: var(--brass-border); background: var(--brass-tint); }
 .sv-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-desc { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-pin,
 .sv-del {
   flex: 0 0 30px; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
   color: var(--muted); cursor: pointer; font-size: 12px;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
+.sv-pin:hover,
+.sv-pin:focus-visible { color: var(--brass); border-color: var(--brass-border); background: var(--brass-tint); outline: none; }
+.sv-pin.is-pinned {
+  color: var(--brass); border-color: var(--brass); background: var(--brass-tint);
+}
+.sv-pin.is-pinned svg { fill: currentColor; }
+.sv-save-pin-toggle {
+  flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border-radius: 6px; border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.sv-save-pin-toggle:hover,
+.sv-save-pin-toggle:focus-visible { border-color: var(--brass); color: var(--brass); background: var(--brass-tint); outline: none; }
+.sv-save-pin-toggle.is-pinned { border-color: var(--brass); background: var(--brass-tint); color: var(--brass); }
+.sv-save-pin-toggle.is-pinned svg { fill: currentColor; }
 .sv-del svg.ic { width: 13px; height: 13px; margin: 0; vertical-align: 0; }
 .sv-del:hover,
 .sv-del:focus-visible { color: #991B1B; border-color: var(--crit); background: color-mix(in srgb, var(--crit) 11%, var(--surface)); outline: none; }
 :root[data-theme="dark"] .sv-del:hover,
 :root[data-theme="dark"] .sv-del:focus-visible { color: #FCA5A5; border-color: #EF4444; background: color-mix(in srgb, var(--crit) 14%, var(--surface)); outline: none; }
 .sv-empty { font-size: 12px; color: var(--ink-2); padding: 4px 2px 8px; }
-.sv-save { display: flex; gap: 6px; margin-top: 8px; }
+.sv-save { display: flex; gap: 5px; margin-top: 8px; }
 .sv-name-input {
   flex: 1 1 auto; min-width: 0; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px;
   background: var(--surface); color: var(--ink); font-size: 12.5px;
@@ -135,9 +191,11 @@
   .apv-live-card { inset-inline: 12px; bottom: 76px; width: auto; }
   .sv-pop { position: fixed; inset-inline: 12px; top: auto; bottom: 76px; width: auto; max-width: calc(100vw - 24px); max-height: min(420px, 64vh); overflow-y: auto; z-index: 2650; }
   .sv-name-input { font-size: 16px; }
+  .sv-pinned-strip { width: 100%; }
 }
 @media (pointer: coarse) {
-  .apv-row-acts .btn, .apv-live-acts .btn, .sv-apply, .sv-del, .sv-save .btn, .pa-ask-approval-btn { min-height: 44px; }
+  .apv-row-acts .btn, .apv-live-acts .btn, .sv-apply, .sv-pin, .sv-del, .sv-save .btn, .sv-save-pin-toggle, .pa-ask-approval-btn { min-height: 44px; }
+  .sv-pin-pill { min-height: 32px; }
   .apv-live-x { width: 44px; height: 44px; }
 }
 
