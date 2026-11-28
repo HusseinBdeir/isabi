@@ -2136,8 +2136,8 @@ def _print_batch(cwd: Path, app: Path, batch: dict) -> None:
     print("     (sync_app.py also runs the screen speed gate, side by side with origin/main: up to 20 min when screen code"
           " changed; --skip-release-gates does not skip it)")
     print("     This PC makes it live. GitHub Actions no longer deploys on a push to main (owner 2026-11-26): do not push"
-          " first and wait for a run. A batch that also carries new private seeds: the full python build/deploy_cloudflare.py"
-          " (it uploads them), from a checkout that has them.")
+          " first and wait for a run. `--pages-only` automatically uploads changed R2 private seeds from `isabi-app/js/`"
+          " (and full `deploy_cloudflare.py` / `release_data_only.py` is only needed for D1 SQL row deltas).")
     print("  3. push main: isabi-app (git push origin HEAD:main), then isabi (git push origin HEAD:main)")
     print("  4. python build/release_batch.py done")
     print("  Or all four as one command, in the background (about half an hour; it stops at the first failure with the lock "

@@ -506,6 +506,62 @@ def run_tests(*, wait_only: bool = False) -> None:
 
                 # 6. Offline bare-repo wait-lock polling against both current release_lock and simulated legacy signature
                 _run_wait_lock_tests(check_bypass_subprocess=True)
+
+                # 7. stage_r2 writes both immutable content-addressed keys and unversioned latest pointers across core/records/industries
+                r2_puts: list[str] = []
+                r2_meta_path = base / "r2_stage_meta.json"
+                (sg_app / "js" / "seed_core.json").write_bytes(sg_c2)
+                r2_hm = rdo.head_manifest()
+                r2_ind = json.dumps({"trd": [{"id": "t1"}]}).encode("utf-8")
+                (sg_app / "js" / "seed_industries.json").write_bytes(r2_ind)
+                r2_hm["industriesHash"] = _sha10(r2_ind)
+                r2_hm["apiIndustries"] = f"./api/seed/industries?d={r2_hm['industriesHash']}"
+                (sg_site / "app" / "js" / "seed_manifest.js").write_text(
+                    "(typeof self!=='undefined'?self:window).__MFG_SEED_MANIFEST=" + json.dumps(r2_hm) + ";\n",
+                    encoding="utf-8",
+                )
+                _git(sg_site, "add", "app/js/seed_manifest.js")
+                _git(sg_site, "commit", "-q", "-m", "add industriesHash to manifest")
+
+                def _r2_load_meta():
+                    if r2_meta_path.is_file():
+                        return json.loads(r2_meta_path.read_text(encoding="utf-8"))
+                    return {}
+
+                def _r2_save_meta(m):
+                    r2_meta_path.write_text(json.dumps(m), encoding="utf-8")
+
+                def _r2_wrangler(args, _env, check=True):
+                    if args[:3] == ["r2", "object", "put"]:
+                        r2_puts.append(args[3])
+                    return subprocess.CompletedProcess(["wrangler", *args], 0, stdout="ok", stderr="")
+
+                fake_d = types.SimpleNamespace(
+                    build_env=lambda: {},
+                    ensure_logged_in=lambda _env: (True, "acct"),
+                    load_edge_meta=_r2_load_meta,
+                    save_edge_meta=_r2_save_meta,
+                    run_wrangler=_r2_wrangler,
+                )
+                rdo.mods = lambda: (types.SimpleNamespace(OUT_DIR=out_dir), fake_d)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rdo.stage_r2()
+                expected_puts = {
+                    f"isabi-vault/seeds/seed_core.{r2_hm['coreHash']}.json",
+                    "isabi-vault/seeds/seed_core.json",
+                    f"isabi-vault/seeds/seed_records.{r2_hm['recordsHash']}.json",
+                    "isabi-vault/seeds/seed_records.json",
+                    f"isabi-vault/seeds/seed_industries.{r2_hm['industriesHash']}.json",
+                    "isabi-vault/seeds/seed_industries.json",
+                }
+                assert set(r2_puts) == expected_puts, f"expected {expected_puts}, got {r2_puts}"
+                saved_meta = _r2_load_meta()
+                assert (saved_meta.get("r2_versioned_seed_shas") or {}).get("core") == [r2_hm["coreHash"]], saved_meta
+                r2_puts.clear()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rdo.stage_r2()
+                assert r2_puts == [], f"second stage_r2 should be idempotent, got {r2_puts}"
+                print("ok   release_data_only stage_r2 uploads both content-addressed and latest R2 keys idempotently")
         finally:
             rdo.ISABI = orig_isabi
             rdo.ISABI_APP = orig_app

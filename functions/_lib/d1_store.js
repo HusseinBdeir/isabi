@@ -2517,6 +2517,8 @@ export async function handleSavedViews(request, env, session, body) {
   return jsonResponse({ ok: false, error: 'Unknown op.' }, 400);
 }
 
+const _SEED_HASH10_RE = /^[0-9a-f]{10}$/;
+
 export async function handleSeedGet(request, env, session, kindRaw) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox uses synthetic demo seeds.' }, 403);
@@ -2527,8 +2529,27 @@ export async function handleSeedGet(request, env, session, kindRaw) {
   if (!env || !env.BUCKET) {
     return jsonResponse({ ok: false, error: 'Private seed vault unavailable.' }, 503);
   }
-  const r2Key = `seeds/seed_${kind}.json`;
-  const obj = await env.BUCKET.get(r2Key);
+  let rawD = null;
+  try {
+    rawD = new URL(request.url, 'https://isabisystems.com').searchParams.get('d');
+  } catch (_) {
+    rawD = null;
+  }
+  let wantHash = '';
+  if (rawD !== null && String(rawD).trim() !== '') {
+    const cleaned = String(rawD).trim().toLowerCase();
+    if (!_SEED_HASH10_RE.test(cleaned)) {
+      return jsonResponse({ ok: false, error: 'Invalid seed hash parameter.' }, 400);
+    }
+    wantHash = cleaned;
+  }
+  let obj = null;
+  if (wantHash) {
+    obj = await env.BUCKET.get(`seeds/seed_${kind}.${wantHash}.json`);
+  }
+  if (!obj) {
+    obj = await env.BUCKET.get(`seeds/seed_${kind}.json`);
+  }
   if (!obj) {
     return jsonResponse({ ok: false, error: 'Seed snapshot not found in vault.' }, 404);
   }
