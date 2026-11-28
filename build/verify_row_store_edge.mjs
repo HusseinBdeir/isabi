@@ -908,8 +908,13 @@ console.log('\n[15. Ids and names the database would not keep exactly]');
   const perEntry = Z.d1.rows("SELECT row_id FROM store_rows WHERE doc_key = 'mfg_web_store' AND bucket = 'cr:expenses'").length;
   ok('15a. an entry whose id holds half a surrogate pair is saved; its table is kept whole in the rows, which still equal the stored text',
     p.json.ok === true && s.doc.customRecords.expenses.some(r => r.id === lone) && perEntry === 0 && Z.rowsText() === s.text && Z.state().rows_bad === 0, { perEntry, st: Z.state() });
+  const zAtCut = await Z.stored();
   const cut = await Z.ticketAction('cutover');
   const p2 = await Z.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-2', company: 'WTC', date: '2026-11-20', customer: 'ZzCust Other', total: 2, source: 'app' }] } });
+  // A comparison of the text the switch-over was made at, arriving after a save onto the rows: nothing to count.
+  const lateCheck = await checkShadowRows(Z.d1, zAtCut.text, await docAnchorOf({ updated_at: zAtCut.ts, payload_json: zAtCut.text }));
+  ok('15d. a comparison left over from the switch-over text, arriving after a save onto the rows, is skipped: no false mismatch for the Owner',
+    lateCheck === 'skipped' && Z.state().rows_bad === 0, { lateCheck, st: Z.state() });
   forgetRowStoreMemo();
   const after = await Z.stored();
   ok('15b. after the switch-over a save to another entry leaves the store readable, cold, with that id intact',
