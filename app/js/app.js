@@ -568,6 +568,12 @@
     return s;
   }
   if (typeof window !== 'undefined') window.__mfgCanonCompany = canonCompany;
+  const VOUCHER_REF_AS_PERSON_RE = /^(?:SALPAY|SUPPAY|REXP|EXP|ASGN|SAL-INS|SET-INS|REC-INS)-(?:\d{3,}|[A-Z0-9]+-\d+)/i;
+  function isVoucherRefNotPersonName(raw) {
+    const s = String(raw || '').trim();
+    return Boolean(s && VOUCHER_REF_AS_PERSON_RE.test(s));
+  }
+  if (typeof window !== 'undefined') window.__mfgIsVoucherRefNotStaff = isVoucherRefNotPersonName;
   function ensureCanonicalMultiIndustrySeat(u) {
     if (!u || typeof u !== 'object') return u;
     const uid = String(u.id || '').trim().toLowerCase();
@@ -1742,6 +1748,16 @@
     if (/clinic|diagnostic|medical|pharma|hospital|dental|rehab|health|lab/.test(s)) return 'Healthcare & Diagnostics';
     if (/holding|treasury|isabi|venture|family office|capital|shared services/.test(s)) return 'Holding & Treasury';
     return 'Manufacturing';
+  }
+
+  function resolveIndustryForCompany(rawCo) {
+    const c = canonCompany(rawCo);
+    if (!c) return '';
+    const k = COMPANY_KEY_BY_NAME[c] || slugCompanyKey(c);
+    if (COMPANY_INDUSTRY_BY_KEY[k]) return COMPANY_INDUSTRY_BY_KEY[k];
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const hit = cat.find(x => x && (norm(x.name) === norm(c) || x.key === k));
+    return (hit && hit.industry) || inferIndustryForCompany(c) || '';
   }
 
   function buildEnterprisePreviewCatalog() {
@@ -10495,8 +10511,8 @@
   }
 
   const _PAYROLL_MASKED_COL_RE = {
-    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status)$/i,
-    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|salary_pending|reimbursement|reimbursement_lbp|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status)$/i,
+    staff_members: /^(?:active_salary_usd|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|package_usd|daily_rate|total_earned|total_paid|rem_payment|deduction|base|reimb|att_ot_pay|trip_ot_pay|ot_pay|extras|site_allow|late_ded|abs_ded|ded|earnings|paid|balance|advances|base_salary|salary_status|amount|usd_amount|lbp_amount|total|total_ttc)$/i,
+    employments: /^(?:monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|salary_pending|reimbursement|reimbursement_lbp|package_usd|daily_rate|deduction|total_paid|total_earned|rem_payment|lbp_amount|usd_amount|base_salary|salary_status|amount|total|total_ttc)$/i,
     salaries: /^(?:amount|lbp_amount|usd_amount|monthly_salary_usd|monthly_salary|salary_usd|salary_lbp|salary|reimbursement|reimbursement_lbp|deduction|month_earnings|month_cum_paid|cash_usd|bank_usd|unmatched_usd)$/i,
     attendance: /^(?:extra_usd|overtime_usd|deduction_usd|net_usd|wage_usd|amount|usd_amount|sales_ot_usd|raw_ot_usd|total_ot_usd|in_payroll_usd|total|diff|ot_pay_usd|late_ded_usd|abs_ded_usd|earned_usd|lost_usd|payroll_impact_usd|extra_lbp)$/i,
     freelance_entries: /^(?:rate_usd|total|amount|usd_amount|reimbursement|reimbursement_lbp|deduction)$/i,
@@ -16076,7 +16092,7 @@
     const rawSm = (SEED && SEED.records && Array.isArray(SEED.records.staff_members)) ? SEED.records.staff_members : [];
     const univStaffRows = (typeof filterRecords === 'function'
       ? filterRecords(rawSm, { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
-      : rawSm).filter(r => typeof isStaffMemberAllowedForSeat !== 'function' || isStaffMemberAllowedForSeat(r, SEED));
+      : rawSm).filter(r => isStaffInSelectedCompanyScope(r, SEED) && (typeof isStaffMemberAllowedForSeat !== 'function' || isStaffMemberAllowedForSeat(r, SEED)));
     const wd = computeStaffComplianceWatchdog(univStaffRows, SEED, { critDays, warnDays });
     const c = (wd && wd.counts) || {};
     const critCnt = Number(c.expired || 0) + Number(c.critical_7 || 0);
@@ -17732,11 +17748,12 @@
       inc(driver, f.driver, 1);
       inc(fuelLoc, f.location, 1);
     });
-    sals.forEach(s => { if (s && !s.voided) inc(staff, s.staff, 1); });
-    atts.forEach(a => { if (a && !a.voided) inc(staff, a.staff, 1); });
+    sals.forEach(s => { if (s && !s.voided && !isVoucherRefNotPersonName(s.staff)) inc(staff, s.staff, 1); });
+    atts.forEach(a => { if (a && !a.voided && !isVoucherRefNotPersonName(a.staff)) inc(staff, a.staff, 1); });
     emps.forEach(e => {
       if (!e || e.voided) return;
-      inc(staff, e.staff || e.name, 1);
+      const empStaff = e.staff || e.name;
+      if (!isVoucherRefNotPersonName(empStaff)) inc(staff, empStaff, 1);
       inc(role, e.role, 2);
     });
     fsh.forEach(f => { if (f && !f.voided) inc(role, f.role, 1); });
@@ -17977,9 +17994,10 @@
         if (r.region || r.zone) inc(region, r.region || r.zone, wTbl);
         if (r.truck || r.equipment || r.target_equipment || r.default_truck || r.default_equipment) incTruck(r.truck || r.equipment || r.target_equipment || r.default_truck || r.default_equipment, wTbl);
         if (r.driver || r.operator || r.default_driver) inc(driver, r.driver || r.operator || r.default_driver, wTbl);
-        if (tk === 'staff_members' && r.name) inc(staff, r.name, wTbl);
+        if (tk === 'staff_members' && r.name && !isVoucherRefNotPersonName(r.name)) inc(staff, r.name, wTbl);
         if (tk === 'staff_roles' && r.name) inc(role, r.name, wTbl);
-        if (r.staff || r.employee || r.approved_by) inc(staff, r.staff || r.employee || r.approved_by, wTbl);
+        const autoStaff = r.staff || r.employee || r.approved_by;
+        if (autoStaff && !isVoucherRefNotPersonName(autoStaff)) inc(staff, autoStaff, wTbl);
         if (r.category) inc(category, r.category, wTbl);
         if (r.subcategory) inc(subcategory, r.subcategory, wTbl);
         if (r.uom || r.unit) inc(uom, r.uom || r.unit, wTbl);
@@ -17992,7 +18010,10 @@
           const ck = rKeys[ci];
           if (_AUTO_SKIP_COLS.has(ck) || /(^|_)(id|date|dt|time|url|hash)$/i.test(ck)) continue;
           const cv = r[ck];
-          if (typeof cv === 'string' && cv.length > 0 && cv.length <= 120) incCol(ck, cv, wTbl);
+          if (typeof cv === 'string' && cv.length > 0 && cv.length <= 120) {
+            if (((tk === 'staff_members' && ck === 'name') || /^(?:staff|employee|approved_by|cashier|producer)$/i.test(ck)) && isVoucherRefNotPersonName(cv)) continue;
+            incCol(ck, cv, wTbl);
+          }
         }
       }
     }
@@ -21256,7 +21277,7 @@
         (SEED.records.logistics_allowances || []).map(l => l && l.staff),
         (SEED.records.staff_assignments || []).filter(sa => sa && !sa.voided).map(sa => sa.staff),
         (SEED.records.staff_members || []).filter(sm => sm && !sm.voided).map(sm => sm.name || sm.staff)
-      ),
+      ).filter(nm => nm && !isVoucherRefNotPersonName(nm)),
       fIdx.staff
     );
     return fIdx._lists.staff;
@@ -22222,12 +22243,39 @@
             // Marks a quantity set by a log change, not keyed by a person: the top-up puts the workbook quantity back
             // on a workbook ticket that carries it (build/meter_check.py)
             r._log_resized = { from: curQty, to: effCap, at: truckBfStampIso };
+            const ovSetS = new Set(Array.isArray(r.admin_overrides) ? r.admin_overrides : []);
+            const discS = Math.abs(Number(r.discount || 0));
+            const sMatRule = (!ovSetS.has('f_unitprice') && String(r.price_rule || '') !== 'Manual' && r.customer && r.product)
+              ? findRule({ company: r.company || 'WTC', customer: r.customer, product: r.product, site: String(r.sale_type || 'Delivery') === 'Delivery' ? r.site : '', date: dt, types: [String(r.sale_type || 'Delivery') === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)'] })
+              : null;
+            const sTrRule = (String(r.sale_type || 'Delivery') === 'Delivery' && !ovSetS.has('f_transunitprice'))
+              ? (
+                  (sMatRule && (Number(sMatRule.trans_unit_price || sMatRule.trans_price || 0) > 0 || ruleTransIndiffPrice(sMatRule) != null))
+                    ? sMatRule
+                    : (findRule({ company: r.company || 'WTC', customer: r.customer, product: '', site: r.site, date: dt, types: ['Sales (Delivery)'] })
+                        || findRule({ company: r.company || 'WTC', customer: r.customer, supplier: r.truck_owner, product: r.product, site: r.site, date: dt, types: ['Haulage (Customer Site)'] }))
+                )
+              : null;
+            const matFlatS = Boolean(
+              r.mat_indiff === true
+              || (sMatRule && !isNoMatChargeRule(sMatRule) && isMatIndiffRule(sMatRule))
+              || inferStoredTicketLegFlat(curQty, r.unit_price, r.price, discS, r.tier_adj)
+            );
+            const transFlatS = Boolean(
+              String(r.sale_type || 'Delivery') === 'Delivery' && (
+                r.trans_indiff === true
+                || (sTrRule && isTransIndiffRule(sTrRule))
+                || inferStoredTicketLegFlat(curQty, r.trans_unit_price, r.trans_price, 0, r.trans_tier_adj)
+              )
+            );
+            r.mat_indiff = matFlatS;
+            r.trans_indiff = transFlatS;
             r.qty = effCap;
-            if (!r.mat_indiff) r.price = round2(effCap * Number(r.unit_price || 0) - Math.abs(Number(r.discount || 0)));
-            if (String(r.sale_type || 'Delivery') === 'Delivery' && !r.trans_indiff) r.trans_price = round2(effCap * Number(r.trans_unit_price || 0));
+            if (!matFlatS) r.price = signedLegAmount(effCap * Number(r.unit_price || 0) + Number(r.tier_adj || 0), discS);
+            if (String(r.sale_type || 'Delivery') === 'Delivery' && !transFlatS) r.trans_price = round2(effCap * Number(r.trans_unit_price || 0) + Number(r.trans_tier_adj || 0));
             r.total = round2(Number(r.price || 0) + Number(r.trans_price || 0));
             const wasTax = Math.abs(Number(r.vat || 0)) > 0.005 || Boolean(r.vat_invoice);
-            r.vat = wasTax ? round2(r.total * getVatFraction(dt)) : 0;
+            r.vat = (wasTax && ticketSign(r) !== 0) ? round2(r.total * getVatFraction(dt)) : 0;
             r.total_ttc = round2(r.total + r.vat);
             rowChanged = true;
           }
@@ -22279,9 +22327,36 @@
           if (!agrSize && Math.abs(curRawQty - effCap) > 1e-6) {
             capOrig('raw_purchases', r);
             r._log_resized = { from: curRawQty, to: effCap, at: truckBfStampIso };
+            const ovSetR = new Set(Array.isArray(r.admin_overrides) ? r.admin_overrides : []);
+            const discR = Math.abs(Number(r.discount || 0));
+            const isZeroHaulR = /^company|^supplier[-\s]*delivered/i.test(String(r.transport_by || '')) || isBundledRawTicket(r);
+            const rMatRule = (!ovSetR.has('f_unitprice') && !r.price_entered_manually && (r.site_owner || r.site) && r.product)
+              ? findRule({ company: r.company || 'WTC', supplier: r.site_owner, site: r.site, product: r.product, date: dt, types: ['Purchase Price (Site)', 'Purchase Price (Supplier)'] })
+              : null;
+            const rTrRule = (!isZeroHaulR && !ovSetR.has('f_transunitprice') && (r.site || r.truck_owner))
+              ? findRule({ company: r.company || 'WTC', supplier: r.truck_owner, site: r.site, product: r.product, date: dt, types: ['Transport Price (Site)'] })
+              : null;
+            const matFlatR = Boolean(
+              r.mat_indiff === true
+              || (rMatRule && isMatIndiffRule(rMatRule))
+              || inferStoredTicketLegFlat(curRawQty, r.unit_cost, r.cost, discR, r.tier_adj)
+            );
+            const transFlatR = Boolean(
+              !isZeroHaulR && (
+                r.trans_indiff === true
+                || (rTrRule && isTransIndiffRule(rTrRule))
+                || inferStoredTicketLegFlat(curRawQty, r.trans_unit_cost, r.trans_cost, 0, r.trans_tier_adj)
+              )
+            );
+            r.mat_indiff = matFlatR;
+            r.trans_indiff = transFlatR;
             r.qty = effCap;
-            if (!r.mat_indiff && Number(r.unit_cost || 0) > 0) r.cost = round2(effCap * Number(r.unit_cost || 0));
-            if (!r.trans_indiff && Number(r.trans_unit_cost || 0) > 0) r.trans_cost = round2(effCap * Number(r.trans_unit_cost || 0));
+            if (!matFlatR && Math.abs(Number(r.unit_cost || 0)) > 1e-6) {
+              r.cost = signedLegAmount(effCap * Number(r.unit_cost || 0) + Number(r.tier_adj || 0), discR);
+            }
+            if (!isZeroHaulR && !transFlatR && Math.abs(Number(r.trans_unit_cost || 0)) > 1e-6) {
+              r.trans_cost = round2(effCap * Number(r.trans_unit_cost || 0) + Number(r.trans_tier_adj || 0));
+            }
             r.total = round2(Number(r.cost || 0) + Number(r.trans_cost || 0));
             rowChanged = true;
           }
@@ -22674,6 +22749,46 @@
   // Otherwise an agreement that leaves the price blank / $0 leaves the material on the List Price.
   function salesRuleHasMatPrice(r) {
     return Boolean(r && (isNoMatChargeRule(r) || Number(r.unit_price || r.price || 0) > 0 || ruleIndiffPrice(r) != null));
+  }
+  function resolveListPriceRuleRate(lpRule, fallbackLp, baseUom, targetUom, tonFactor) {
+    const lpUnit = (lpRule && lpRule.unit) ? lpRule.unit : (baseUom || 'm³');
+    const isFlat = /^truck$/i.test(String(lpUnit || '').trim());
+    const raw = lpRule
+      ? Number((isFlat ? (lpRule.indiff_price ?? lpRule.unit_price ?? lpRule.price) : (lpRule.unit_price ?? lpRule.price ?? lpRule.rate)) ?? 0)
+      : (fallbackLp != null ? Number(fallbackLp) : null);
+    if (raw == null || !Number.isFinite(raw) || !(raw > 0)) return { rate: null, isFlat: false, converted: false, note: '' };
+    if (isFlat) return { rate: round2(raw), isFlat: true, converted: false, note: 'Per Truck Load' };
+    const conv = convertRateForTicketUom(raw, lpUnit, targetUom || lpUnit, tonFactor);
+    return { rate: Number(conv.rate || 0), isFlat: false, converted: Boolean(conv.converted), note: String(conv.note || '') };
+  }
+  function signedLegAmount(gross, disc = 0) {
+    const g = round2(gross);
+    const d = Number(disc || 0);
+    if (g < 0) return round2(g - Math.max(0, d));
+    const net = round2(g - d);
+    return d < 0 ? net : Math.max(0, net);
+  }
+  function inferStoredTicketLegFlat(qty, unitRate, legAmount, disc = 0, tierAdj = 0) {
+    const q = Number(qty || 0);
+    const rate = Number(unitRate || 0);
+    const amt = Number(legAmount || 0);
+    const d = Number(disc || 0);
+    const ta = Number(tierAdj || 0);
+    if (!(q > 1.001) || Math.abs(rate) <= 1e-6) return false;
+    const flatMatch = Math.abs(amt - signedLegAmount(rate, d)) <= 0.05 || Math.abs(amt - round2(rate)) <= 0.05;
+    if (!flatMatch) return false;
+    return Math.abs(amt - signedLegAmount(q * rate + ta, d)) > 0.50;
+  }
+  function isMultiTruckSummaryLeg(uom, qty, unitRate, legAmount, disc = 0, tierAdj = 0) {
+    if (!/^truck$/i.test(String(uom || '').trim())) return false;
+    const q = Number(qty || 0);
+    const rate = Number(unitRate || 0);
+    const amt = Number(legAmount || 0);
+    const d = Number(disc || 0);
+    const ta = Number(tierAdj || 0);
+    if (!(q > 1.001) || Math.abs(rate) <= 1e-6) return false;
+    if (inferStoredTicketLegFlat(q, rate, amt, d, ta)) return false;
+    return Math.abs(amt - signedLegAmount(q * rate + ta, d)) <= 0.05;
   }
 
   // Price Agreement lookup (mirrors fillPrices on the Dataverse ticket form): customer × product × site × date,
@@ -24642,8 +24757,16 @@
     const isSalesSide = isListRule || /Sales|Haulage \(Customer Site\)/i.test(rtNew) || /Sales|Haulage \(Customer Site\)/i.test(rtOld);
     const isRawSide = isListRule || /Purchase Price|Transport Price \(Site\)/i.test(rtNew) || /Purchase Price|Transport Price \(Site\)/i.test(rtOld);
 
-    const ruleMatVal = r => r ? Number(r.unit_price ?? r.price ?? r.indiff_price ?? r.rate ?? 0) : 0;
-    const ruleTransVal = r => r ? Number(r.trans_unit_price ?? r.trans_price ?? r.trans_indiff_price ?? 0) : 0;
+    const ruleMatVal = r => {
+      if (!r) return 0;
+      if (isMatIndiffRule(r)) return Number(ruleIndiffPrice(r) || 0);
+      return Number(r.unit_price || r.price || r.indiff_price || r.rate || 0);
+    };
+    const ruleTransVal = r => {
+      if (!r) return 0;
+      if (isTransIndiffRule(r)) return Number(ruleTransIndiffPrice(r) || 0);
+      return Number(r.trans_unit_price || r.trans_price || r.trans_indiff_price || 0);
+    };
     // Tiers and the fuel surcharge clause: a change to either re-prices the tickets in the agreement's window.
     const ruleTierSig = r => r ? [r.qty1, r.adj1, r.trans_adj1, r.qty2, r.adj2, r.trans_adj2, r.fuel_base_price, r.fuel_step, r.fuel_surcharge].map(v => Number(v || 0)).join('|') : '';
 
@@ -24823,20 +24946,75 @@
           ? tsMatch.size
           : (trkRow && Number(trkRow.capacity) > 0 ? Number(trkRow.capacity) : 0);
 
-        let nextQty = Number(s.qty || 0);
-        let nextUp = Number(s.unit_price || 0);
-        let nextMatFlat = Boolean(s.mat_indiff);
+        const origQtyS = Number(s.qty || 0);
+        const origExtQtyS = Number(s.external_qty || 0);
+        const origUpS = Number(s.unit_price || 0);
+        const origTpS = Number(s.trans_unit_price || 0);
+        const origDiscS = Math.abs(Number(s.discount || 0));
+        const origPriceS = Number(s.price || 0);
+        const origTransPriceS = Number(s.trans_price || 0);
+        const custObjS = s.customer ? customerInfo(s.customer) : null;
+        const origUsedExtQtyS = Boolean(
+          origExtQtyS > 0 && origUpS > 0 && Math.abs(origExtQtyS - origQtyS) > 0.01 &&
+          Math.abs(origPriceS - signedLegAmount(origExtQtyS * origUpS + Number(s.tier_adj || 0), origDiscS)) <= 0.20 &&
+          Math.abs(origPriceS - signedLegAmount(origQtyS * origUpS + Number(s.tier_adj || 0), origDiscS)) > 0.50
+        );
+        const origBillQtyS = origUsedExtQtyS ? origExtQtyS : origQtyS;
+        const storedMatFlatS = inferStoredTicketLegFlat(origBillQtyS, origUpS, origPriceS, origDiscS, s.tier_adj);
+        const storedTransFlatS = isDelivery && inferStoredTicketLegFlat(origBillQtyS, origTpS, origTransPriceS, 0, s.trans_tier_adj);
+        const multiTruckMatS = isMultiTruckSummaryLeg(uom, origBillQtyS, origUpS, origPriceS, origDiscS, s.tier_adj)
+          || (isTruckUom && origBillQtyS > 1.001 && Math.abs(origUpS) <= 1e-6 && Math.abs(origPriceS) <= 1e-6 && s.mat_indiff !== true && !storedMatFlatS);
+        const multiTruckTransS = isDelivery && (
+          isMultiTruckSummaryLeg(uom, origBillQtyS, origTpS, origTransPriceS, 0, s.trans_tier_adj)
+          || (isTruckUom && origBillQtyS > 1.001 && Math.abs(origTpS) <= 1e-6 && Math.abs(origTransPriceS) <= 1e-6 && s.trans_indiff !== true && !storedTransFlatS)
+        );
+        const singleTruckUomMatS = isTruckUom && !multiTruckMatS;
+        const singleTruckUomTrS = isTruckUom && !multiTruckTransS;
+
+        let nextQty = origQtyS;
+        let nextUp = origUpS;
+        let nextMatFlat = Boolean(
+          singleTruckUomMatS
+          || (!multiTruckMatS && s.mat_indiff === true)
+          || (!multiTruckMatS && !ovSet.has('f_unitprice') && String(s.price_rule || '') !== 'Manual' && activeMatRule && !isNoMatChargeRule(activeSalesRule) && isMatIndiffRule(activeSalesRule))
+          || storedMatFlatS
+        );
         let nextTier = Number(s.tier || 0);
         let nextTierAdj = Number(s.tier_adj || 0);
         let nextPriceRule = String(s.price_rule || '');
-        let nextTp = Number(s.trans_unit_price || 0);
-        let nextTransFlat = Boolean(s.trans_indiff);
+        let nextTp = origTpS;
+        let nextTransFlat = Boolean(
+          isDelivery && (
+            singleTruckUomTrS
+            || (!multiTruckTransS && s.trans_indiff === true)
+            || (!multiTruckTransS && !ovSet.has('f_transunitprice') && activeTrRule && isTransIndiffRule(activeTrRule))
+            || storedTransFlatS
+          )
+        );
         let nextTransTierAdj = Number(s.trans_tier_adj || 0);
         let nextFuel = null;
         let bfFuelUnit = 0;
         let fuelChanged = false;
         let fuelNoteIfTouched = false;
+        let matLegChanged = false;
+        let transLegChanged = false;
         let rowChanged = false;
+
+        const corruptedSalesMat = Boolean(
+          !multiTruckMatS
+          && !ovSet.has('f_unitprice') && String(s.price_rule || '') !== 'Manual' && activeMatRule && !isNoMatChargeRule(activeSalesRule) && isMatIndiffRule(activeSalesRule)
+          && origBillQtyS > 1.001 && origUpS > 0
+          && Math.abs(origUpS - Number(ruleIndiffPrice(activeSalesRule) || 0)) <= 0.01
+          && Math.abs(origPriceS - signedLegAmount(origBillQtyS * origUpS + Number(s.tier_adj || 0), origDiscS)) <= 0.05
+        );
+        const corruptedSalesTrans = Boolean(
+          !multiTruckTransS
+          && isDelivery && !ovSet.has('f_transunitprice') && activeTrRule && isTransIndiffRule(activeTrRule)
+          && origBillQtyS > 1.001 && origTpS > 0
+          && Math.abs(origTpS - Number(ruleTransIndiffPrice(activeTrRule) || 0)) <= 0.01
+          && Math.abs(origTransPriceS - round2(origBillQtyS * origTpS + Number(s.trans_tier_adj || 0))) <= 0.05
+        );
+        if (corruptedSalesMat || corruptedSalesTrans) rowChanged = true;
 
         // 1) Truck size agreement (`truck_size > 0` on rule)
         if (anyCandidateTruckSize && !ovSet.has('f_qty') && effCap > 0 && /^m/i.test(uom) && Math.abs(nextQty - effCap) > 1e-6) {
@@ -24854,7 +25032,7 @@
           if (activeMatRule) {
             const noMatCharge = isNoMatChargeRule(activeSalesRule);
             const ruleIndiff = !noMatCharge && isMatIndiffRule(activeSalesRule);
-            const matFlat = Boolean(!noMatCharge && (isTruckUom || ruleIndiff));
+            const matFlat = Boolean(!noMatCharge && !multiTruckMatS && (singleTruckUomMatS || ruleIndiff));
             const ruleMatUnit = effectiveRuleMatUnit(activeSalesRule, prod, s.company, s.customer, d);
             const rawRate = noMatCharge
               ? 0
@@ -24882,16 +25060,15 @@
               nextTier = targetTier;
               nextTierAdj = targetTierAdj;
               nextPriceRule = targetRuleName;
+              matLegChanged = true;
               rowChanged = true;
             }
           } else {
             const lpObj = s.product ? listPriceRule(s.company, s.product, d) : null;
-            const rawLp = lpObj ? Number(lpObj.unit_price ?? lpObj.price ?? lpObj.rate ?? 0) : (s.product ? listPrice(s.product) : null);
-            if (rawLp != null && rawLp > 0) {
-              const lpUnit = (lpObj && lpObj.unit) ? lpObj.unit : baseUom;
-              const lpConv = convertRateForTicketUom(rawLp, lpUnit, uom, tonFactor);
-              const targetUp = Number(lpConv.rate || 0);
-              const matFlat = Boolean(isTruckUom);
+            const lpRes = resolveListPriceRuleRate(lpObj, s.product ? listPrice(s.product) : null, baseUom, uom, tonFactor);
+            if (lpRes.rate != null && lpRes.rate > 0) {
+              const targetUp = Number(lpRes.rate || 0);
+              const matFlat = Boolean(!multiTruckMatS && (singleTruckUomMatS || lpRes.isFlat));
               const targetRuleName = (lpObj && lpObj.name) ? lpObj.name : 'List Price';
               if (Math.abs(nextUp - targetUp) > 1e-4 || nextMatFlat !== matFlat || Math.abs(nextTierAdj) > 1e-4 || nextPriceRule !== targetRuleName) {
                 nextUp = targetUp;
@@ -24899,6 +25076,7 @@
                 nextTier = 0;
                 nextTierAdj = 0;
                 nextPriceRule = targetRuleName;
+                matLegChanged = true;
                 rowChanged = true;
               }
             } else if (Math.abs(nextUp) > 1e-4 || nextMatFlat || Math.abs(nextTierAdj) > 1e-4 || nextPriceRule !== '') {
@@ -24907,6 +25085,7 @@
               nextTier = 0;
               nextTierAdj = 0;
               nextPriceRule = '';
+              matLegChanged = true;
               rowChanged = true;
             }
           }
@@ -24922,7 +25101,7 @@
           if (trSrcRule) {
             const isHaulCust = /^Haulage \(Customer Site\)$/i.test(String(trSrcRule.rule_type || ''));
             const trIndiff = isTransIndiffRule(trSrcRule);
-            const trFlat = Boolean(isTruckUom || trIndiff);
+            const trFlat = Boolean(!multiTruckTransS && (singleTruckUomTrS || trIndiff));
             const baseTr = !activeTrRule ? 0 : (trIndiff
               ? Number(ruleTransIndiffPrice(activeTrRule) || 0)
               : Number(isHaulCust
@@ -24940,6 +25119,7 @@
               nextTp = targetTp;
               nextTransFlat = trFlat;
               nextTransTierAdj = targetTrTierAdj;
+              transLegChanged = true;
               rowChanged = true;
             }
             if (bfFuelOn) bfFuelUnit = trIndiff ? bfFuel.perUnit : Number(convertRateForTicketUom(bfFuel.perUnit, trUnit, uom, tonFactor).rate || 0);
@@ -24947,6 +25127,7 @@
             nextTp = 0;
             nextTransFlat = false;
             nextTransTierAdj = 0;
+            transLegChanged = true;
             rowChanged = true;
           }
           // What the ticket records: the surcharge inside its transport price, the steps, and the diesel price used.
@@ -24959,6 +25140,7 @@
             const stepsDiffer = curSteps == null ? nextFuel.steps > 0 : curSteps !== nextFuel.steps;
             if (unitDiffers || stepsDiffer) {
               fuelChanged = true;
+              transLegChanged = true;
               rowChanged = true;
             } else if (curRef == null) {
               // No surcharge and nothing recorded yet: the diesel price is noted only if the ticket changes anyway
@@ -24970,33 +25152,26 @@
             // so a clause put back later re-prices it at the same price.
             nextFuel = null;
             fuelChanged = true;
+            transLegChanged = true;
             rowChanged = true;
           }
         }
 
         if (rowChanged) {
-          const origQtyS = Number(s.qty || 0);
-          const origExtQtyS = Number(s.external_qty || 0);
-          const origUpS = Number(s.unit_price || 0);
-          const origDiscS = Math.abs(Number(s.discount || 0));
-          const origPriceS = Number(s.price || 0);
-          const custObj = s.customer ? customerInfo(s.customer) : null;
-          const origUsedExtQty = Boolean(
-            origExtQtyS > 0 && origUpS > 0 && Math.abs(origExtQtyS - origQtyS) > 0.01 &&
-            Math.abs(origPriceS - round2(Math.max(0, origExtQtyS * origUpS + Number(s.tier_adj || 0) - origDiscS))) <= 0.20 &&
-            Math.abs(origPriceS - round2(Math.max(0, origQtyS * origUpS + Number(s.tier_adj || 0) - origDiscS))) > 0.50
-          );
-          const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
+          const qtyChangedS = Math.abs(nextQty - origQtyS) > 1e-6;
+          const recalcMatS = matLegChanged || qtyChangedS || corruptedSalesMat;
+          const recalcTransS = transLegChanged || qtyChangedS || corruptedSalesTrans;
+          const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObjS && custObjS['VAT Registered'] === 'Yes');
           const prevTtcS = round2(Number(s.total_ttc || 0));
           // A ticket on a statement marked as sent is left as it is, and a dry run (the list shown before Post)
           // writes nothing: both work out what the ticket would carry and list it
           const sentLockS = statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date]);
           if (sentLockS || bfDryRun) {
-            const billQtyD = (origExtQtyS > 0 && (origUsedExtQty || Boolean(custObj && custObj.customer_declared_qty))) ? origExtQtyS : nextQty;
+            const billQtyD = (origExtQtyS > 0 && (origUsedExtQtyS || Boolean(custObjS && custObjS.customer_declared_qty))) ? origExtQtyS : nextQty;
             const tpD = isDelivery ? nextTp : 0;
-            const discD = Math.abs(Number(s.discount || 0));
-            const priceD = nextMatFlat ? round2(nextUp - discD) : round2(billQtyD * nextUp + nextTierAdj - discD);
-            const transD = isDelivery ? (nextTransFlat ? round2(tpD) : round2(billQtyD * tpD + nextTransTierAdj)) : 0;
+            const discD = origDiscS;
+            const priceD = recalcMatS ? (nextMatFlat ? signedLegAmount(nextUp, discD) : signedLegAmount(billQtyD * nextUp + nextTierAdj, discD)) : round2(origPriceS);
+            const transD = isDelivery ? (recalcTransS ? (nextTransFlat ? round2(tpD) : round2(billQtyD * tpD + nextTransTierAdj)) : round2(origTransPriceS)) : 0;
             const totD = round2(priceD + transD);
             const ttcD = round2(totD + ((wasTax && ticketSign(s) !== 0) ? round2(totD * getVatFraction(d)) : 0));
             if (mfgImpact && Math.abs(ttcD - prevTtcS) >= 0.005) {
@@ -25024,12 +25199,12 @@
               if (nextFuel) s.fuel_price_ref = nextFuel.ref;
             }
           }
-          const useExtQty = origExtQtyS > 0 && (origUsedExtQty || Boolean(custObj && custObj.customer_declared_qty));
+          const useExtQty = origExtQtyS > 0 && (origUsedExtQtyS || Boolean(custObjS && custObjS.customer_declared_qty));
           const billQty = useExtQty ? origExtQtyS : nextQty;
           const tp = isDelivery ? Number(s.trans_unit_price || 0) : 0;
-          const disc = Math.abs(Number(s.discount || 0));
-          s.price = s.mat_indiff ? round2(nextUp - disc) : round2(billQty * nextUp + nextTierAdj - disc);
-          s.trans_price = isDelivery ? (s.trans_indiff ? round2(tp) : round2(billQty * tp + nextTransTierAdj)) : 0;
+          const disc = origDiscS;
+          s.price = recalcMatS ? (s.mat_indiff ? signedLegAmount(nextUp, disc) : signedLegAmount(billQty * nextUp + nextTierAdj, disc)) : round2(origPriceS);
+          s.trans_price = isDelivery ? (recalcTransS ? (s.trans_indiff ? round2(tp) : round2(billQty * tp + nextTransTierAdj)) : round2(origTransPriceS)) : 0;
           s.total = round2(Number(s.price || 0) + Number(s.trans_price || 0));
           s.vat = (wasTax && ticketSign(s) !== 0) ? round2(s.total * getVatFraction(d)) : 0;
           s.total_ttc = round2(s.total + s.vat);
@@ -25073,7 +25248,7 @@
           }
         }
 
-        const pRule = checkPurchLeg ? findRule({
+        const pRuleActive = ((nextSiteOwner || r.site) && r.product) ? findRule({
           company: r.company,
           supplier: nextSiteOwner,
           site: r.site,
@@ -25081,7 +25256,18 @@
           date: d,
           types: ['Purchase Price (Site)', 'Purchase Price (Supplier)'],
         }) : null;
+        const pRule = checkPurchLeg ? pRuleActive : null;
         if (isListRule && pRule) continue;
+
+        const isZeroSeparateHaulInit = /^company|^supplier-delivered$/i.test(String(r.transport_by || '')) || Boolean(r.includes_transport);
+        const tRuleActive = (!isZeroSeparateHaulInit && (r.site || r.truck_owner)) ? findRule({
+          company: r.company,
+          supplier: r.truck_owner,
+          site: r.site,
+          product: r.product,
+          date: d,
+          types: ['Transport Price (Site)'],
+        }) : null;
 
         const prod = r.product ? productInfo(r.product) : null;
         const baseUom = prod ? (prod.uom || 'm³') : 'm³';
@@ -25107,19 +25293,73 @@
           ? tsMatch.size
           : (trkRow && Number(trkRow.capacity) > 0 ? Number(trkRow.capacity) : 0);
 
-        let nextQty = Number(r.qty || 0);
-        let nextUc = Number(r.unit_cost || 0);
-        let nextMatFlat = Boolean(r.mat_indiff);
+        const origQtyR = Number(r.qty || 0);
+        const origUcR = Number(r.unit_cost || 0);
+        const origDiscR = Math.abs(Number(r.discount || 0));
+        const origCostR = Number(r.cost || 0);
+        const origTucR = Number(r.trans_unit_cost || 0);
+        const origTransCostR = Number(r.trans_cost || 0);
+        const storedMatFlatR = inferStoredTicketLegFlat(origQtyR, origUcR, origCostR, origDiscR, r.tier_adj);
+        const storedTransFlatR = !isZeroSeparateHaulInit && inferStoredTicketLegFlat(origQtyR, origTucR, origTransCostR, 0, r.trans_tier_adj);
+        const multiTruckMatR = isMultiTruckSummaryLeg(uom, origQtyR, origUcR, origCostR, origDiscR, r.tier_adj)
+          || (isTruckUom && origQtyR > 1.001 && Math.abs(origUcR) <= 1e-6 && Math.abs(origCostR) <= 1e-6 && r.mat_indiff !== true && !storedMatFlatR);
+        const multiTruckTransR = !isZeroSeparateHaulInit && (
+          isMultiTruckSummaryLeg(uom, origQtyR, origTucR, origTransCostR, 0, r.trans_tier_adj)
+          || (isTruckUom && origQtyR > 1.001 && Math.abs(origTucR) <= 1e-6 && Math.abs(origTransCostR) <= 1e-6 && r.trans_indiff !== true && !storedTransFlatR)
+        );
+        const singleTruckUomMatR = isTruckUom && !multiTruckMatR;
+        const singleTruckUomTrR = isTruckUom && !multiTruckTransR;
+
+        let nextQty = origQtyR;
+        let nextUc = origUcR;
+        let nextMatFlat = Boolean(
+          singleTruckUomMatR
+          || (!multiTruckMatR && r.mat_indiff === true)
+          || (!multiTruckMatR && !ovSet.has('f_unitprice') && !r.price_entered_manually && pRuleActive && isMatIndiffRule(pRuleActive))
+          || storedMatFlatR
+        );
         let nextTierAdj = Number(r.tier_adj || 0);
         let nextPriceRule = String(r.price_rule || '');
         let nextPending = Boolean(r.price_pending);
         let nextTransportBy = String(r.transport_by || '');
         let nextInclTrans = Boolean(r.includes_transport);
-        let nextTuc = Number(r.trans_unit_cost || 0);
-        let nextTransFlat = Boolean(r.trans_indiff);
+        let nextTuc = origTucR;
+        let nextTransFlat = Boolean(
+          !isZeroSeparateHaulInit && (
+            singleTruckUomTrR
+            || (!multiTruckTransR && r.trans_indiff === true)
+            || (!multiTruckTransR && !ovSet.has('f_transunitprice') && tRuleActive && isTransIndiffRule(tRuleActive))
+            || storedTransFlatR
+          )
+        );
         let nextTransTierAdj = Number(r.trans_tier_adj || 0);
         let nextHaulRule = String(r.haul_rule || '');
+        let purchLegChanged = false;
+        let haulLegChanged = false;
         let rowChanged = nextSiteOwner !== String(r.site_owner || '');
+
+        const corruptedRawMat = Boolean(
+          !multiTruckMatR
+          && !ovSet.has('f_unitprice') && !r.price_entered_manually && pRuleActive && isMatIndiffRule(pRuleActive)
+          && origQtyR > 1.001 && origUcR > 0
+          && Math.abs(origUcR - Number(ruleIndiffPrice(pRuleActive) || 0)) <= 0.01
+          && Math.abs(origCostR - signedLegAmount(origQtyR * origUcR + Number(r.tier_adj || 0), origDiscR)) <= 0.05
+        );
+        const corruptedRawTrans = Boolean(
+          !multiTruckTransR
+          && !isZeroSeparateHaulInit && !ovSet.has('f_transunitprice') && tRuleActive && isTransIndiffRule(tRuleActive)
+          && origQtyR > 1.001 && origTucR > 0
+          && Math.abs(origTucR - Number(ruleTransIndiffPrice(tRuleActive) || 0)) <= 0.01
+          && Math.abs(origTransCostR - round2(origQtyR * origTucR + Number(r.trans_tier_adj || 0))) <= 0.05
+        );
+        if (corruptedRawMat) {
+          if (!nextPriceRule && pRuleActive && pRuleActive.name) nextPriceRule = pRuleActive.name;
+          rowChanged = true;
+        }
+        if (corruptedRawTrans) {
+          if (!nextHaulRule && tRuleActive && tRuleActive.name) nextHaulRule = tRuleActive.name;
+          rowChanged = true;
+        }
 
         if (anyCandidateTruckSize && !ovSet.has('f_qty') && effCap > 0 && /^m/i.test(uom) && Math.abs(nextQty - effCap) > 1e-6) {
           nextQty = effCap;
@@ -25134,7 +25374,7 @@
         if (checkPurchLeg && !ovSet.has('f_unitprice') && !r.price_entered_manually) {
           if (pRule) {
             const ruleIndiff = isMatIndiffRule(pRule);
-            const matFlat = Boolean(isTruckUom || ruleIndiff);
+            const matFlat = Boolean(!multiTruckMatR && (singleTruckUomMatR || ruleIndiff));
             const rawMatUnit = effectiveRuleMatUnit(pRule, prod, r.company, nextSiteOwner, d);
             const baseRate = ruleIndiff
               ? Number(ruleIndiffPrice(pRule) || 0)
@@ -25153,9 +25393,11 @@
               nextTransFlat = false;
               nextTransTierAdj = 0;
               nextHaulRule = '';
+              haulLegChanged = true;
               rowChanged = true;
             } else if (!bundled && nextInclTrans && !isSupplierDeliveredSite(r.site)) {
               nextInclTrans = false;
+              haulLegChanged = true;
               rowChanged = true;
             }
             if (targetUc >= 0 && (
@@ -25170,15 +25412,15 @@
               nextTierAdj = targetTierAdj;
               nextPriceRule = targetRuleName;
               nextPending = targetPending;
+              purchLegChanged = true;
               rowChanged = true;
             }
           } else {
             const lpRule = r.product ? listPriceRule(r.company, r.product, d) : null;
-            if (lpRule && Number(lpRule.unit_price ?? lpRule.price ?? 0) > 0) {
-              const lpUnit = lpRule.unit || baseUom;
-              const lpConv = convertRateForTicketUom(Number(lpRule.unit_price ?? lpRule.price ?? 0), lpUnit, uom, rawTonFactor);
-              const targetUc = Number(lpConv.rate || 0);
-              const matFlat = Boolean(isTruckUom);
+            const lpRes = resolveListPriceRuleRate(lpRule, null, baseUom, uom, rawTonFactor);
+            if (lpRes.rate != null && lpRes.rate > 0) {
+              const targetUc = Number(lpRes.rate || 0);
+              const matFlat = Boolean(!multiTruckMatR && (singleTruckUomMatR || lpRes.isFlat));
               const targetRuleName = lpRule.name || 'List Price';
               if (Math.abs(nextUc - targetUc) > 1e-4 || nextMatFlat !== matFlat || Math.abs(nextTierAdj) > 1e-4 || nextPending || nextPriceRule !== targetRuleName) {
                 nextUc = targetUc;
@@ -25186,6 +25428,7 @@
                 nextTierAdj = 0;
                 nextPriceRule = targetRuleName;
                 nextPending = false;
+                purchLegChanged = true;
                 rowChanged = true;
               }
             } else if (Math.abs(nextUc) > 1e-4 || nextMatFlat || Math.abs(nextTierAdj) > 1e-4 || !nextPending || nextPriceRule !== '') {
@@ -25194,6 +25437,7 @@
               nextTierAdj = 0;
               nextPriceRule = '';
               nextPending = true;
+              purchLegChanged = true;
               rowChanged = true;
             }
           }
@@ -25204,17 +25448,10 @@
         const isZeroSeparateHaul = isCoFleet || isSuppDeliv;
 
         if (!isZeroSeparateHaul && checkHaulLeg && !ovSet.has('f_transunitprice')) {
-          const tRule = findRule({
-            company: r.company,
-            supplier: r.truck_owner,
-            site: r.site,
-            product: r.product,
-            date: d,
-            types: ['Transport Price (Site)'],
-          });
+          const tRule = tRuleActive;
           if (tRule) {
             const trIndiff = isTransIndiffRule(tRule);
-            const trFlat = Boolean(isTruckUom || trIndiff);
+            const trFlat = Boolean(!multiTruckTransR && (singleTruckUomTrR || trIndiff));
             const tRate = trIndiff
               ? Number(ruleTransIndiffPrice(tRule) || 0)
               : Number(tRule.trans_unit_price ?? tRule.trans_price ?? tRule.unit_price ?? tRule.price ?? tRule.rate ?? 0);
@@ -25234,6 +25471,7 @@
               nextTransFlat = trFlat;
               nextTransTierAdj = targetTrTierAdj;
               nextHaulRule = targetHaulName;
+              haulLegChanged = true;
               rowChanged = true;
             }
           } else if (Math.abs(nextTuc) > 1e-4 || nextTransFlat || Math.abs(nextTransTierAdj) > 1e-4 || nextHaulRule !== '') {
@@ -25241,16 +25479,20 @@
             nextTransFlat = false;
             nextTransTierAdj = 0;
             nextHaulRule = '';
+            haulLegChanged = true;
             rowChanged = true;
           }
         }
 
         if (rowChanged) {
+          const qtyChangedR = Math.abs(nextQty - origQtyR) > 1e-6;
+          const recalcMatR = purchLegChanged || qtyChangedR || corruptedRawMat;
+          const recalcTransR = haulLegChanged || qtyChangedR || corruptedRawTrans;
           const prevTotR = round2(Number(r.total || 0));
-          const discD = Math.abs(Number(r.discount || 0));
+          const discD = origDiscR;
           const tucD = isZeroSeparateHaul ? 0 : nextTuc;
-          const costD = nextMatFlat ? round2(nextUc - discD) : round2(nextQty * nextUc + nextTierAdj - discD);
-          const transD = isZeroSeparateHaul ? 0 : (nextTransFlat ? round2(tucD) : round2(nextQty * tucD + nextTransTierAdj));
+          const costD = recalcMatR ? (nextMatFlat ? signedLegAmount(nextUc, discD) : signedLegAmount(nextQty * nextUc + nextTierAdj, discD)) : round2(origCostR);
+          const transD = isZeroSeparateHaul ? 0 : (recalcTransR ? (nextTransFlat ? round2(tucD) : round2(nextQty * tucD + nextTransTierAdj)) : round2(origTransCostR));
           const totD = round2(costD + transD);
           // Held by the sent statement of the party whose leg moves: the quarry's for the material, the hauler's for
           // the haulage (a ticket whose legs both stay, e.g. a quantity change, is held by either)
@@ -25281,11 +25523,11 @@
           r.trans_indiff = isZeroSeparateHaul ? false : nextTransFlat;
           r.trans_tier_adj = isZeroSeparateHaul ? 0 : nextTransTierAdj;
           r.haul_rule = isZeroSeparateHaul ? '' : nextHaulRule;
-          const disc = Math.abs(Number(r.discount || 0));
+          const disc = origDiscR;
           const uc = Number(r.unit_cost || 0);
           const tuc = isZeroSeparateHaul ? 0 : Number(r.trans_unit_cost || 0);
-          r.cost = r.mat_indiff ? round2(uc - disc) : round2(nextQty * uc + Number(r.tier_adj || 0) - disc);
-          r.trans_cost = isZeroSeparateHaul ? 0 : (r.trans_indiff ? round2(tuc) : round2(nextQty * tuc + Number(r.trans_tier_adj || 0)));
+          r.cost = recalcMatR ? (r.mat_indiff ? signedLegAmount(uc, disc) : signedLegAmount(nextQty * uc + Number(r.tier_adj || 0), disc)) : round2(origCostR);
+          r.trans_cost = isZeroSeparateHaul ? 0 : (recalcTransR ? (r.trans_indiff ? round2(tuc) : round2(nextQty * tuc + Number(r.trans_tier_adj || 0))) : round2(origTransCostR));
           r.total = round2(Number(r.cost || 0) + Number(r.trans_cost || 0));
           rawUpdated++;
           if (mfgImpact && Math.abs(Number(r.total || 0) - prevTotR) >= 0.005) {
@@ -25340,13 +25582,22 @@
         if (String(s.price_rule || '') === 'Manual' || (Array.isArray(s.admin_overrides) && s.admin_overrides.includes('f_unitprice'))) continue;
         if (statementLockFor('sales_tickets', s.company, [s.customer], [d, s.date])) { heldOnSentLp++; continue; }
         ensureSeedOrigCapturedBeforeMutate('sales_tickets', s);
-        s.unit_price = newLp;
+        const prodUomLp = prodRow.uom || 'm³';
+        const sUomLp = String(s.uom || prodUomLp || 'm³');
+        const tfLp = resolveProductTonFactor(prodRow, s.product);
         const qty = Number(s.qty || 0);
         const disc = Math.abs(Number(s.discount || 0));
+        const origUpLp = Number(s.unit_price || 0);
+        const origPriceLp = Number(s.price || 0);
+        const lpIsProdFlat = /^truck$/i.test(String(prodUomLp).trim()) && !/^truck$/i.test(String(sUomLp).trim());
+        const effLp = lpIsProdFlat ? round2(newLp) : Number(convertRateForTicketUom(newLp, prodUomLp, sUomLp, tfLp).rate || 0);
+        const multiTruckLp = isMultiTruckSummaryLeg(sUomLp, qty, origUpLp, origPriceLp, disc, s.tier_adj);
+        const singleTruckLp = /^truck$/i.test(String(sUomLp).trim()) && !multiTruckLp;
+        s.unit_price = effLp;
         s.tier = 0;
         s.tier_adj = 0;
-        s.mat_indiff = /^truck$/i.test(String(s.uom || ''));
-        s.price = s.mat_indiff ? round2(newLp - disc) : round2(qty * newLp - disc);
+        s.mat_indiff = Boolean(!multiTruckLp && (lpIsProdFlat || singleTruckLp));
+        s.price = s.mat_indiff ? signedLegAmount(effLp, disc) : signedLegAmount(qty * effLp, disc);
         s.total = round2(Number(s.price || 0) + Number(s.trans_price || 0));
         const custObj = s.customer ? customerInfo(s.customer) : null;
         const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
@@ -41363,7 +41614,7 @@
     // Retain non-voided app rows and rebuild clean deterministic seed rows where needed
     for (let i = rec.staff_assignments.length - 1; i >= 0; i--) {
       const r = rec.staff_assignments[i];
-      if (!r || r.voided || voidedIds.has(String(r.id || ''))) {
+      if (!r || r.voided || voidedIds.has(String(r.id || '')) || isVoucherRefNotPersonName(r.staff)) {
         rec.staff_assignments.splice(i, 1);
       }
     }
@@ -41396,7 +41647,11 @@
 
     const today = String((SEED.meta && SEED.meta.as_of) || '2026-11-04').slice(0, 10);
     const staffAnchored = new Set();
+    const customEmpList = (STATE.customRecords && Array.isArray(STATE.customRecords.employments)) ? STATE.customRecords.employments : [];
+    const customEmpIds = new Set(customEmpList.map(e => e && e.id != null ? String(e.id) : '').filter(Boolean));
     const empsSorted = (rec.employments || [])
+      .filter(e => e && !e.voided && !customEmpIds.has(String(e.id || '')))
+      .concat(customEmpList)
       .filter(e => e && !e.voided && (e.staff || e.name))
       .slice()
       .sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
@@ -41404,7 +41659,7 @@
     empsSorted.forEach((e, idx) => {
       const st = String(e.staff || e.name || '').trim();
       const sk = norm(st);
-      if (!sk) return;
+      if (!sk || isVoucherRefNotPersonName(st)) return;
       const co = e.company || 'WTC';
       const sDate = String(e.start_date || e.date || '2025-01-01').slice(0, 10);
       const eDate = String(e.end_date || '').slice(0, 10);
@@ -41427,6 +41682,7 @@
         if (!existing.role_category) existing.role_category = roleCat;
         return;
       }
+      const eInd = e._industry || (co ? resolveIndustryForCompany(co) : '');
       const saRow = {
         id: seedId,
         name: `ASGN-${sDate.replace(/-/g, '')}-${st.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12) || 'STAFF'}`,
@@ -41444,6 +41700,8 @@
         source: 'seed',
         voided: false
       };
+      if (e._multiIndustrySeed) saRow._multiIndustrySeed = true;
+      if (eInd && eInd !== 'Manufacturing') saRow._industry = eInd;
       rec.staff_assignments.push(saRow);
       byId.set(seedId, saRow);
     });
@@ -41452,7 +41710,7 @@
       if (!sm || sm.voided) return;
       const st = String(sm.name || sm.staff || '').trim();
       const sk = norm(st);
-      if (!sk || staffAnchored.has(sk) || staffWithCustom.has(sk)) return;
+      if (!sk || isVoucherRefNotPersonName(st) || staffAnchored.has(sk) || staffWithCustom.has(sk)) return;
       if (!sm.role && !sm.default_equipment && !eqByStaff.has(sk)) return;
       const sDate = String(sm.assign_start || sm.start_date || sm.date || '2025-01-01').slice(0, 10);
       const roleVal = String(sm.role || (eqByStaff.has(sk) ? 'Driver' : 'General Labour')).trim();
@@ -41461,10 +41719,12 @@
       const slug = sk.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || String(idx + 1);
       const seedId = `sa_seed_sm_${slug}`;
       if (voidedIds.has(seedId) || byId.has(seedId)) return;
+      const smCo = sm.company || '';
+      const smInd = sm._industry || (sm.company ? resolveIndustryForCompany(sm.company) : '');
       const saRow = {
         id: seedId,
         name: `ASGN-${sDate.replace(/-/g, '')}-${st.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12) || 'STAFF'}`,
-        company: sm.company || 'WTC',
+        company: smCo,
         date: sDate,
         rep_date: sDate,
         staff: st,
@@ -41478,12 +41738,14 @@
         source: 'seed',
         voided: false
       };
+      if (sm._multiIndustrySeed) saRow._multiIndustrySeed = true;
+      if (smInd && smInd !== 'Manufacturing') saRow._industry = smInd;
       rec.staff_assignments.push(saRow);
       byId.set(seedId, saRow);
     });
 
     customList.forEach(r => {
-      if (!r || r.voided) return;
+      if (!r || r.voided || isVoucherRefNotPersonName(r.staff)) return;
       const rid = String(r.id || '');
       const cat = resolveRoleCategory(r.role, r.role_category || '');
       const existing = rid ? byId.get(rid) : null;
@@ -43760,7 +44022,7 @@
 
     const skipName = v => {
       const s = String(v || '').trim();
-      return !s || s === '(Unassigned)' || s === '-' || /^remove$/i.test(s);
+      return !s || s === '(Unassigned)' || s === '-' || /^remove$/i.test(s) || isVoucherRefNotPersonName(s);
     };
     const cosByName = new Map();
     const trackStaffCo = (rawName, rawCo) => {
@@ -43831,7 +44093,10 @@
           default_equipment: dm.truck || '',
           isCoDriver: false,
           isFreelance: false,
-          hasEmp: false
+          hasEmp: false,
+          hasRealMfgOrApp: false,
+          multiIndustrySeed: false,
+          industry: ''
         };
         discovered.set(k, cur);
       }
@@ -43844,12 +44109,20 @@
         if (patch.isCoDriver) cur.isCoDriver = true;
         if (patch.isFreelance) cur.isFreelance = true;
         if (patch.hasEmp) cur.hasEmp = true;
+        const pInd = String(patch.industry || (co ? resolveIndustryForCompany(co) : '') || '').trim();
+        const pMulti = Boolean(patch.multiIndustrySeed);
+        if (!pMulti && (!pInd || pInd === 'Manufacturing')) {
+          cur.hasRealMfgOrApp = true;
+        } else {
+          if (pMulti) cur.multiIndustrySeed = true;
+          if (!cur.industry && pInd) cur.industry = pInd;
+        }
       }
     };
 
     (rec.company_drivers || []).forEach(cd => {
       if (!cd || cd.voided) return;
-      touchName(cd.staff || cd.driver, { company: cd.company || 'WTC', isCoDriver: true, default_equipment: cd.equipment || '' });
+      touchName(cd.staff || cd.driver, { company: cd.company || 'WTC', isCoDriver: true, default_equipment: cd.equipment || '', multiIndustrySeed: Boolean(cd._multiIndustrySeed), industry: cd._industry || '' });
     });
     const sortedEmps = (rec.employments || []).filter(e => e && !e.voided).slice().sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
     sortedEmps.forEach(e => {
@@ -43860,17 +44133,19 @@
         role: e.role || '',
         phone: e.phone || '',
         hasEmp: !isFl,
-        isFreelance: isFl
+        isFreelance: isFl,
+        multiIndustrySeed: Boolean(e._multiIndustrySeed),
+        industry: e._industry || ''
       });
     });
-    (rec.salaries || []).forEach(s => { if (s && !s.voided) touchName(s.staff, { company: s.company || '' }); });
-    (rec.attendance || []).forEach(a => { if (a && !a.voided) touchName(a.staff, { company: a.company || '' }); });
-    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) touchName(f.staff, { company: f.company || 'WTC', father_name: cleanFatherName(f.father_name || ''), isFreelance: true }); });
+    (rec.salaries || []).forEach(s => { if (s && !s.voided) touchName(s.staff, { company: s.company || '', multiIndustrySeed: Boolean(s._multiIndustrySeed), industry: s._industry || '' }); });
+    (rec.attendance || []).forEach(a => { if (a && !a.voided) touchName(a.staff, { company: a.company || '', multiIndustrySeed: Boolean(a._multiIndustrySeed), industry: a._industry || '' }); });
+    (rec.freelance_entries || []).forEach(f => { if (f && !f.voided) touchName(f.staff, { company: f.company || 'WTC', father_name: cleanFatherName(f.father_name || ''), isFreelance: true, multiIndustrySeed: Boolean(f._multiIndustrySeed), industry: f._industry || '' }); });
     (rec.logistics_allowances || []).forEach(l => {
-      if (l && !l.voided) touchName(l.staff, { company: l.company || '', default_equipment: l.equipment || '' });
+      if (l && !l.voided) touchName(l.staff, { company: l.company || '', default_equipment: l.equipment || '', multiIndustrySeed: Boolean(l._multiIndustrySeed), industry: l._industry || '' });
     });
     (rec.staff_assignments || []).forEach(sa => {
-      if (sa && !sa.voided) touchName(sa.staff, { company: sa.company || '', role: sa.role || '', default_equipment: sa.equipment || '' });
+      if (sa && !sa.voided) touchName(sa.staff, { company: sa.company || '', role: sa.role || '', default_equipment: sa.equipment || '', multiIndustrySeed: Boolean(sa._multiIndustrySeed), industry: sa._industry || '' });
     });
 
     // Drop auto-seeded rows whose underlying operational records were removed/voided (unless explicitly kept in customRecords)
@@ -43879,7 +44154,7 @@
       if (!r || r.voided) { rec.staff_members.splice(i, 1); continue; }
       const rawK = norm(r.name || r.staff);
       const k = staffEntryKey(rawK, r.company);
-      if (!rawK || voidedNames.has(k) || (r.source === 'seed' && splitNames.has(rawK) && !r.company)) { rec.staff_members.splice(i, 1); continue; }
+      if (!rawK || isVoucherRefNotPersonName(r.name || r.staff) || voidedNames.has(k) || (r.source === 'seed' && splitNames.has(rawK) && !r.company)) { rec.staff_members.splice(i, 1); continue; }
       if (r.source === 'seed' && !customKeepKeys.has(k) && !discovered.has(k)) {
         rec.staff_members.splice(i, 1);
       }
@@ -43901,6 +44176,8 @@
         ? 'Freelance & Subcontract'
         : ((/driver|chauffeur/i.test(effRole) || (info.isCoDriver && !effRole)) ? 'Fleet & Drivers' : 'Site & Operations');
       const inferredCat = resolveRoleCategory(effRole, fallbackCat) || fallbackCat;
+      const isNonMfgSeed = !info.hasRealMfgOrApp && (info.multiIndustrySeed || (info.industry && info.industry !== 'Manufacturing'));
+      const effInd = isNonMfgSeed ? (info.industry || resolveIndustryForCompany(info.company) || '') : '';
       const existing = byKey.get(k);
       if (existing) {
         if (!existing.staff) existing.staff = existing.name;
@@ -43912,6 +44189,10 @@
         if (!existing.father_name && info.father_name) existing.father_name = info.father_name;
         if (!existing.phone && info.phone) existing.phone = info.phone;
         if (!existing.default_equipment && info.default_equipment) existing.default_equipment = info.default_equipment;
+        if (existing.source === 'seed' && isNonMfgSeed) {
+          if (info.multiIndustrySeed) existing._multiIndustrySeed = true;
+          if (!existing._industry && effInd) existing._industry = effInd;
+        }
         return;
       }
       const slugSrc = k.indexOf('@@') >= 0 ? k.replace('@@', '_') : k;
@@ -43932,6 +44213,10 @@
         source: 'seed',
         voided: false
       };
+      if (isNonMfgSeed) {
+        if (info.multiIndustrySeed) newRec._multiIndustrySeed = true;
+        if (effInd) newRec._industry = effInd;
+      }
       rec.staff_members.push(newRec);
       byKey.set(k, newRec);
     });
@@ -43939,7 +44224,9 @@
     customList.forEach(r => {
       if (!r || r.voided) return;
       const nmRaw = String(r.name || r.staff || '').trim();
+      if (isVoucherRefNotPersonName(nmRaw)) return;
       const nm = (nmRaw && typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.name(nmRaw) : nmRaw;
+      if (isVoucherRefNotPersonName(nm)) return;
       const k = staffEntryKey(norm(nm), r.company);
       if (!k) return;
       const rPol = (typeof window !== 'undefined' && window.MFG_CAP) ? window.MFG_CAP.polishRowCopy(r, 'staff_members') : r;
@@ -84291,6 +84578,7 @@
           id: `mi-stf-${pfx}-${sfIdx + 1}`,
           name: stf.name,
           staff: stf.name,
+          company: ent.co,
           role: stf.role,
           role_category: stf.cat,
           default_equipment: unitName,
@@ -117661,6 +117949,8 @@
       }
     }
     const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
+    const salesDateChanged = !FORM_UI.hydrating && FORM_UI.lastSalesEffDate !== '' && FORM_UI.lastSalesEffDate !== effDate;
+    FORM_UI.lastSalesEffDate = effDate;
     const sitePickedOrChanged = Boolean(!FORM_UI.hydrating && site !== FORM_UI.lastSite);
     FORM_UI.lastSite = site;
     if (sitePickedOrChanged) {
@@ -117779,9 +118069,11 @@
       : null;
     const crossType = (!matRule && !isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [isPickup ? 'Sales (Delivery)' : 'Sales (Pickup)'] }) : null;
 
+    const salesLpRule = (!isUnreg && !matRule && product) ? listPriceRule(company, product, effDate) : null;
     const matNoCharge = !isUnreg && isNoMatChargeRule(matRule);
-    const matIsIndiff = !isUnreg && !matNoCharge && isMatIndiffRule(matRule);
-    if (companyChanged || customerChanged || productChanged || siteChanged || saleTypeChanged) {
+    const salesLpUnit = (salesLpRule && salesLpRule.unit) ? salesLpRule.unit : baseUom;
+    const matIsIndiff = !isUnreg && !matNoCharge && (matRule ? isMatIndiffRule(matRule) : Boolean((salesLpRule || (product && listPrice(product) != null)) && /^truck$/i.test(String(salesLpUnit || '').trim())));
+    if (companyChanged || customerChanged || productChanged || siteChanged || saleTypeChanged || salesDateChanged) {
       if (!isFieldAdminUnlocked('f_uom') || isAutoEditUnlockedField('f_uom')) FORM_UI.uomManual = false;
       if (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice')) FORM_UI.priceManual = false;
       if (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice')) FORM_UI.transManual = false;
@@ -117894,10 +118186,8 @@
         setHint('hint_price', `${rule.rule_type || 'Agreement'}${matNoCharge ? ' · No material charge ($0.00)' : (matIsIndiff ? ' · Per Truck Load' : '')}${rule.site ? ' · ' + rule.site : ''}${rule.end_date ? ' · to ' + rule.end_date : ''}${!matNoCharge && matConv.converted ? ' · ' + matConv.note : (!matNoCharge && !matIsIndiff && ruleMatUnit && ruleMatUnit !== baseUom ? ' · priced per ' + ruleMatUnit : '')}`, 'ok');
       } else {
         if (tpEl && isDelivery && (transLocked || isAutoEditUnlockedField('f_transunitprice')) && !FORM_UI.transManual) tpEl.value = agreedTransRate.toFixed(2);
-        const lpRule = product ? listPriceRule(company, product, effDate) : null;
-        const rawLp = lpRule ? Number(lpRule.unit_price || 0) : (product ? listPrice(product) : null);
-        const lpUnit = (lpRule && lpRule.unit) ? lpRule.unit : baseUom;
-        const lpConv = rawLp != null ? convertRateForTicketUom(rawLp, lpUnit, uom, tonFactor) : null;
+        const lpRule = salesLpRule;
+        const lpConv = resolveListPriceRuleRate(lpRule, product ? listPrice(product) : null, baseUom, uom, tonFactor);
         const lp = lpConv ? lpConv.rate : null;
         if (lp != null) {
           upEl.value = lp.toFixed(2);
@@ -118068,8 +118358,10 @@
       method: val('f_method'),
       vat_invoice: $('f_vatinvoice') ? val('f_vatinvoice') : String(editSalesOrig.vat_invoice || '')
     }) : null;
-    const useMatIndiff = editSalesCalc ? editSalesCalc.matIsFlat : (matIsIndiff && !FORM_UI.priceManual && !isFieldAdminUnlocked('f_unitprice'));
-    const effTransIsIndiff = editSalesCalc ? editSalesCalc.transIsFlat : transIsIndiff;
+    const multiTruckLoadS = isTruckUom && qty > 1.001 && (FORM_UI.qtyManual || isFieldAdminUnlocked('f_qty'));
+    const singleTruckLoadS = isTruckUom && !multiTruckLoadS;
+    const useMatIndiff = editSalesCalc ? editSalesCalc.matIsFlat : Boolean(!multiTruckLoadS && (singleTruckLoadS || matIsIndiff));
+    const effTransIsIndiff = editSalesCalc ? editSalesCalc.transIsFlat : Boolean(isDelivery && !multiTruckLoadS && (singleTruckLoadS || transIsIndiff));
     const tierAdj = (FORM_UI.priceManual || isFieldAdminUnlocked('f_unitprice') || useMatIndiff) ? 0 : Number(tier.adj || 0);
     const tierTrAdj = (FORM_UI.transManual || isFieldAdminUnlocked('f_transunitprice') || !isDelivery || effTransIsIndiff) ? 0 : Number(tier.transAdj || 0);
     const matGross = editSalesCalc ? round2(editSalesCalc.price + disc) : (useMatIndiff ? round2(up) : round2(qty * up + tierAdj));
@@ -118186,7 +118478,7 @@
       disp
     });
     renderAdminLockBar();
-    return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule: matRule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
+    return { origin, disp, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule: matRule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff: effTransIsIndiff, corruptedFlatMat: Boolean(editSalesCalc && editSalesCalc.corruptedFlatMat), corruptedFlatTrans: Boolean(editSalesCalc && editSalesCalc.corruptedFlatTrans), qty, up, tp, disc, tip, mat: editSalesCalc ? editSalesCalc.price : matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard,
       // Recorded on the ticket only while the transport price is the agreed one (a typed price carries no surcharge).
       // The diesel price is noted even when it adds no surcharge yet (0 steps), so the ticket keeps the price of its day.
       fuelSur: (fuelSur && !fuelSur.noPrice && isDelivery && Math.abs(tp - agreedTransRate) < 0.006)
@@ -118460,10 +118752,12 @@
     const upEl = $('f_unitprice'), tpEl = $('f_transunitprice'), uomEl = $('f_uom');
     const rule = (owner || site) && product ? findRule({ company, supplier: owner, site, product, date: effDate, types: ['Purchase Price (Site)'] }) : null;
     const haulRule = (site || truckOwner) && is3PHauler ? findRule({ company, supplier: truckOwner, site, product, date: effDate, types: ['Transport Price (Site)'] }) : null;
-    const matIsIndiff = isMatIndiffRule(rule);
+    const rawLpRule = (!rule && product) ? listPriceRule(company, product, effDate) : null;
+    const rawLpUnit = (rawLpRule && rawLpRule.unit) ? rawLpRule.unit : baseUom;
+    const matIsIndiff = rule ? isMatIndiffRule(rule) : Boolean(rawLpRule && /^truck$/i.test(String(rawLpUnit || '').trim()));
     const haulIsIndiff = is3PHauler && isTransIndiffRule(haulRule);
 
-    if (companyChanged || siteChanged || ownerChanged || productChanged) {
+    if (companyChanged || siteChanged || ownerChanged || productChanged || rawDateChanged) {
       if (!rawSlipLock && (!isFieldAdminUnlocked('f_uom') || isAutoEditUnlockedField('f_uom'))) FORM_UI.uomManual = false;
       if (!rawSlipLock && (!isFieldAdminUnlocked('f_unitprice') || isAutoEditUnlockedField('f_unitprice'))) FORM_UI.priceManual = false;
       if (!rawSlipLock && (!isFieldAdminUnlocked('f_transunitprice') || isAutoEditUnlockedField('f_transunitprice'))) FORM_UI.transManual = false;
@@ -118671,13 +118965,12 @@
         setText('lbl_pricelock', 'AGREEMENT');
         setHint('hint_price', `${rule.rule_type || 'Agreement'}${(isSuppDeliv || isBundledRawPriceRule(rule)) ? ' · Delivery Included (No Separate Transport)' : ''}${matIsIndiff ? ' · Per Truck Load' : ''}${rawMatConv.converted ? ' · ' + rawMatConv.note : ''}${rule.site ? ' · ' + rule.site : ''}`, 'ok');
       } else {
-        const lpRule = product ? listPriceRule(company, product, effDate) : null;
-        if (lpRule) {
-          const lpUnit = lpRule.unit || baseUom;
-          const lpConv = convertRateForTicketUom(Number(lpRule.unit_price || 0), lpUnit, uom, rawTonFactor);
+        const lpRule = rawLpRule;
+        const lpConv = resolveListPriceRuleRate(lpRule, null, baseUom, uom, rawTonFactor);
+        if (lpRule && lpConv.rate != null) {
           upEl.value = lpConv.rate.toFixed(2);
           setText('lbl_pricelock', 'LIST PRICE');
-          setHint('hint_price', 'No purchase agreement - List Price agreement' + (lpConv.converted ? ' · ' + lpConv.note : ''), 'warn');
+          setHint('hint_price', 'No purchase agreement - List Price agreement' + (lpConv.isFlat ? ' · Per Truck Load' : (lpConv.converted ? ' · ' + lpConv.note : '')), 'warn');
         } else {
           upEl.value = '';
           setText('lbl_pricelock', 'LOCKED');
@@ -118739,8 +119032,10 @@
       trans_unit_cost: tp,
       discount: disc
     }) : null;
-    const useMatIndiff = editRawCalc ? editRawCalc.matIsFlat : (matIsIndiff && !FORM_UI.priceManual && !isFieldAdminUnlocked('f_unitprice'));
-    const effHaulIsIndiff = editRawCalc ? editRawCalc.transIsFlat : haulIsIndiff;
+    const multiTruckLoadR = isTruckUom && qty > 1.001 && (FORM_UI.qtyManual || isFieldAdminUnlocked('f_qty'));
+    const singleTruckLoadR = isTruckUom && !multiTruckLoadR;
+    const useMatIndiff = editRawCalc ? editRawCalc.matIsFlat : Boolean(!multiTruckLoadR && (singleTruckLoadR || matIsIndiff));
+    const effHaulIsIndiff = editRawCalc ? editRawCalc.transIsFlat : Boolean(is3PHauler && !multiTruckLoadR && (singleTruckLoadR || haulIsIndiff));
     const matTier = (rule && !useMatIndiff && effCap && window.MFG_FORMS) ? window.MFG_FORMS.matchTier(rule, Number(effCap)) : { tier: 0, adj: 0 };
     const haulTier = (haulRule && !effHaulIsIndiff && effCap && window.MFG_FORMS) ? window.MFG_FORMS.matchTier(haulRule, Number(effCap)) : { tier: 0, adj: 0, transAdj: 0 };
     const tierAdj = (FORM_UI.priceManual || isFieldAdminUnlocked('f_unitprice') || useMatIndiff) ? 0 : Number(matTier.adj || 0);
@@ -118825,7 +119120,7 @@
       disp
     });
     renderAdminLockBar();
-    return { origin, disp, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, haulIsIndiff: effHaulIsIndiff, qty, up, tp, disc, mat, tr, rawTot, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard, pricePending: rawPricePending };
+    return { origin, disp, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, haulIsIndiff: effHaulIsIndiff, corruptedFlatMat: Boolean(editRawCalc && editRawCalc.corruptedFlatMat), corruptedFlatTrans: Boolean(editRawCalc && editRawCalc.corruptedFlatTrans), qty, up, tp, disc, mat, tr, rawTot, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard, pricePending: rawPricePending };
   }
 
   function recalcReceipt() {
@@ -130450,7 +130745,7 @@
     FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
-    FORM_UI.siteAutoFilledFromCustomer = false; FORM_UI.custAutoFilledFromSite = false; FORM_UI.siteAutoFilledFromOwner = false; FORM_UI.lastSalesSiteCustKey = ''; FORM_UI.lastRawEffDate = val('f_date') || '';
+    FORM_UI.siteAutoFilledFromCustomer = false; FORM_UI.custAutoFilledFromSite = false; FORM_UI.siteAutoFilledFromOwner = false; FORM_UI.lastSalesSiteCustKey = ''; FORM_UI.lastRawEffDate = val('f_date') || ''; FORM_UI.lastSalesEffDate = val('f_date') || '';
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastSettleSupplier = val('f_supplier'); FORM_UI.lastDupSig = ''; FORM_UI.lastUom = val('f_uom') || ''; FORM_UI.lastPrCoSide = '';
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
@@ -133132,7 +133427,10 @@
         if (!mergedMap.has(nk)) mergedMap.set(nk, cnt);
         else mergedMap.set(nk, mergedMap.get(nk) + (cnt * 0.05));
       });
-      return typeof uniqSorted === 'function' ? uniqSorted(out, mergedMap) : Array.from(new Set(out));
+      const cleanOut = (partyKind === 'staff' || (isRegEdit && modalForm === 'staff'))
+        ? out.filter(nm => !isVoucherRefNotPersonName(nm))
+        : out;
+      return typeof uniqSorted === 'function' ? uniqSorted(cleanOut, mergedMap) : Array.from(new Set(cleanOut));
     };
 
     if (isRegEdit) {
@@ -133198,9 +133496,18 @@
       }
     }
     if (wantStaff) {
-      allRowsFor('staff_members').forEach(s => { if (matchScopeRow(s)) push(s.name || s.full_name || s.Staff || s.staff_name); });
+      allRowsFor('staff_members').forEach(s => {
+        if (!matchScopeRow(s)) return;
+        const nm = s.name || s.full_name || s.Staff || s.staff_name;
+        if (!isVoucherRefNotPersonName(nm)) push(nm);
+      });
       ['salaries', 'attendance', 'payroll_attendance', 'employments', 'freelance_sheets', 'freelance_entries', 'logistics_allowances', 'staff_assignments'].forEach(tk => {
-        allRowsFor(tk).forEach(r => { if (matchScopeRow(r)) push(r.staff || r.employee || r.name); });
+        const allowNameFallback = tk === 'employments';
+        allRowsFor(tk).forEach(r => {
+          if (!matchScopeRow(r)) return;
+          const nm = r.staff || r.employee || (allowNameFallback ? r.name : '');
+          if (!isVoucherRefNotPersonName(nm)) push(nm);
+        });
       });
     }
 
@@ -134317,8 +134624,8 @@
           trans_unit_price: effTpS,
           trans_price: effTrS,
           trans_tier_adj: (!isRetS && c.tierTrAdj) || 0,
-          ...(!isRetS && c.matIsIndiff ? { mat_indiff: true } : {}),
-          ...(!isRetS && c.transIsIndiff ? { trans_indiff: true } : {}),
+          mat_indiff: Boolean(!isRetS && c.matIsIndiff),
+          trans_indiff: Boolean(!isRetS && c.transIsIndiff),
           // Fuel surcharge inside the transport price, with the diesel price it was worked at (cleared on an edit that drops it).
           ...((!isRetS && c.fuelSur)
             ? { fuel_surcharge_unit: c.fuelSur.unit, fuel_steps: c.fuelSur.steps, fuel_price_ref: c.fuelSur.ref }
@@ -134359,6 +134666,8 @@
           cost: c.mat,
           trans_unit_cost: c.tp,
           trans_cost: c.tr,
+          mat_indiff: Boolean(c.matIsIndiff),
+          trans_indiff: Boolean(c.haulIsIndiff),
           total: round2(c.mat + c.tr),
           price_pending: false,
           price_entered_manually: true,
@@ -134525,8 +134834,8 @@
             ...(!isRetR && c.pricePending ? { price_pending: true } : {}),
             trans_unit_cost: effTpR,
             trans_cost: effTrR,
-            ...(!isRetR && c.matIsIndiff ? { mat_indiff: true } : {}),
-            ...(!isRetR && !isSuppDeliv && c.haulIsIndiff ? { trans_indiff: true } : {}),
+            mat_indiff: Boolean(!isRetR && c.matIsIndiff),
+            trans_indiff: Boolean(!isRetR && !isSuppDeliv && c.haulIsIndiff),
             ...(!isRetR && c.tierAdj ? { tier_adj: c.tierAdj } : {}),
             ...(!isRetR && !isSuppDeliv && c.tierTrAdj ? { trans_tier_adj: c.tierTrAdj } : {}),
             ...(!isRetR && !isSuppDeliv && c.haulRule ? { haul_rule: c.haulRule.name } : {}),
@@ -136923,7 +137232,7 @@
           }
         });
         const priceDriverIds = [
-          'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
+          'f_date', 'f_repdate', 'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
           'f_saletype', 'f_transportby', 'f_raw_bundled', 'f_pr_incl_transport', 'f_pr_nomatcharge', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
           'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_direction', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
           'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
@@ -136934,7 +137243,8 @@
         const anyPriceDriverEdited = priceDriverIds.some(id => changedModalIds.has(id))
           || Array.from(changedModalIds).some(id => /^f_exi_(qty|cost)_/.test(id));
         const isDispZeroedEdit = Boolean(record.removed_slip || (record.return_to_wtc && !record._post_as_paired_return && !isReturnTicket(orig)));
-        if (!anyPriceDriverEdited && !isDispZeroedEdit) {
+        const isHealedFlatTicket = Boolean((f === 'sales' || f === 'raw') && c && (c.corruptedFlatMat || c.corruptedFlatTrans));
+        if (!anyPriceDriverEdited && !isDispZeroedEdit && !isHealedFlatTicket) {
           ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
             if ((f === 'receipt' || f === 'settlement') && (k === 'usd_amount' || k === 'lbp_amount')) return;
             if (orig[k] !== undefined) record[k] = orig[k];
@@ -150703,6 +151013,7 @@
 
     const matRule = (owner || site) && product ? findRule({ company, supplier: owner, site, product, date: effDate, types: ['Purchase Price (Site)'] }) : null;
     const haulRule = !isZeroSeparateHaul && (site || truckOwner) ? findRule({ company, supplier: truckOwner, site, product, date: effDate, types: ['Transport Price (Site)'] }) : null;
+    const ovSet = new Set(Array.isArray(base.admin_overrides) ? base.admin_overrides : []);
 
     const signedTicketLeg = (gross, d) => {
       const g = round2(gross);
@@ -150710,21 +151021,57 @@
       const net = round2(g - d);
       return d < 0 ? net : Math.max(0, net);
     };
-    const storedMatFlat = origQty > 1.001 && Math.abs(origUc) > 1e-6 &&
-      Math.abs(origCost - signedTicketLeg(origUc, origDisc)) <= 0.05 &&
-      Math.abs(origCost - signedTicketLeg(origQty * origUc, origDisc)) > 0.50;
-    const storedTransFlat = !(/^company|^supplier[-\s]*delivered/i.test(String(base.transport_by || ''))) && origQty > 1.001 && Math.abs(origTuc) > 1e-6 &&
-      Math.abs(origTransCost - round2(origTuc)) <= 0.05 &&
-      Math.abs(origTransCost - round2(origQty * origTuc)) > 0.50;
+    const origUom = String(base.uom || uom);
+    const rawLpRule = (!matRule && product) ? listPriceRule(company, product, effDate) : null;
+    const rawProd = product ? productInfo(product) : null;
+    const rawLpUnit = (rawLpRule && rawLpRule.unit) ? rawLpRule.unit : (rawProd ? rawProd.uom : '');
+    const rawLpIsFlat = Boolean(rawLpRule && /^truck$/i.test(String(rawLpUnit || '').trim()));
+    const storedMatFlat = inferStoredTicketLegFlat(origQty, origUc, origCost, origDisc, base.tier_adj);
+    const storedTransFlat = !(/^company|^supplier[-\s]*delivered/i.test(String(base.transport_by || ''))) && inferStoredTicketLegFlat(origQty, origTuc, origTransCost, 0, base.trans_tier_adj);
+    const origMultiTruckMat = isMultiTruckSummaryLeg(origUom, origQty, origUc, origCost, origDisc, base.tier_adj);
+    const origMultiTruckTrans = isMultiTruckSummaryLeg(origUom, origQty, origTuc, origTransCost, 0, base.trans_tier_adj);
+    const zeroStartMultiMat = isTruckUom && origQty > 1.001 && Math.abs(origUc) <= 1e-6 && Math.abs(origCost) <= 1e-6 && base.mat_indiff !== true && !storedMatFlat;
+    const zeroStartMultiTr = !isZeroSeparateHaul && isTruckUom && origQty > 1.001 && Math.abs(origTuc) <= 1e-6 && Math.abs(origTransCost) <= 1e-6 && base.trans_indiff !== true && !storedTransFlat;
+    const multiTruckMatSummary = isTruckUom && qty > 1.001 && (origMultiTruckMat || zeroStartMultiMat || wasEdited('qty') || wasEdited('uom'));
+    const multiTruckTransSummary = isTruckUom && qty > 1.001 && (origMultiTruckTrans || zeroStartMultiTr || wasEdited('qty') || wasEdited('uom'));
+    const singleTruckMat = isTruckUom && !multiTruckMatSummary;
+    const singleTruckTrans = isTruckUom && !multiTruckTransSummary;
 
-    const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || isMatIndiffRule(matRule) || storedMatFlat);
-    const transIsFlat = Boolean(!isZeroSeparateHaul && (isTruckUom || base.trans_indiff === true || isTransIndiffRule(haulRule) || storedTransFlat));
+    const matRuleKeyEdited = wasEdited('site') || wasEdited('site_owner') || wasEdited('product') || wasEdited('date') || wasEdited('rep_date') || wasEdited('company');
+    const transRuleKeyEdited = wasEdited('site') || wasEdited('truck_owner') || wasEdited('product') || wasEdited('date') || wasEdited('rep_date') || wasEdited('company');
+    const keepOrigFlatMat = Boolean(!matRuleKeyEdited && !wasEdited('uom') && !multiTruckMatSummary && (base.mat_indiff === true || storedMatFlat));
+    const keepOrigFlatTrans = Boolean(!transRuleKeyEdited && !wasEdited('uom') && !multiTruckTransSummary && !wasEdited('transport_by') && (base.trans_indiff === true || storedTransFlat));
+    const resolvedRuleMatFlat = Boolean(!ovSet.has('f_unitprice') && !base.price_entered_manually && (matRule ? isMatIndiffRule(matRule) : rawLpIsFlat));
+    const resolvedRuleTransFlat = Boolean(!ovSet.has('f_transunitprice') && isTransIndiffRule(haulRule));
+
+    const matIsFlat = Boolean(!multiTruckMatSummary && (singleTruckMat || resolvedRuleMatFlat || keepOrigFlatMat));
+    const transIsFlat = Boolean(!isZeroSeparateHaul && !multiTruckTransSummary && (singleTruckTrans || resolvedRuleTransFlat || keepOrigFlatTrans));
+
+    const wordOnlySeat = typeof canModifyTextOnly === 'function' && canModifyTextOnly();
+    const flatMatRef = matRule ? Number(ruleIndiffPrice(matRule) || 0) : (rawLpIsFlat ? Number(rawLpRule.indiff_price ?? rawLpRule.unit_price ?? rawLpRule.price ?? 0) : 0);
+    const corruptedFlatMat = Boolean(
+      !wordOnlySeat && !multiTruckMatSummary && resolvedRuleMatFlat
+      && origQty > 1.001 && origUc > 0
+      && Math.abs(origUc - flatMatRef) <= 0.01
+      && Math.abs(origCost - signedTicketLeg(origQty * origUc + Number(base.tier_adj || 0), origDisc)) <= 0.05
+    );
+    const corruptedFlatTrans = Boolean(
+      !wordOnlySeat && !isZeroSeparateHaul && !multiTruckTransSummary && resolvedRuleTransFlat
+      && origQty > 1.001 && origTuc > 0
+      && Math.abs(origTuc - Number(ruleTransIndiffPrice(haulRule) || 0)) <= 0.01
+      && Math.abs(origTransCost - round2(origQty * origTuc + Number(base.trans_tier_adj || 0))) <= 0.05
+    );
+
+    const origMatWasFlat = Boolean(base.mat_indiff === true || storedMatFlat);
+    const origTransWasFlat = Boolean(base.trans_indiff === true || storedTransFlat);
 
     const matEdited = wasEdited('qty') || wasEdited('uom') || wasEdited('unit_cost') || wasEdited('discount');
     const transEdited = wasEdited('qty') || wasEdited('uom') || wasEdited('trans_unit_cost') || wasEdited('transport_by');
+    const effMatCalcNeeded = matEdited || corruptedFlatMat || (matRuleKeyEdited && matIsFlat !== origMatWasFlat);
+    const effTransCalcNeeded = transEdited || corruptedFlatTrans || (transRuleKeyEdited && transIsFlat !== origTransWasFlat);
 
     let cost;
-    if (!matEdited) {
+    if (!effMatCalcNeeded) {
       cost = origCost;
     } else if (uc === 0 && origUc === 0 && Math.abs(origCost) > 0 && !wasEdited('unit_cost')) {
       cost = signedTicketLeg(origCost + origDisc, disc);
@@ -150739,7 +151086,7 @@
     }
 
     let transCost;
-    if (!transEdited) {
+    if (!effTransCalcNeeded) {
       transCost = origTransCost;
     } else if (isZeroSeparateHaul) {
       transCost = 0;
@@ -150755,8 +151102,8 @@
       transCost = round2(qty * tuc + keepTransTier);
     }
 
-    const total = (!matEdited && !transEdited) ? origTotal : round2(cost + transCost);
-    return { cost, transCost, total, matIsFlat, transIsFlat, matEdited, transEdited, effDate, isSuppDeliv };
+    const total = (!effMatCalcNeeded && !effTransCalcNeeded) ? origTotal : round2(cost + transCost);
+    return { cost, transCost, total, matIsFlat, transIsFlat, matEdited: effMatCalcNeeded, transEdited: effTransCalcNeeded, corruptedFlatMat, corruptedFlatTrans, effDate, isSuppDeliv };
   }
 
   function resolveInspectorSalesTicketCalc(origRow, overrides = {}, editedSet = null) {
@@ -150850,21 +151197,62 @@
       const net = round2(g - d);
       return d < 0 ? net : Math.max(0, net);
     };
-    const storedMatFlat = origBillQty > 1.001 && Math.abs(origUp) > 1e-6 &&
-      (Math.abs(origPrice - signedSaleLeg(origUp, origDisc)) <= 0.05 || Math.abs(origPrice - round2(origUp)) <= 0.05) &&
-      Math.abs(origPrice - signedSaleLeg(origBillQty * origUp + Number(base.tier_adj || 0), origDisc)) > 0.50;
-    const storedTransFlat = base.sale_type !== 'Pickup' && origBillQty > 1.001 && Math.abs(origTp) > 1e-6 &&
-      Math.abs(origTransPrice - round2(origTp)) <= 0.05 &&
-      Math.abs(origTransPrice - round2(origBillQty * origTp + Number(base.trans_tier_adj || 0))) > 0.50;
+    const ovSetS = new Set(Array.isArray(base.admin_overrides) ? base.admin_overrides : []);
+    const origUomS = String(base.uom || uom);
+    const salesLpRule = (!isUnreg && (!rule || !salesRuleHasMatPrice(rule)) && !isNoMatChargeRule(rule) && product) ? listPriceRule(company, product, effDate) : null;
+    const salesProd = product ? productInfo(product) : null;
+    const salesLpUnit = (salesLpRule && salesLpRule.unit) ? salesLpRule.unit : (salesProd ? salesProd.uom : '');
+    const salesLpHasVal = Boolean(salesLpRule || (product && listPrice(product) != null));
+    const salesLpIsFlat = Boolean(!isUnreg && salesLpHasVal && /^truck$/i.test(String(salesLpUnit || '').trim()));
+    const storedMatFlat = inferStoredTicketLegFlat(origBillQty, origUp, origPrice, origDisc, base.tier_adj);
+    const storedTransFlat = base.sale_type !== 'Pickup' && inferStoredTicketLegFlat(origBillQty, origTp, origTransPrice, 0, base.trans_tier_adj);
+    const origMultiTruckMatS = isMultiTruckSummaryLeg(origUomS, origBillQty, origUp, origPrice, origDisc, base.tier_adj);
+    const origMultiTruckTransS = isMultiTruckSummaryLeg(origUomS, origBillQty, origTp, origTransPrice, 0, base.trans_tier_adj);
+    const zeroStartMultiMatS = isTruckUom && origBillQty > 1.001 && Math.abs(origUp) <= 1e-6 && Math.abs(origPrice) <= 1e-6 && base.mat_indiff !== true && !storedMatFlat;
+    const zeroStartMultiTrS = isDelivery && isTruckUom && origBillQty > 1.001 && Math.abs(origTp) <= 1e-6 && Math.abs(origTransPrice) <= 1e-6 && base.trans_indiff !== true && !storedTransFlat;
+    const qtyOrUomEditedS = wasEdited('qty') || (useExtQty && wasEdited('external_qty')) || wasEdited('uom');
+    const multiTruckMatSummaryS = isTruckUom && billQty > 1.001 && (origMultiTruckMatS || zeroStartMultiMatS || qtyOrUomEditedS);
+    const multiTruckTransSummaryS = isTruckUom && billQty > 1.001 && (origMultiTruckTransS || zeroStartMultiTrS || qtyOrUomEditedS);
+    const singleTruckMatS = isTruckUom && !multiTruckMatSummaryS;
+    const singleTruckTransS = isTruckUom && !multiTruckTransSummaryS;
 
-    const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || (!isUnreg && !isNoMatChargeRule(rule) && isMatIndiffRule(rule)) || storedMatFlat);
-    const transIsFlat = Boolean(isDelivery && (isTruckUom || base.trans_indiff === true || (!isUnreg && isTransIndiffRule(activeTransRule)) || storedTransFlat));
+    const matRuleKeyEditedS = wasEdited('customer') || wasEdited('site') || wasEdited('product') || wasEdited('date') || wasEdited('rep_date') || wasEdited('company');
+    const transRuleKeyEditedS = wasEdited('customer') || wasEdited('site') || wasEdited('truck_owner') || wasEdited('product') || wasEdited('date') || wasEdited('rep_date') || wasEdited('company');
+    const keepOrigFlatMatS = Boolean(!matRuleKeyEditedS && !wasEdited('uom') && !multiTruckMatSummaryS && (base.mat_indiff === true || storedMatFlat));
+    const keepOrigFlatTransS = Boolean(!transRuleKeyEditedS && !wasEdited('uom') && !multiTruckTransSummaryS && !wasEdited('sale_type') && (base.trans_indiff === true || storedTransFlat));
+    const resolvedRuleMatFlatS = Boolean(!isUnreg && !ovSetS.has('f_unitprice') && String(base.price_rule || '') !== 'Manual' && !isNoMatChargeRule(rule) && (salesRuleHasMatPrice(rule) ? isMatIndiffRule(rule) : salesLpIsFlat));
+    const resolvedRuleTransFlatS = Boolean(isDelivery && !isUnreg && !ovSetS.has('f_transunitprice') && isTransIndiffRule(activeTransRule));
 
-    const matEdited = wasEdited('qty') || (useExtQty && wasEdited('external_qty')) || wasEdited('uom') || wasEdited('unit_price') || wasEdited('discount');
-    const transEdited = wasEdited('qty') || (useExtQty && wasEdited('external_qty')) || wasEdited('uom') || wasEdited('trans_unit_price') || wasEdited('sale_type');
+    const matIsFlat = Boolean(!multiTruckMatSummaryS && (singleTruckMatS || resolvedRuleMatFlatS || keepOrigFlatMatS));
+    const transIsFlat = Boolean(isDelivery && !multiTruckTransSummaryS && (singleTruckTransS || resolvedRuleTransFlatS || keepOrigFlatTransS));
+
+    const wordOnlySeatS = typeof canModifyTextOnly === 'function' && canModifyTextOnly();
+    const flatSalesMatRef = salesRuleHasMatPrice(rule)
+      ? Number(ruleIndiffPrice(rule) || 0)
+      : (salesLpIsFlat ? Number((salesLpRule ? (salesLpRule.indiff_price ?? salesLpRule.unit_price ?? salesLpRule.price) : (product ? listPrice(product) : 0)) ?? 0) : 0);
+    const corruptedFlatMat = Boolean(
+      !wordOnlySeatS && !multiTruckMatSummaryS && resolvedRuleMatFlatS
+      && origBillQty > 1.001 && origUp > 0
+      && Math.abs(origUp - flatSalesMatRef) <= 0.01
+      && Math.abs(origPrice - signedSaleLeg(origBillQty * origUp + Number(base.tier_adj || 0), origDisc)) <= 0.05
+    );
+    const corruptedFlatTrans = Boolean(
+      !wordOnlySeatS && !multiTruckTransSummaryS && resolvedRuleTransFlatS
+      && origBillQty > 1.001 && origTp > 0
+      && Math.abs(origTp - Number(ruleTransIndiffPrice(activeTransRule) || 0)) <= 0.01
+      && Math.abs(origTransPrice - round2(origBillQty * origTp + Number(base.trans_tier_adj || 0))) <= 0.05
+    );
+
+    const origMatWasFlatS = Boolean(base.mat_indiff === true || storedMatFlat);
+    const origTransWasFlatS = Boolean(base.trans_indiff === true || storedTransFlat);
+
+    const matEdited = qtyOrUomEditedS || wasEdited('unit_price') || wasEdited('discount');
+    const transEdited = qtyOrUomEditedS || wasEdited('trans_unit_price') || wasEdited('sale_type');
+    const effMatCalcNeededS = matEdited || corruptedFlatMat || (matRuleKeyEditedS && matIsFlat !== origMatWasFlatS);
+    const effTransCalcNeededS = transEdited || corruptedFlatTrans || (transRuleKeyEditedS && transIsFlat !== origTransWasFlatS);
 
     let price;
-    if (!matEdited) {
+    if (!effMatCalcNeededS) {
       price = origPrice;
     } else if (up === 0 && origUp === 0 && Math.abs(origPrice) > 0 && !wasEdited('unit_price')) {
       price = signedSaleLeg(origPrice + origDisc, disc);
@@ -150876,7 +151264,7 @@
     }
 
     let transPrice;
-    if (!transEdited) {
+    if (!effTransCalcNeededS) {
       transPrice = origTransPrice;
     } else if (!isDelivery) {
       transPrice = 0;
@@ -150890,9 +151278,9 @@
     }
 
     let total;
-    if (!matEdited && !transEdited) {
+    if (!effMatCalcNeededS && !effTransCalcNeededS) {
       total = origTotal;
-    } else if (!matEdited && transEdited) {
+    } else if (!effMatCalcNeededS && effTransCalcNeededS) {
       total = round2(Math.max(0, price + transPrice + origResidual));
     } else {
       total = round2(Math.max(0, price + transPrice));
@@ -150905,7 +151293,7 @@
     const vatCtxEdited = wasEdited('customer') || wasEdited('method') || wasEdited('vat_invoice') || vatRateChanged;
 
     let vat, totalTtc;
-    if (!matEdited && !transEdited && !vatCtxEdited) {
+    if (!effMatCalcNeededS && !effTransCalcNeededS && !vatCtxEdited) {
       vat = origVat;
       totalTtc = origTtc;
     } else if (mSgn === 0) {
@@ -150920,7 +151308,7 @@
       totalTtc = round2(total + vat);
     }
 
-    return { price, transPrice, total, vat, totalTtc, matIsFlat, transIsFlat, matEdited, transEdited, effDate: date };
+    return { price, transPrice, total, vat, totalTtc, matIsFlat, transIsFlat, matEdited: effMatCalcNeededS, transEdited: effTransCalcNeededS, corruptedFlatMat, corruptedFlatTrans, effDate: date };
   }
 
   function isInspectorSchemaFieldBlocked(key, fieldKey, row, u) {
@@ -151844,7 +152232,7 @@
       'amount', 'cost', 'price', 'trans_cost', 'trans_price', 'total', 'total_ttc', 'line_total', 'total_cost', 'total_cost_usd',
       'new_part_cost', 'repair_cost', 'sale_proceeds', 'warehouse_parts_usd', 'outside_parts_usd', 'external_labor_usd',
       'principal', 'interest_rate', 'percentage', 'difference', 'credit_days', 'credit_limit', 'price_pending', 'salary_pending',
-      'company', 'customer', 'supplier', 'product', 'site', 'site_owner',
+      'company', 'date', 'rep_date', 'customer', 'supplier', 'product', 'site', 'site_owner',
       'transport_by', 'truck_owner', 'sale_type', 'uom', 'unit', 'rate_per', 'rule_type'
     ]);
     const anyDriverEdited = Array.from(editedSet || []).some(k => pricingDrivers.has(k));
@@ -151889,6 +152277,9 @@
     if (key === 'warehouse_movements') { hidden.add('location'); hidden.add('target_equipment'); }
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
+    if (key === 'staff_members' || key === 'staff_roles' || key === 'staff_assignments' || key === 'employments' || key === 'work_shifts') {
+      ['official_name', 'item_name', 'contact', 'address', 'location', 'default_location', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'credit_days', 'credit_limit', 'uom', 'unit_cost', 'default_cost', 'min_stock', 'amount', 'usd_amount', 'lbp_amount', 'total', 'total_ttc'].forEach(hk => hidden.add(hk));
+    }
     if (key === 'raw_purchases') {
       hidden.add('includes_transport');
       if (!seatLens().expenses) {
@@ -154945,10 +155336,19 @@
       navigateToRecordOrDomainRow(key, idOrName, idOrName, opts && opts.company);
       return;
     }
+    const canOpenMaskedSalaryInspector = () => {
+      const u = activeUser();
+      if (!u || STATE.kioskLocked || String(u.status || '') === 'Suspended' || u.locked) return false;
+      if (canViewPayrollDollarAmounts(u)) return false;
+      if (!(/^Custom/i.test(String(u.role || '')) || String(u.pbi_access || '').toLowerCase() === 'custom')) return false;
+      const p = getEffectivePermissions(u);
+      return Boolean(p && p.rights && p.rights.enter_master && (canViewView('payroll', u) || canViewView('payroll_attendance', u)));
+    };
     if (key && !canAccessTable(key)) { toast('Access restricted for this seat', 'err'); return; }
-    if (key && !isCashFlowFullFin() && TIEOUT_CONF_KEYS.has(key) && key !== 'attendance') { toast('Access restricted for this seat', 'err'); return; }
+    if (key && !isCashFlowFullFin() && TIEOUT_CONF_KEYS.has(key) && key !== 'attendance' && !(key === 'salaries' && canOpenMaskedSalaryInspector())) { toast('Access restricted for this seat', 'err'); return; }
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
+    if (key === 'salaries' && !isCashFlowFullFin() && row.voided) { toast('Access restricted for this seat', 'err'); return; }
     if (key === 'attendance' && !isCashFlowFullFin() && /^Config\s+(USD|LBP)$/i.test(String(row.type || ''))) { toast('Access restricted for this seat', 'err'); return; }
     if (row.company && !isDemoScopeActive()) {
       const seatCos = allowedCompanyNames();
@@ -156230,6 +156630,12 @@
     };
     const syncModifyLiveSummary = () => {
       if (!modDrawer || !modLiveCalcEl) return;
+      const liveEditedSet = new Set();
+      modDrawer.querySelectorAll('[data-mod-field]').forEach(el => {
+        if (!el || !el.dataset || !el.dataset.modField) return;
+        const valChanged = el.dataset.initVal !== undefined && String(el.value ?? '').trim() !== String(el.dataset.initVal ?? '').trim();
+        if (el.dataset.userEdited === '1' || valChanged) liveEditedSet.add(el.dataset.modField);
+      });
       let html = '';
       if (key === 'sales_tickets') {
         const otSel = $('insp_edit_overtime');
@@ -156264,7 +156670,7 @@
           discount: getModNum('discount'),
           method: getModVal('method') || row.method || 'Credit',
           vat_invoice: $('insp_edit_vat_invoice') ? getModVal('vat_invoice') : String(row.vat_invoice || '')
-        });
+        }, liveEditedSet);
         const upLbl = modDrawer.querySelector('label[for="insp_edit_unit_price"]');
         if (upLbl) upLbl.textContent = sc.matIsFlat ? 'Material Price ($ / Load)' : 'Material Unit Price ($)';
         const tpLbl = modDrawer.querySelector('label[for="insp_edit_trans_unit_price"]');
@@ -156306,7 +156712,7 @@
           unit_cost: getModNum('unit_cost'),
           trans_unit_cost: getModNum('trans_unit_cost'),
           discount: getModNum('discount')
-        });
+        }, liveEditedSet);
         const ucLbl = modDrawer.querySelector('label[for="insp_edit_unit_cost"]');
         if (ucLbl) ucLbl.textContent = isModSuppDeliv
           ? (rc.matIsFlat ? 'Delivered Cost (Incl. Transport / Load)' : 'Delivered Unit Cost (Incl. Transport)')
@@ -157391,15 +157797,18 @@
           row.vat = salesCalc.vat;
           row.total_ttc = salesCalc.totalTtc;
           if (salesCalc.matEdited || salesCalc.transEdited) {
-            if (salesCalc.matIsFlat) row.mat_indiff = true;
-            else delete row.mat_indiff;
-            if (salesCalc.transIsFlat) row.trans_indiff = true;
-            else delete row.trans_indiff;
+            row.mat_indiff = Boolean(salesCalc.matIsFlat);
+            row.trans_indiff = Boolean(salesCalc.transIsFlat);
           }
-          if (salesCalc.matEdited || salesCalc.transEdited || editedKeySet.has('qty')) {
+          if (!isSaveWordOnly && !isInspPinOnlySeat && (salesCalc.corruptedFlatMat || salesCalc.corruptedFlatTrans)) {
+            if (salesCalc.corruptedFlatMat) editedKeySet.add('mat_indiff');
+            if (salesCalc.corruptedFlatTrans) editedKeySet.add('trans_indiff');
+            changedCount++;
+          }
+          if (editedKeySet.has('unit_price') || editedKeySet.has('discount') || editedKeySet.has('trans_unit_price') || editedKeySet.has('qty')) {
             const ovSet = new Set(Array.isArray(row.admin_overrides) ? row.admin_overrides : []);
-            if (salesCalc.matEdited) ovSet.add('f_unitprice');
-            if (salesCalc.transEdited) ovSet.add('f_transunitprice');
+            if (editedKeySet.has('unit_price') || editedKeySet.has('discount')) ovSet.add('f_unitprice');
+            if (editedKeySet.has('trans_unit_price')) ovSet.add('f_transunitprice');
             if (editedKeySet.has('qty')) ovSet.add('f_qty');
             row.admin_overrides = Array.from(ovSet);
           }
@@ -157420,18 +157829,21 @@
             changedCount++;
           }
           if (rawCalc.matEdited || rawCalc.transEdited) {
-            if (rawCalc.matIsFlat) row.mat_indiff = true;
-            else delete row.mat_indiff;
-            if (rawCalc.transIsFlat) row.trans_indiff = true;
-            else delete row.trans_indiff;
+            row.mat_indiff = Boolean(rawCalc.matIsFlat);
+            row.trans_indiff = Boolean(rawCalc.transIsFlat);
           }
-          if (rawCalc.matEdited || rawCalc.transEdited || editedKeySet.has('qty')) {
+          if (!isSaveWordOnly && !isInspPinOnlySeat && (rawCalc.corruptedFlatMat || rawCalc.corruptedFlatTrans)) {
+            if (rawCalc.corruptedFlatMat) editedKeySet.add('mat_indiff');
+            if (rawCalc.corruptedFlatTrans) editedKeySet.add('trans_indiff');
+            changedCount++;
+          }
+          if (editedKeySet.has('unit_cost') || editedKeySet.has('discount') || editedKeySet.has('trans_unit_cost') || editedKeySet.has('qty')) {
             const ovSet = new Set(Array.isArray(row.admin_overrides) ? row.admin_overrides : []);
-            if (rawCalc.matEdited) {
+            if (editedKeySet.has('unit_cost') || editedKeySet.has('discount')) {
               ovSet.add('f_unitprice');
               row.price_entered_manually = true;
             }
-            if (rawCalc.transEdited) ovSet.add('f_transunitprice');
+            if (editedKeySet.has('trans_unit_cost')) ovSet.add('f_transunitprice');
             if (editedKeySet.has('qty')) ovSet.add('f_qty');
             row.admin_overrides = Array.from(ovSet);
           }
@@ -171728,6 +172140,7 @@
     const prevView = STATE.view;
     const prevCompany = STATE.company;
     const fromHistory = Boolean(opts && opts.fromHistory);
+    STATE._explicitAllScope = Boolean(coKey === 'ALL' && ((typeof isOwner === 'function' && isOwner(uScopeNow)) || (typeof isDemoScopeActive === 'function' && isDemoScopeActive())));
     STATE.company = coKey;
     const nextDemo = isDemoScopeActive();
     if (prevDemo !== nextDemo) {
@@ -171753,7 +172166,11 @@
       STATE.cfFocusDateFromScrub = false;
       STATE.rawPricingGradeFilter = 'ALL';
       clearCfScrubChipState();
-      if (STATE.rdl && STATE.rdl.params && STATE.rdl.params.hrBatchTargets) STATE.rdl.params.hrBatchTargets = null;
+      if (STATE.rdl && STATE.rdl.params) {
+        STATE.rdl.params.hrBatchTargets = null;
+        STATE.rdl.params.hrStaff = '';
+        STATE.rdl.params.hrEmp = '';
+      }
     }
     FORM_UI.unpricedQueueSession = null;
     FORM_UI.unpricedSiteCtx = null;
@@ -172488,6 +172905,7 @@
     if (STATE._lastRlsUserId !== rlsUserKey) {
       const hadPrevRlsUser = STATE._lastRlsUserId !== undefined;
       STATE._lastRlsUserId = rlsUserKey;
+      STATE._explicitAllScope = false;
       STATE.companySwitchIndFilter = 'all';
       if (hadPrevRlsUser) {
         STATE.showSalesTaxBreakdown = false;
@@ -177235,6 +177653,17 @@
   }
 
   function openKioskStationAdminModal(opts = {}) {
+    const gateElNow = $('authGate');
+    const authGateActiveNow = Boolean(!STATE.authed || (gateElNow && !gateElNow.hidden));
+    if (authGateActiveNow) {
+      const ksaNatNow = getAndroidKioskNativeInfo();
+      if (ksaNatNow.isAndroidWrapper && ksaNatNow.bridge && typeof window.__mfgOpenNativeRecoveryVault === 'function') {
+        if (window.Face && typeof window.Face.stop === 'function') {
+          try { window.Face.stop(); } catch (_) {}
+        }
+        return window.__mfgOpenNativeRecoveryVault();
+      }
+    }
     wireKioskStationAdminKeyboardOnce();
     wireKioskAdminActivityListenersOnce();
     const targetAction = opts && opts.targetAction === 'enrol' ? 'enrol' : 'admin';
@@ -179100,15 +179529,18 @@
       const disc = effCalc && effCalc.disc != null ? effCalc.disc : num('f_discount');
       const uom = (effCalc && effCalc.uom) || val('f_uom') || 'm³';
       const isTruckUom = /truck/i.test(uom);
+      const isMultiTruckDraftR = isTruckUom && qty > 1.001;
       const isCo = val('f_transportby') === 'Company fleet';
+      const matFlatDraftR = Boolean(!isMultiTruckDraftR && (isTruckUom || (effCalc && effCalc.matIsIndiff)));
+      const trFlatDraftR = Boolean(!isCo && !isMultiTruckDraftR && (isTruckUom || (effCalc && (effCalc.haulIsIndiff || effCalc.transIsIndiff))));
       const mat = (effCalc && effCalc.mat != null)
         ? round2(effCalc.mat)
-        : ($('f_mat_total') && val('f_mat_total') !== '' ? num('f_mat_total') : round2(Math.max(0, (isTruckUom ? up : qty * up) - disc)));
+        : ($('f_mat_total') && val('f_mat_total') !== '' ? num('f_mat_total') : round2(Math.max(0, (matFlatDraftR ? up : qty * up) - disc)));
       const tr = isCo
         ? 0
         : ((effCalc && effCalc.tr != null)
             ? round2(effCalc.tr)
-            : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(isTruckUom ? tp : qty * tp)));
+            : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(trFlatDraftR ? tp : qty * tp)));
       return capDraft({
         id: 'DRAFT-RAW',
         company,
@@ -179130,6 +179562,8 @@
         cost: mat,
         trans_unit_cost: tp,
         trans_cost: tr,
+        mat_indiff: matFlatDraftR,
+        trans_indiff: trFlatDraftR,
         discount: disc,
         total: round2(mat + tr),
         method: val('f_method') || 'Credit',
@@ -179218,13 +179652,16 @@
     const uom = (effCalc && effCalc.uom) || val('f_uom') || 'm³';
     const saleType = (effCalc && effCalc.saleType) || val('f_saletype') || 'Delivery';
     const isTruckUom = /truck/i.test(uom);
+    const isMultiTruckDraftS = isTruckUom && qty > 1.001;
+    const matFlatDraftS = Boolean(!isMultiTruckDraftS && (isTruckUom || (effCalc && effCalc.matIsIndiff)));
+    const trFlatDraftS = Boolean(saleType === 'Delivery' && !isMultiTruckDraftS && (isTruckUom || (effCalc && (effCalc.haulIsIndiff || effCalc.transIsIndiff))));
     const mat = (effCalc && effCalc.mat != null)
       ? round2(Math.max(0, effCalc.mat - disc))
-      : ($('f_mat_total') && val('f_mat_total') !== '' ? num('f_mat_total') : round2(Math.max(0, (isTruckUom ? up : qty * up) - disc)));
+      : ($('f_mat_total') && val('f_mat_total') !== '' ? num('f_mat_total') : round2(Math.max(0, (matFlatDraftS ? up : qty * up) - disc)));
     const tr = saleType === 'Delivery'
       ? ((effCalc && effCalc.tr != null)
           ? round2(effCalc.tr)
-          : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(isTruckUom ? tp : qty * tp)))
+          : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(trFlatDraftS ? tp : qty * tp)))
       : 0;
     const net = round2(mat + tr);
     const cust = val('f_customer') || 'Walk-In / Customer';
@@ -179254,6 +179691,8 @@
       price: mat,
       trans_unit_price: tp,
       trans_price: tr,
+      mat_indiff: matFlatDraftS,
+      trans_indiff: trFlatDraftS,
       discount: disc,
       total: net,
       vat,
@@ -192389,9 +192828,9 @@
       const rawSm = (sd && sd.records && Array.isArray(sd.records.staff_members)) ? sd.records.staff_members : [];
       const baseRows = (typeof filterRecords === 'function'
         ? filterRecords(rawSm, { tableKey: 'staff_members', ignorePeriod: true, ignoreSearch: true, ignoreCompany: true })
-        : rawSm).filter(r => isStaffMemberAllowedForSeat(r, sd));
+        : rawSm).filter(r => isStaffInSelectedCompanyScope(r, sd) && isStaffMemberAllowedForSeat(r, sd));
       const scopeCo = (typeof STATE !== 'undefined' && STATE.company) ? String(STATE.company) : 'ALL';
-      if (!scopeCo || scopeCo === 'ALL' || (typeof DEMO_COMPANY_KEY !== 'undefined' && scopeCo === DEMO_COMPANY_KEY)) {
+      if (!scopeCo || scopeCo === 'ALL' || Boolean(typeof STATE !== 'undefined' && STATE && STATE._explicitAllScope) || (typeof DEMO_COMPANY_KEY !== 'undefined' && scopeCo === DEMO_COMPANY_KEY)) {
         scopedRows = baseRows;
       } else {
         const allowAllBypass = (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) || (typeof isOwner === 'function' && isOwner());
@@ -192690,7 +193129,83 @@
 
   window.__mfgIsNonLebaneseNationality = isNonLebaneseNationality;
   window.__mfgComplianceNormIso = _complianceNormIso;
+  let _staffLinkedCosCacheKey = '';
+  let _staffLinkedCosCacheVal = null;
+  function getStaffLinkedCompaniesByInd(seedObj, activeInd) {
+    const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : null);
+    const rec = (sd && sd.records) || {};
+    const tr = (sd && sd._tableRev) || {};
+    const sig = `${activeInd}|${sd && sd._recordsReady ? 1 : 0}|${sd && sd._customRev || 0}|${(rec.employments || []).length}:${tr.employments || 0}|${(rec.freelance_entries || []).length}:${tr.freelance_entries || 0}|${(rec.company_drivers || []).length}:${tr.company_drivers || 0}|${(rec.salaries || []).length}:${tr.salaries || 0}|${(rec.attendance || []).length}:${tr.attendance || 0}|${(rec.staff_assignments || []).length}:${tr.staff_assignments || 0}`;
+    if (_staffLinkedCosCacheKey === sig && _staffLinkedCosCacheVal) return _staffLinkedCosCacheVal;
+    const map = new Map();
+    const isMfg = !activeInd || activeInd === 'Manufacturing';
+    const track = (rawName, rawCo, row) => {
+      if (!row || row.voided) return;
+      if (isMfg ? (row._multiIndustrySeed || (row._industry && row._industry !== 'Manufacturing')) : (row._industry && row._industry !== activeInd)) return;
+      const nm = String(rawName || '').trim();
+      if (!nm || isVoucherRefNotPersonName(nm)) return;
+      const nk = norm(nm);
+      const co = canonCompany(rawCo);
+      const ck = co ? norm(co) : '';
+      if (!nk || !ck || ck === 'all' || ck === 'all companies') return;
+      let set = map.get(nk);
+      if (!set) { set = new Set(); map.set(nk, set); }
+      set.add(ck);
+    };
+    (rec.employments || []).forEach(r => track(r && (r.staff || r.name), r && r.company, r));
+    (rec.freelance_entries || []).forEach(r => track(r && r.staff, r && r.company, r));
+    (rec.company_drivers || []).forEach(r => track(r && (r.staff || r.driver), r && r.company, r));
+    (rec.salaries || []).forEach(r => track(r && r.staff, r && r.company, r));
+    (rec.attendance || []).forEach(r => track(r && r.staff, r && r.company, r));
+    (rec.staff_assignments || []).forEach(r => track(r && r.staff, r && r.company, r));
+    _staffLinkedCosCacheKey = sig;
+    _staffLinkedCosCacheVal = map;
+    return map;
+  }
+
+  function isStaffInSelectedCompanyScope(staff, seedObj, scopeKeyOverride) {
+    const r = staff;
+    if (!r || r.voided) return false;
+    const nm = String(r.name || r.staff || '').trim();
+    if (!nm || isVoucherRefNotPersonName(nm)) return false;
+    const hasOverride = scopeKeyOverride != null && String(scopeKeyOverride).trim() !== '';
+    const rawScope = String(hasOverride ? scopeKeyOverride : ((STATE && STATE.company) || 'manufacturing-group')).trim();
+    if (rawScope === 'ALL' || Boolean(STATE && STATE._explicitAllScope && (!hasOverride || rawScope === STATE.company))) return true;
+    const scopeKey = COMPANY_KEY_BY_NAME[rawScope] || rawScope;
+    const isDemoCo = scopeKey === DEMO_COMPANY_KEY;
+    const activeInd = getActiveIndustry(scopeKey);
+    const singleBu = (!isDemoCo && !scopeKey.startsWith('industry:') && COMPANY_BU_MATCH[scopeKey]) ? COMPANY_BU_MATCH[scopeKey] : '';
+    const normScopeCo = coRaw => {
+      const s = String(coRaw || '').trim();
+      if (!s || /^(?:all|all\s*companies|all\s*bus(?:\s*\(ready\))?)$/i.test(s)) return '';
+      return canonCompany(s);
+    };
+    const rowCo = normScopeCo(r.company);
+    const arrCos = Array.isArray(r.companies) ? r.companies.map(normScopeCo).filter(Boolean) : [];
+    const explicitCos = rowCo ? [rowCo].concat(arrCos.filter(c => norm(c) !== norm(rowCo))) : arrCos;
+
+    if (singleBu) {
+      const targetNorm = norm(singleBu);
+      if (explicitCos.length > 0) return explicitCos.some(c => norm(c) === targetNorm);
+      if (r._industry && r._industry !== activeInd) return false;
+      const sd = seedObj || (typeof SEED !== 'undefined' ? SEED : null);
+      const linkedMap = getStaffLinkedCompaniesByInd(sd, activeInd);
+      const linkedCos = linkedMap.get(norm(nm));
+      if (!linkedCos || linkedCos.size === 0) return true;
+      return linkedCos.has(targetNorm);
+    }
+
+    if (r._industry && r._industry !== activeInd) return false;
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const indCoNorms = new Set(cat.filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => norm(c.name)).filter(Boolean));
+    if (explicitCos.length > 0 && indCoNorms.size > 0) {
+      return explicitCos.some(c => indCoNorms.has(norm(c)));
+    }
+    return true;
+  }
+
   window.__mfgIsStaffMemberAllowedForSeat = isStaffMemberAllowedForSeat;
+  window.__mfgIsStaffInSelectedCompanyScope = isStaffInSelectedCompanyScope;
   window.__mfgCanAccessRdlReport = canAccessRdlReport;
   window.__mfgEvaluateStaffComplianceRow = evaluateStaffComplianceRow;
   window.__mfgMatchesComplianceTier = matchesComplianceTier;
@@ -211133,7 +211648,7 @@
           const canViewPayStaff = typeof canViewPayrollDollarAmounts === 'function' ? Boolean(canViewPayrollDollarAmounts()) : false;
           const wdStaffCols = ['name', 'father_name', 'nationality', 'dob', 'permit_status', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'role_category', 'phone', 'reference', 'nssf_no', 'work_permit_no', 'residency_no']
             .concat(canViewPayStaff ? ['active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'] : []);
-          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffMemberAllowedForSeat(r, SEED));
+          const wdStaffRows = filterRecords((SEED.records && SEED.records.staff_members) || [], { cols: wdStaffCols, tableKey: 'staff_members', ignorePeriod: true, ignoreCompany: true }).filter(r => isStaffInSelectedCompanyScope(r, SEED) && isStaffMemberAllowedForSeat(r, SEED));
           const wdHtml = renderStaffPermitWatchdogStripHtml({ scope: 'reg_staff', staffRows: wdStaffRows });
           const fbHtml = canOpenFatherBackfill() ? renderFatherBackfillBannerHtml() : '';
           if (fbHtml || wdHtml) wsHtml = fbHtml + wdHtml + wsHtml;
@@ -211925,52 +212440,335 @@
     return true;
   }
 
-  function exportSelectedRowsCsv(selRows) {
-    if (!STATE.authed || STATE.kioskLocked || !Array.isArray(selRows) || !selRows.length) return false;
-    if (!_canExportSelectedRowsCsv(selRows)) {
-      toast('Your seat has no access to export CSV from this register', 'err');
-      return false;
-    }
+  const _LSB_STRIP_SEL = '.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, [data-row-sel], .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .staff-hr-pack-inline-btn, .emp-hr-pack-btn, .tkt-print-mini, .tbl-th-tools, .th-filter-btn, .tbl-col-resizer, .btn-ind-wf, [data-open-prepayday-card], [data-set-pending-salary-id], [data-open-hr-pack]';
+
+  function _filterLiveSelectedRows(selRows) {
+    return (Array.isArray(selRows) ? selRows : []).filter(tr =>
+      tr && tr.isConnected && !tr.hidden && getComputedStyle(tr).display !== 'none'
+    );
+  }
+
+  function _extractSelectedTablesMatrix(selRows) {
+    const liveRows = _filterLiveSelectedRows(selRows);
     const byTbl = new Map();
-    selRows.forEach(tr => {
-      const tbl = tr && tr.closest ? tr.closest('table') : null;
+    liveRows.forEach(tr => {
+      const tbl = tr.closest ? tr.closest('table') : null;
       if (!tbl) return;
       if (!byTbl.has(tbl)) byTbl.set(tbl, []);
       byTbl.get(tbl).push(tr);
     });
-    if (!byTbl.size) return false;
-    const stripSel = '.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .staff-hr-pack-inline-btn, .emp-hr-pack-btn, .tkt-print-mini, .tbl-th-tools, .th-filter-btn, .tbl-col-resizer, .btn-ind-wf, [data-open-prepayday-card], [data-set-pending-salary-id]';
     const blocks = [];
     byTbl.forEach((rows, tbl) => {
-      const lines = [];
+      const panel = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+      const titleEl = panel ? panel.querySelector('.panel-head h2, .panel-head h3, .panel-title, h2, h3') : null;
+      let panelTitle = '';
+      if (titleEl) {
+        const tClone = titleEl.cloneNode(true);
+        tClone.querySelectorAll('button, .badge, .pill, .tag, .count, .chip, small, .mu, .sv-wrap, .tbl-col-mgr-wrap, svg').forEach(n => n.remove());
+        panelTitle = (tClone.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      if (!panelTitle) {
+        const vt = (typeof VIEW_TITLES !== 'undefined' && VIEW_TITLES[STATE.view]) || STATE.view || 'Records';
+        panelTitle = wsUiT(vt);
+      }
+
+      const headers = [];
       const headTr = tbl.querySelector('thead tr:first-child');
       if (headTr) {
-        const hCells = Array.from(headTr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
-          .filter(th => th.hasAttribute('colspan') || getComputedStyle(th).display !== 'none')
-          .map(th => {
-            if (th.hasAttribute('data-masked-payroll') || th.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
-            if (th.dataset && th.dataset.colCleanLabel) return _csvQuoteCell(th.dataset.colCleanLabel);
+        Array.from(headTr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+          .filter(th => getComputedStyle(th).display !== 'none')
+          .forEach(th => {
+            const masked = th.hasAttribute('data-masked-payroll') || Boolean(th.querySelector('[data-masked-payroll]'));
             const clone = th.cloneNode(true);
-            clone.querySelectorAll(stripSel + ', i').forEach(n => n.remove());
-            return _csvQuoteCell(clone.textContent);
+            clone.querySelectorAll(_LSB_STRIP_SEL + ', i').forEach(n => n.remove());
+            const visText = (clone.textContent || '').replace(/[▲▼▾▴]/g, '').replace(/\s+/g, ' ').trim();
+            const cleanHeader = masked
+              ? 'Restricted'
+              : ((th.dataset && th.dataset.colCleanLabel) ? String(th.dataset.colCleanLabel).trim() : visText);
+            const localizedHeader = masked
+              ? wsUiT('Restricted')
+              : (visText || (cleanHeader ? wsUiT(cleanHeader) : ''));
+            const span = Math.max(1, parseInt(th.getAttribute('colspan') || '1', 10) || 1);
+            headers.push({ cleanHeader, localizedHeader, masked });
+            for (let s = 1; s < span; s++) headers.push({ cleanHeader: '', localizedHeader: '', masked });
           });
-        if (hCells.length) lines.push(hCells.join(','));
       }
+
+      const bodyRows = [];
       rows.forEach(tr => {
-        const rCells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
-          .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
+        const cells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+          .filter(td => getComputedStyle(td).display !== 'none')
           .map(td => {
-            if (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
-            return _csvQuoteCell(_extractDetachedCellText(td));
+            const domMasked = td.hasAttribute('data-masked-payroll') || Boolean(td.querySelector('[data-masked-payroll]'));
+            let raw = '';
+            if (!domMasked) {
+              const tdClone = td.cloneNode(true);
+              tdClone.querySelectorAll(_LSB_STRIP_SEL).forEach(n => n.remove());
+              raw = _extractDetachedCellText(tdClone).replace(/\s+/g, ' ').trim();
+            }
+            const masked = domMasked
+              || (typeof isRestrictedSharePlaceholder === 'function' && isRestrictedSharePlaceholder(raw, 'en'))
+              || /^(?:Restricted|مقيد|Restreint)$/i.test(raw);
+            const isEmptyDash = !masked && (
+              raw === ''
+              || raw === '\u2014'
+              || raw === '--'
+              || raw === '-'
+              || (Boolean(td.querySelector('.cell-empty')) && raw === '\u2014')
+            );
+            return { raw, masked, isEmptyDash };
           });
-        if (rCells.length) lines.push(rCells.join(','));
+        if (cells.length) bodyRows.push(cells);
       });
-      if (lines.length) blocks.push(lines.join('\r\n'));
+      if (bodyRows.length) blocks.push({ panelTitle, headers, rows: bodyRows });
     });
-    if (!blocks.length) return false;
-    const csv = blocks.join('\r\n\r\n');
+    return { liveRows, blocks };
+  }
+
+  async function _copyTextToClipboard(text) {
+    const str = String(text == null ? '' : text);
+    if (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST) {
+      window.__LAST_LSB_CLIPBOARD = str;
+    }
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(str);
+        return true;
+      } catch (_) { /* fall through to textarea fallback */ }
+    }
+    try {
+      const prevActive = document.activeElement;
+      const ta = document.createElement('textarea');
+      ta.value = str;
+      ta.readOnly = true;
+      ta.setAttribute('aria-hidden', 'true');
+      ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;font-size:16px;pointer-events:none;';
+      document.body.appendChild(ta);
+      ta.focus({ preventScroll: true });
+      ta.select();
+      ta.setSelectionRange(0, str.length);
+      const ok = Boolean(document.execCommand && document.execCommand('copy'));
+      ta.remove();
+      if (prevActive && typeof prevActive.focus === 'function' && prevActive.isConnected) {
+        try { prevActive.focus({ preventScroll: true }); } catch (_) {}
+      }
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function _tsvSanitizeCell(cell) {
+    if (!cell || cell.isEmptyDash) return '';
+    if (cell.masked) return 'Restricted';
+    let s = String(cell.raw == null ? '' : cell.raw)
+      .replace(/[\t\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^\u2212(?=\s*[$€£]?\s*\d)/, '-');
+    if (/^[=+@]/.test(s) || (s.startsWith('-') && s !== '-' && !/^-[\s$€£]*\d+(?:[.,]\d+)*(?:\s*(?:USD|LBP|LL|L\.L\.?)|%)?$/i.test(s))) {
+      s = "'" + s;
+    }
+    return s;
+  }
+
+  function _sanitizeWhatsappOutwardText(str, langCode) {
+    const arrowRepl = langCode === 'ar' ? ' إلى ' : (langCode === 'fr' ? ' vers ' : ' to ');
+    const lines = String(str == null ? '' : str).split(/\r?\n/).map(line => {
+      let s = line
+        .replace(/[✎↗]/g, '')
+        .replace(/\s*[\u2014\u2013]+\s*/g, ' - ')
+        .replace(/\s*(?:\u2192|\u21D2|->)\s*/g, arrowRepl)
+        .replace(/\s*(?:\u2190|\u21D0|<-|[\u2190-\u21FF])\s*/g, ' - ')
+        .replace(/\s*\|\s*/g, ' - ')
+        .replace(/\bTHEO\b/gi, '')
+        .replace(/\bZ-Read\b/gi, 'Till Close')
+        .replace(/\bTotal\s+TTC\b/gi, 'Total')
+        .replace(/\bSales\s+TTC\b/gi, 'Sales')
+        .replace(/\s*\(\s*TTC\s*\)/gi, '')
+        .replace(/\bTTC\b/gi, '')
+        .replace(/\(\s*\)/g, '');
+      return s.replace(/[^\S\n]{2,}/g, ' ').trim();
+    });
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function _computeSelectionMetrics(selRows) {
+    const fxRate = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
+    let sumQty = 0, qtyUnit = '', sumBase = 0, sumVat = 0, sumTot = 0, hasMoneyCols = false;
+    (selRows || []).forEach(tr => {
+      const tbl = tr.closest('table');
+      const ths = tbl
+        ? Array.from(tbl.querySelectorAll('thead tr:first-child th'))
+          .filter(th => !th.classList.contains('tbl-col-hidden') && getComputedStyle(th).display !== 'none')
+          .map(th => getCanonicalEnDomText(th).toUpperCase())
+        : [];
+      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none');
+      const rowUsdVals = [];
+      const rowLbpVals = [];
+      const parseMoneyCell = s => {
+        const t = String(s || '').replace(/\u2212/g, '-').trim();
+        const neg = /^\(.*\)$/.test(t) || ((/-\s*\$|\$\s*-|^[-+]/.test(t)) && t.includes('-'));
+        const n = parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
+        return neg ? -Math.abs(n) : n;
+      };
+      tds.forEach((td, i) => {
+        if (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) return;
+        const h = ths[i] || '';
+        const txt = (typeof cleanDomainCellText === 'function' ? cleanDomainCellText(td) : (td.textContent || '')).trim();
+        if (!txt || isRestrictedSharePlaceholder(txt, 'en') || /^(?:Restricted|مقيد|Restreint)$/i.test(txt)) return;
+        if (/\b(QTY|QUANTITY|LITERS|TONS|VOLUME|UNITS|NIGHTS|GUESTS|HOURS|SQM)\b/i.test(h)) {
+          const qm = txt.replace(/\u2212/g, '-').match(/([+-]?[\d,]+(?:\.\d+)?)\s*([a-zA-Z³²]+)?/);
+          if (qm) {
+            sumQty += parseFloat(qm[1].replace(/,/g, '')) || 0;
+            if (!qtyUnit && qm[2]) qtyUnit = qm[2];
+          }
+        }
+        if (/\$/.test(txt) || (/\bUSD\b/i.test(h) && /\d/.test(txt))) {
+          const v = parseMoneyCell(txt);
+          rowUsdVals.push({ h, v });
+          if (/EX-VAT|BASE|GROSS PAY|NET RENT|GWP|SUBTOTAL|PRINCIPAL/i.test(h)) sumBase += v;
+          else if (/\bVAT\b/i.test(h) && !/INCL/i.test(h)) sumVat += v;
+        } else if (/\bLBP\b|\bL\.L\b/i.test(txt) || (/\bLBP\b|\bLL\b/i.test(h) && /\d/.test(txt))) {
+          const lv = parseMoneyCell(txt);
+          if (lv !== 0) rowLbpVals.push({ h, v: lv / (fxRate > 0 ? fxRate : 89500) });
+        }
+      });
+      const moneyPool = rowUsdVals.length ? rowUsdVals : rowLbpVals;
+      if (moneyPool.length) {
+        hasMoneyCols = true;
+        const totCol = moneyPool.find(x => /VAT INCL|TOTAL|NET PAY|AMOUNT|GROSS BILLED|BILLED|COLLECTED|SETTLED|REVENUE|RENT|PREMIUM|PAYABLE|RECEIVABLE|BALANCE|VALUE|COST|PRICE/i.test(x.h)) || moneyPool[moneyPool.length - 1];
+        sumTot += totCol.v;
+      }
+    });
+    const avgRow = (selRows && selRows.length > 0) ? (sumTot / selRows.length) : 0;
+    return { sumQty, qtyUnit, sumBase, sumVat, sumTot, avgRow, hasMoneyCols };
+  }
+
+  function exportSelectedRowsCsv(selRows) {
+    if (!STATE.authed || STATE.kioskLocked) return false;
+    const { liveRows, blocks } = _extractSelectedTablesMatrix(selRows);
+    if (!liveRows.length) return false;
+    if (!_canExportSelectedRowsCsv(liveRows)) {
+      toast(wsUiT('Your seat has no access to export CSV from this register'), 'err');
+      return false;
+    }
+    const csvBlocks = [];
+    blocks.forEach(blk => {
+      const lines = [];
+      if (blk.headers.length) {
+        lines.push(blk.headers.map(h => _csvQuoteCell(h.masked ? 'Restricted' : h.cleanHeader)).join(','));
+      }
+      blk.rows.forEach(cells => {
+        lines.push(cells.map(c => _csvQuoteCell(c.masked ? 'Restricted' : c.raw)).join(','));
+      });
+      if (lines.length) csvBlocks.push(lines.join('\r\n'));
+    });
+    if (!csvBlocks.length) return false;
+    const csv = csvBlocks.join('\r\n\r\n');
     downloadCsv(`ISABI_Selected_${String(STATE.view || 'table').replace(/[^A-Za-z0-9_-]/g, '_')}_${STATE.company}_${todayISO()}.csv`, csv);
-    toast(wsUiT(`Exported ${selRows.length} selected rows to CSV`), 'ok');
+    toast(wsUiT(`Exported ${liveRows.length} selected rows to CSV`), 'ok');
+    return true;
+  }
+
+  async function copySelectedRowsTsv(selRows) {
+    if (!STATE.authed || STATE.kioskLocked) return false;
+    const { liveRows, blocks } = _extractSelectedTablesMatrix(selRows);
+    if (!liveRows.length) return false;
+    if (!_canExportSelectedRowsCsv(liveRows)) {
+      toast(wsUiT('Your seat has no access to copy rows from this register'), 'err');
+      return false;
+    }
+    const tsvBlocks = [];
+    blocks.forEach(blk => {
+      const lines = [];
+      if (blk.headers.length) {
+        lines.push(blk.headers.map(h => _tsvSanitizeCell({ raw: h.cleanHeader, masked: h.masked, isEmptyDash: false })).join('\t'));
+      }
+      blk.rows.forEach(cells => {
+        lines.push(cells.map(c => _tsvSanitizeCell(c)).join('\t'));
+      });
+      if (lines.length) tsvBlocks.push(lines.join('\r\n'));
+    });
+    if (!tsvBlocks.length) return false;
+    const ok = await _copyTextToClipboard(tsvBlocks.join('\r\n\r\n'));
+    if (!ok) {
+      toast(wsUiT('Clipboard copy was blocked by the browser'), 'err');
+      return false;
+    }
+    toast(wsUiT(`Copied ${liveRows.length} selected ${liveRows.length === 1 ? 'row' : 'rows'} for Excel`), 'ok');
+    return true;
+  }
+
+  async function copySelectedRowsWhatsapp(selRows) {
+    if (!STATE.authed || STATE.kioskLocked) return false;
+    const { liveRows, blocks } = _extractSelectedTablesMatrix(selRows);
+    if (!liveRows.length || !blocks.length) return false;
+    if (!_canExportSelectedRowsCsv(liveRows)) {
+      toast(wsUiT('Your seat has no access to copy rows from this register'), 'err');
+      return false;
+    }
+    const langCode = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
+    const coSel = $('companySwitch');
+    const coOpt = coSel && coSel.selectedOptions && coSel.selectedOptions[0];
+    const scopeLbl = (coOpt ? coOpt.textContent : '') || (typeof COMPANY_LABELS !== 'undefined' && COMPANY_LABELS[STATE.company]) || STATE.company || '';
+    const cleanScope = _sanitizeWhatsappOutwardText(scopeLbl, langCode);
+    const restrictedLbl = langCode === 'ar' ? 'مقيد' : (langCode === 'fr' ? 'Restreint' : 'Restricted');
+    const waBlocks = [];
+    blocks.forEach(blk => {
+      const bodyLines = [];
+      blk.rows.forEach(cells => {
+        const parts = [];
+        cells.forEach((c, colIdx) => {
+          if (c.isEmptyDash) return;
+          const hdr = blk.headers[colIdx];
+          const val = c.masked
+            ? restrictedLbl
+            : _sanitizeWhatsappOutwardText(String(c.raw || '').replace(/\u2212/g, '-'), langCode);
+          if (!val) return;
+          const lbl = hdr
+            ? _sanitizeWhatsappOutwardText(hdr.masked ? restrictedLbl : hdr.localizedHeader, langCode)
+            : '';
+          parts.push(lbl ? `${lbl}: ${val}` : val);
+        });
+        if (parts.length) bodyLines.push(`${bodyLines.length + 1}. ${parts.join(' · ')}`);
+      });
+      if (!bodyLines.length) return;
+      const n = bodyLines.length;
+      const countLbl = langCode === 'ar'
+        ? (n === 1 ? 'سطر' : 'أسطر')
+        : (langCode === 'fr' ? (n === 1 ? 'ligne' : 'lignes') : (n === 1 ? 'row' : 'rows'));
+      const cleanPanel = _sanitizeWhatsappOutwardText(blk.panelTitle, langCode);
+      const rawCombo = (cleanScope && cleanPanel && !cleanPanel.toLowerCase().includes(cleanScope.toLowerCase()))
+        ? `${cleanScope} - ${cleanPanel}`
+        : (cleanPanel || cleanScope);
+      const titleCombo = rawCombo.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+      waBlocks.push([`*${titleCombo}* (${n} ${countLbl})`, ...bodyLines].join('\n'));
+    });
+
+    const m = _computeSelectionMetrics(liveRows);
+    const footerParts = [];
+    const colon = langCode === 'fr' ? ' : ' : ': ';
+    if (m.hasMoneyCols) {
+      const totLbl = langCode === 'ar' ? 'الإجمالي' : (langCode === 'fr' ? 'Total' : 'Total');
+      footerParts.push(`${totLbl}${colon}${fmtUSD(m.sumTot, 2)}`);
+    }
+    if (m.sumQty > 0) {
+      const qtyLbl = langCode === 'ar' ? 'الكمية' : (langCode === 'fr' ? 'Qté' : 'Qty');
+      footerParts.push(`${qtyLbl}${colon}${fmtNum(m.sumQty, 1)}${m.qtyUnit ? ' ' + m.qtyUnit : ''}`);
+    }
+    if (footerParts.length) {
+      waBlocks.push(footerParts.join(' · '));
+    }
+
+    const waText = _sanitizeWhatsappOutwardText(waBlocks.join('\n\n'), langCode);
+    if (!waText) return false;
+    const ok = await _copyTextToClipboard(waText);
+    if (!ok) {
+      toast(wsUiT('Clipboard copy was blocked by the browser'), 'err');
+      return false;
+    }
+    toast(wsUiT(`Copied ${liveRows.length} selected ${liveRows.length === 1 ? 'row' : 'rows'} for WhatsApp`), 'ok');
     return true;
   }
 
@@ -212020,59 +212818,14 @@
       prevArm._bulkVoidArmTimer = null;
     }
     const selRows = (STATE.authed && !STATE.kioskLocked && container)
-      ? Array.from(container.querySelectorAll('tr.rrow.is-row-selected'))
+      ? _filterLiveSelectedRows(Array.from(container.querySelectorAll('tr.rrow.is-row-selected')))
       : [];
     if (!selRows.length) {
       bar.innerHTML = '';
       bar.hidden = true;
       return;
     }
-    const fxRate = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
-    let sumQty = 0, qtyUnit = '', sumBase = 0, sumVat = 0, sumTot = 0;
-    selRows.forEach(tr => {
-      const tbl = tr.closest('table');
-      const ths = tbl
-        ? Array.from(tbl.querySelectorAll('thead tr:first-child th'))
-          .filter(th => !th.classList.contains('tbl-col-hidden') && getComputedStyle(th).display !== 'none')
-          .map(th => getCanonicalEnDomText(th).toUpperCase())
-        : [];
-      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none');
-      const rowUsdVals = [];
-      const rowLbpVals = [];
-      const parseMoneyCell = s => {
-        const t = String(s || '').replace(/\u2212/g, '-').trim();
-        const neg = /^\(.*\)$/.test(t) || ((/-\s*\$|\$\s*-|^[-+]/.test(t)) && t.includes('-'));
-        const n = parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
-        return neg ? -Math.abs(n) : n;
-      };
-      tds.forEach((td, i) => {
-        const h = ths[i] || '';
-        const txt = (typeof cleanDomainCellText === 'function' ? cleanDomainCellText(td) : (td.textContent || '')).trim();
-        if (!txt || isRestrictedSharePlaceholder(txt, 'en') || /^(?:Restricted|مقيد|Restreint)$/i.test(txt)) return;
-        if (/\b(QTY|QUANTITY|LITERS|TONS|VOLUME|UNITS|NIGHTS|GUESTS|HOURS|SQM)\b/i.test(h)) {
-          const qm = txt.replace(/\u2212/g, '-').match(/([+-]?[\d,]+(?:\.\d+)?)\s*([a-zA-Z³²]+)?/);
-          if (qm) {
-            sumQty += parseFloat(qm[1].replace(/,/g, '')) || 0;
-            if (!qtyUnit && qm[2]) qtyUnit = qm[2];
-          }
-        }
-        if (/\$/.test(txt) || (/\bUSD\b/i.test(h) && /\d/.test(txt))) {
-          const v = parseMoneyCell(txt);
-          rowUsdVals.push({ h, v });
-          if (/EX-VAT|BASE|GROSS PAY|NET RENT|GWP|SUBTOTAL|PRINCIPAL/i.test(h)) sumBase += v;
-          else if (/\bVAT\b/i.test(h) && !/INCL/i.test(h)) sumVat += v;
-        } else if (/\bLBP\b|\bL\.L\b/i.test(txt) || (/\bLBP\b|\bLL\b/i.test(h) && /\d/.test(txt))) {
-          const lv = parseMoneyCell(txt);
-          if (lv !== 0) rowLbpVals.push({ h, v: lv / (fxRate > 0 ? fxRate : 89500) });
-        }
-      });
-      const moneyPool = rowUsdVals.length ? rowUsdVals : rowLbpVals;
-      if (moneyPool.length) {
-        const totCol = moneyPool.find(x => /VAT INCL|TOTAL|NET PAY|AMOUNT|GROSS BILLED|BILLED|COLLECTED|SETTLED|REVENUE|RENT|PREMIUM|PAYABLE|RECEIVABLE|BALANCE|VALUE|COST|PRICE/i.test(x.h)) || moneyPool[moneyPool.length - 1];
-        sumTot += totCol.v;
-      }
-    });
-    const avgRow = selRows.length > 0 ? (sumTot / selRows.length) : 0;
+    const { sumQty, qtyUnit, sumBase, sumVat, sumTot, avgRow } = _computeSelectionMetrics(selRows);
     const summaryCopyText = `${selRows.length} rows selected` +
       (sumQty > 0 ? ` · Qty: ${fmtNum(sumQty, 1)}${qtyUnit ? ' ' + qtyUnit : ''}` : '') +
       (sumBase > 0 ? ` · Ex-VAT: ${fmtUSD(sumBase, 2)}` : '') +
@@ -212102,6 +212855,8 @@
       <div class="lsb-actions">
         <button type="button" class="lsb-btn" id="lsbSelectTop10Btn" data-ui-tip="Select first 10 visible rows">Top 10</button>
         <button type="button" class="lsb-btn" id="lsbCopySumBtn" data-ui-tip="Copy live sum summary to clipboard">Copy Sum</button>
+        ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbCopyTsvBtn" data-ui-tip="Copy selected rows for Excel or Sheets (Ctrl+V)">${ic('copy')} <span>Copy Excel</span></button>` : ''}
+        ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbCopyWaBtn" data-ui-tip="Copy selected rows formatted for WhatsApp">${ic('send_msg')} <span>Copy WhatsApp</span></button>` : ''}
         ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbExportCsvBtn" data-ui-tip="Download selected rows as CSV (Excel, UTF-8)">${ic('download')} <span>Export Selected CSV</span></button>` : ''}
         ${hrPackTargets.length >= 2 ? `<button type="button" class="lsb-btn lsb-hr-pack-btn" id="lsbPrintHrPacksBtn" data-hr-count="${hrPackTargets.length}" data-ui-tip="Open combined Bilingual Contract &amp; NSSF print pack for selected employees">${ic('printer')} <span>Print Selected HR Packs (${hrPackTargets.length})</span></button>` : ''}
         ${bulkVoidEligibleCount > 0 ? `<button type="button" class="lsb-btn btn-danger-outline lsb-void-btn" id="lsbBulkVoidBtn" data-void-count="${bulkVoidEligibleCount}" data-ui-tip="Void selected records (click once to arm, click again to confirm)" aria-label="Void Selected (${bulkVoidEligibleCount})">${ic('trash')} <span>Void Selected (${bulkVoidEligibleCount})</span></button>` : ''}
@@ -212112,10 +212867,15 @@
     if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
       _translateVoidEl(bar);
     }
+    const getLiveSelRows = () => {
+      const scopeEl = (container && container.isConnected) ? container : ($('workspace') || document);
+      return _filterLiveSelectedRows(Array.from(scopeEl.querySelectorAll('tr.rrow.is-row-selected')));
+    };
     const top10Btn = $('lsbSelectTop10Btn');
     if (top10Btn) top10Btn.onclick = e => {
       e.stopPropagation();
-      const firstTbl = selRows[0] ? selRows[0].closest('table') : container.querySelector('table.ledger-table, table.data-table');
+      const liveSel = getLiveSelRows();
+      const firstTbl = liveSel[0] ? liveSel[0].closest('table') : container.querySelector('table.ledger-table, table.data-table');
       if (firstTbl) {
         Array.from(firstTbl.querySelectorAll('tbody tr.rrow'))
           .filter(r => r.querySelector('u.row-sel-dot') && r.style.display !== 'none' && !r.hidden && !r.classList.contains('total-row') && !r.classList.contains('totals-row') && !r.hasAttribute('data-dops-expand'))
@@ -212127,13 +212887,23 @@
     const copyBtn = $('lsbCopySumBtn');
     if (copyBtn) copyBtn.onclick = e => {
       e.stopPropagation();
-      try { navigator.clipboard.writeText(summaryCopyText); } catch (_) {}
+      _copyTextToClipboard(summaryCopyText);
       toast('Copied live selection sum: ' + summaryCopyText);
+    };
+    const copyTsvBtn = $('lsbCopyTsvBtn');
+    if (copyTsvBtn) copyTsvBtn.onclick = e => {
+      e.stopPropagation();
+      copySelectedRowsTsv(getLiveSelRows());
+    };
+    const copyWaBtn = $('lsbCopyWaBtn');
+    if (copyWaBtn) copyWaBtn.onclick = e => {
+      e.stopPropagation();
+      copySelectedRowsWhatsapp(getLiveSelRows());
     };
     const expCsvBtn = $('lsbExportCsvBtn');
     if (expCsvBtn) expCsvBtn.onclick = e => {
       e.stopPropagation();
-      exportSelectedRowsCsv(selRows);
+      exportSelectedRowsCsv(getLiveSelRows());
     };
     const hrPacksBtn = $('lsbPrintHrPacksBtn');
     if (hrPacksBtn) hrPacksBtn.onclick = e => {
@@ -221093,6 +221863,10 @@
     if (STATE.authed || isAutoTest) {
       renderApp();
     }
+    window.__mfgAppBooted = true;
+    if (typeof window.__mfgCancelBootWatchdog === 'function') {
+      window.__mfgCancelBootWatchdog();
+    }
   }
 
   let _uiTipWired = false;
@@ -221643,6 +222417,10 @@
         if (!row.currency) row.currency = 'USD';
         if (row.usd_amount == null) row.usd_amount = row.amount;
         if (row.lbp_amount == null) row.lbp_amount = 0;
+        if (row.staff && isVoucherRefNotPersonName(row.staff)) {
+          if (!row.name) row.name = String(row.staff).trim();
+          row.staff = '';
+        }
       } else if (tbl === 'settlements') {
         if (!row.rep_date) row.rep_date = row.date;
         if (!row.payable_leg) row.payable_leg = 'expense';
@@ -223006,6 +223784,9 @@
     getDieselPriceOn: typeof getDieselPriceOn === 'function' ? getDieselPriceOn : null,
     renderEquipmentHealthBadge: typeof renderEquipmentHealthBadge === 'function' ? renderEquipmentHealthBadge : null,
     getEquipmentHealth: typeof getEquipmentHealth === 'function' ? getEquipmentHealth : null,
+    staffNames: typeof staffNames === 'function' ? staffNames : null,
+    getStaffComplianceExceptionBadge: typeof getStaffComplianceExceptionBadge === 'function' ? getStaffComplianceExceptionBadge : null,
+    getIndustryKpiSnapshot: typeof getIndustryKpiSnapshot === 'function' ? getIndustryKpiSnapshot : null,
     isSingleCorporationScope: () => Boolean(window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.isSingleCorporationScope === 'function' && window.MFG_TABLE_COLS.isSingleCorporationScope(STATE)),
     getFormUi: () => FORM_UI
   };

@@ -86,9 +86,15 @@
   function isStaffAllowedPbi(r, seedObj, ctx) {
     if (!r) return false;
     const s = seedObj || (typeof SEED !== 'undefined' ? SEED : null);
-    if (ctx && typeof ctx.isStaffMemberAllowedForSeat === 'function') return Boolean(ctx.isStaffMemberAllowedForSeat(r, s));
-    if (typeof window !== 'undefined' && typeof window.__mfgIsStaffMemberAllowedForSeat === 'function') return Boolean(window.__mfgIsStaffMemberAllowedForSeat(r, s));
-    return false;
+    const allowed = (ctx && typeof ctx.isStaffMemberAllowedForSeat === 'function')
+      ? Boolean(ctx.isStaffMemberAllowedForSeat(r, s))
+      : ((typeof window !== 'undefined' && typeof window.__mfgIsStaffMemberAllowedForSeat === 'function') ? Boolean(window.__mfgIsStaffMemberAllowedForSeat(r, s)) : false);
+    if (!allowed) return false;
+    if (typeof window !== 'undefined' && typeof window.__mfgIsStaffInSelectedCompanyScope === 'function') {
+      const stObj = (ctx && ctx.STATE) || _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
+      return Boolean(window.__mfgIsStaffInSelectedCompanyScope(r, s, stObj && stObj.company));
+    }
+    return true;
   }
 
   function isMaskedPayrollColPbi(tableKey, colName) {
@@ -810,7 +816,8 @@
 
     const rows = Array.from(pairMap.values()).filter(r => r.loads > 0 && r.trans_rev > 0).map(cur => {
       const rule = findBestDeliveryTransRule(cur.company, cur.customer, cur.site);
-      const isFlat = Boolean((rule && isRuleFlatTrans(rule)) || (cur.last_qty > 1.5 && Math.abs(cur.last_tup - cur.last_tp) < 0.05) || /^truck$/i.test(cur.uom || ''));
+      const isMultiTruckCur = /^truck$/i.test(cur.uom || '') && cur.last_qty > 1.001 && Math.abs(cur.last_tup - cur.last_tp) >= 0.05;
+      const isFlat = Boolean(!isMultiTruckCur && ((rule && isRuleFlatTrans(rule)) || (cur.last_qty > 1.5 && Math.abs(cur.last_tup - cur.last_tp) < 0.05) || /^truck$/i.test(cur.uom || '')));
       const agreed = rule
         ? roundFn(isFlat ? Number(ruleFlatTransVal(rule) ?? rule.trans_unit_price ?? 0) : Number(rule.trans_unit_price ?? rule.trans_price ?? ruleFlatTransVal(rule) ?? 0))
         : null;
@@ -2342,7 +2349,7 @@
     const rel = {
       custByName: {}, suppByName: {}, prodByName: {}, typeByName: {}, uomByName: {},
       siteByName: {}, siteByCatKey: {}, regByName: {}, equipByName: {}, drvByName: {}, catByName: {},
-      subcatByName: {}, subcatByKey: {}, staffByName: {}, staffByKey: {}, roleByName: {}, vatInvByNo: {}, loanByName: {}
+      subcatByName: {}, subcatByKey: {}, staffByName: {}, staffByKey: {}, staffAllCosByName: {}, roleByName: {}, vatInvByNo: {}, loanByName: {}
     };
     const subcatKey = (cat, sub) => `${norm(cat)}|${norm(sub)}`;
     const ensure = (map, k, init) => { const nk = norm(k); if (!nk) return null; if (!map[nk]) map[nk] = init(); return map[nk]; };
@@ -2952,9 +2959,35 @@
       const re = ensure(rel.roleByName, sr.name || sr.role, initRole);
       if (re && (sr.role_category || sr.category)) re.category = sr.role_category || sr.category;
     });
+    const isVoucherStaffNamePbi = nm => Boolean(nm && typeof window !== 'undefined' && typeof window.__mfgIsVoucherRefNotStaff === 'function' && window.__mfgIsVoucherRefNotStaff(nm));
+    const rlsNormSet = (!demoStamp && Array.isArray(rlsArr) && rlsArr.length) ? new Set(rlsArr.map(c => norm(c)).filter(Boolean)) : null;
+    rel._rlsCoNormSet = rlsNormSet;
+    const trackAllStaffCo = (rawNm, rawCo, row) => {
+      if (!row || row.voided || !inIndDim(row)) return;
+      const sNm = String(rawNm || '').trim();
+      if (!sNm || isVoucherStaffNamePbi(sNm)) return;
+      const nk = norm(sNm);
+      const coClean = String(rawCo || '').trim();
+      if (!nk || !coClean || /^(?:all|all\s*companies|all\s*bus(?:\s*\(ready\))?)$/i.test(coClean)) return;
+      const canonCo = (typeof window !== 'undefined' && typeof window.__mfgCanonCompany === 'function') ? window.__mfgCanonCompany(coClean) : coClean;
+      if (!canonCo) return;
+      if (rlsNormSet && !rlsNormSet.has(norm(canonCo))) return;
+      if (!rel.staffAllCosByName[nk]) rel.staffAllCosByName[nk] = new Set();
+      rel.staffAllCosByName[nk].add(canonCo);
+    };
+    (rec.staff_members || []).forEach(r => trackAllStaffCo(r && (r.name || r.staff), r && r.company, r));
+    (rec.staff_assignments || []).forEach(r => trackAllStaffCo(r && (r.staff || r.name), r && r.company, r));
+    (rec.employments || []).forEach(r => trackAllStaffCo(r && (r.staff || r.name), r && r.company, r));
+    (rec.salaries || []).forEach(r => trackAllStaffCo(r && r.staff, r && r.company, r));
+    (rec.attendance || []).forEach(r => trackAllStaffCo(r && r.staff, r && r.company, r));
+    (rec.freelance_entries || []).forEach(r => trackAllStaffCo(r && r.staff, r && r.company, r));
+    (rec.logistics_allowances || []).forEach(r => trackAllStaffCo(r && r.staff, r && r.company, r));
+    (rec.company_drivers || []).forEach(r => trackAllStaffCo(r && (r.staff || r.driver), r && r.company, r));
+
     (rec.staff_members || []).forEach(sm => {
       if (!inIndDim(sm)) return;
       const sName = sm.name || sm.staff;
+      if (isVoucherStaffNamePbi(sName)) return;
       const smCo = sm.company || singleBu;
       ensureStaffTargets(sName, smCo).forEach(st => {
         if (sm.company && st.companies) st.companies.add(sm.company);
@@ -3036,7 +3069,7 @@
       }
     });
     (rec.salaries || []).forEach(sal => {
-      if (!inInd(sal)) return;
+      if (!inInd(sal) || !sal.staff || isVoucherStaffNamePbi(sal.staff)) return;
       const vUsd = (window.MFG_FX && typeof window.MFG_FX.voucherUsd === 'function')
         ? Number(window.MFG_FX.voucherUsd(sal) || 0)
         : Number(sal.amount || sal.usd_amount || 0);
@@ -3092,7 +3125,7 @@
     });
     if (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function') {
       const stObj = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
-      const payCo = isMfg ? 'manufacturing-group' : String((stObj && stObj.company) || ('industry:' + activeInd));
+      const payCo = singleBu || (isMfg ? 'manufacturing-group' : String((stObj && stObj.company) || ('industry:' + activeInd)));
       const payReg = window.__mfgComputeStaffPayrollRegister({
         company: payCo,
         ignoreSearch: true,
@@ -3122,7 +3155,7 @@
       }
     }
     Object.values(rel.staffByName).concat(Object.values(rel.staffByKey)).forEach(st => {
-      st.companies_list = singleBu || Array.from(st.companies).join(', ') || 'All BUs (Ready)';
+      st.companies_list = Array.from(st.companies).join(', ') || 'All BUs (Ready)';
       st.salary_status = st.has_pending_salary
         ? 'Pending ($0)'
         : (st.active_contracts_count > 0
@@ -3410,7 +3443,7 @@
       if (c === 'operates_equipment') return r.operates_equipment != null && r.operates_equipment !== '' ? r.operates_equipment : (/driver|operat|loader|excavat|bulldozer|crusher/i.test(String(r.name || r.role || '')) ? 'Yes' : 'No');
     }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
-    if (c === 'companies_list') {
+    if (c === 'companies_list' && tableKey !== 'staff_members') {
       const sBu = getActiveSingleBuName();
       if (sBu) return sBu;
     }
@@ -3575,9 +3608,28 @@
         }
         if (c === 'phone') return r.phone || (st && st.phone) || null;
         if (c === 'default_equipment') return (st && st.active_equipment) || r.default_equipment || (st && st.default_equipment) || null;
+        if (c === 'companies_list') {
+          const merged = [];
+          const seenCos = new Set();
+          const pushCo = raw => {
+            const clean = String(raw || '').trim();
+            if (!clean || /^(?:all|all\s*companies|all\s*bus(?:\s*\(ready\))?)$/i.test(clean)) return;
+            const canon = (typeof window !== 'undefined' && typeof window.__mfgCanonCompany === 'function') ? window.__mfgCanonCompany(clean) : clean;
+            const ck = norm(canon);
+            if (!ck || seenCos.has(ck)) return;
+            if (rel._rlsCoNormSet && !rel._rlsCoNormSet.has(ck)) return;
+            seenCos.add(ck);
+            merged.push(canon);
+          };
+          if (st && st.companies) st.companies.forEach(pushCo);
+          pushCo(r.company);
+          if (Array.isArray(r.companies)) r.companies.forEach(pushCo);
+          const allSet = rel.staffAllCosByName && rel.staffAllCosByName[norm(r.staff || r.name)];
+          if (allSet) allSet.forEach(pushCo);
+          return merged.length ? merged.join(', ') : 'All BUs (Ready)';
+        }
         if (st && st[c] != null) return st[c];
         if (c === 'contracts_count' || c === 'active_salary_usd' || c === 'attendance_days' || c === 'payments_count' || c === 'total_earned' || c === 'total_paid' || c === 'rem_payment' || c === 'advances') return 0;
-        if (c === 'companies_list') return getActiveSingleBuName() || 'All BUs (Ready)';
         if (c === 'salary_status') return 'No Contract';
       }
       if (tableKey === 'vat_invoices' && c === 'tickets_count') {
@@ -11803,7 +11855,8 @@
     const isSitePr = meta.key === 'sites' && connKey === 'price_rules';
     const connIsUniv = Boolean(connMeta.universal);
     const connRawList = (SEED.records && SEED.records[connKey]) || [];
-    const rlsScoped = filterRecords(connRawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: connIsUniv, ignoreRls: connIsUniv, tableKey: connKey });
+    const connBaseList = connKey === 'staff_members' ? connRawList.filter(r => isStaffAllowedPbi(r, SEED, ctx)) : connRawList;
+    const rlsScoped = filterRecords(connBaseList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: connIsUniv, ignoreRls: connIsUniv, tableKey: connKey });
     const _connCtx = typeof ctx !== 'undefined' ? ctx : null;
     const canViewConnPay = canViewPayrollMoneyPbi(_connCtx);
     const canViewConnBooks = canViewBooksPbi(_connCtx);
@@ -15187,7 +15240,7 @@
     deriveExpenseCostClass,
     getHubTableDefaultSort,
     getHubRelIndex,
-    clearHubRelKept: () => { _hubRelKept.clear(); },
+    clearHubRelKept: () => { _hubRelKept.clear(); _hubRelCache = null; _hubRelStamp = ''; },
     cellValue,
     renderChartPopHtml,
     buildClusteredColumnSvg,

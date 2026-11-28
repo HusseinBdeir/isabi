@@ -536,8 +536,15 @@
       const haulCost = Number(record.trans_cost != null ? record.trans_cost : (record.trans_price || 0));
       const disc = Number(record.discount || 0);
       const totalUsd = Number(record.total != null ? record.total : (matCost + haulCost));
+      const isTruckU = /^truck$/i.test(String(uom || '').trim());
+      const matMultiT = isTruckU && qty > 1.001 && Math.abs(matCost - qty * unitCost) < 0.05 && Math.abs(matCost - unitCost) >= 0.05;
+      const haulMultiT = isTruckU && qty > 1.001 && Math.abs(haulCost - qty * haulRate) < 0.05 && Math.abs(haulCost - haulRate) >= 0.05;
+      const matIsFlat = Boolean(record.mat_indiff === true || (isTruckU && !matMultiT));
+      const transIsFlat = Boolean(record.trans_indiff === true || (isTruckU && !haulMultiT));
       return {
         docType: 'raw',
+        matIsFlat,
+        transIsFlat,
         paperWidth,
         priceMode,
         company,
@@ -644,9 +651,16 @@
     const netUsd = Number(record.total != null ? record.total : (matTotal + transTotal));
     const vatUsd = Number(record.vat || 0);
     const ttcUsd = Number(record.total_ttc != null ? record.total_ttc : (netUsd + vatUsd));
+    const isTruckU = /^truck$/i.test(String(uom || '').trim());
+    const matMultiT = isTruckU && qty > 1.001 && Math.abs(matTotal - qty * unitPrice) < 0.05 && Math.abs(matTotal - unitPrice) >= 0.05;
+    const transMultiT = isTruckU && qty > 1.001 && Math.abs(transTotal - qty * transRate) < 0.05 && Math.abs(transTotal - transRate) >= 0.05;
+    const matIsFlat = Boolean(record.mat_indiff === true || (isTruckU && !matMultiT));
+    const transIsFlat = Boolean(record.trans_indiff === true || (isTruckU && !transMultiT));
 
     return {
       docType: 'sales',
+      matIsFlat,
+      transIsFlat,
       paperWidth,
       priceMode,
       company,
@@ -807,12 +821,12 @@
 
       if (d.priceMode === 'priced') {
         line(SEP);
-        lr(`Unit Price (${d.uom}):`, fmtMoney(d.unitPrice));
+        lr(`Unit Price (${d.matIsFlat ? 'Truck' : d.uom}):`, fmtMoney(d.unitPrice));
         if (d.tierAdj) lr('Tier Adjustment:', (d.tierAdj > 0 ? '+' : '') + fmtMoney(d.tierAdj));
         if (d.disc > 0) lr('Discount:', '-' + fmtMoney(d.disc));
         lr('Material Subtotal:', fmtMoney(d.matTotal));
         if (d.saleType === 'Delivery' || d.transTotal > 0) {
-          lr(`Transport Rate (${d.uom}):`, fmtMoney(d.transRate));
+          lr(`Transport Rate (${d.transIsFlat ? 'Truck' : d.uom}):`, fmtMoney(d.transRate));
           lr('Transport Total:', fmtMoney(d.transTotal));
         }
         if (d.tip > 0) lr('Driver Tip:', fmtMoney(d.tip));
@@ -861,10 +875,10 @@
 
       if (d.priceMode === 'priced') {
         line(SEP);
-        lr(`Mat. Unit Cost (${d.uom}):`, fmtMoney(d.unitCost));
+        lr(`Mat. Unit Cost (${d.matIsFlat ? 'Truck' : d.uom}):`, fmtMoney(d.unitCost));
         if (d.disc > 0) lr('Discount:', '-' + fmtMoney(d.disc));
         lr('Leg 1 Material (Site):', fmtMoney(d.matCost));
-        lr(`Transport Rate (${d.uom}):`, fmtMoney(d.haulRate));
+        lr(`Transport Rate (${d.transIsFlat ? 'Truck' : d.uom}):`, fmtMoney(d.haulRate));
         lr('Leg 2 Transport (Truck):', fmtMoney(d.haulCost));
         line(DSEP);
         emit(P.BOLD_ON, P.TALL_ON);
@@ -1102,12 +1116,12 @@
         ${d.extQty != null ? `<div class="th-kv"><span>Customer Declared</span><b>${fmtQty(d.extQty, 2)} ${escHtml(d.uom)}</b></div>` : ''}
         ${d.priceMode === 'priced' ? `
           <div class="th-sep"></div>
-          <div class="th-kv"><span>Unit Price (${escHtml(d.uom)})</span><b>${fmtMoney(d.unitPrice)}</b></div>
+          <div class="th-kv"><span>Unit Price (${escHtml(d.matIsFlat ? 'Truck' : d.uom)})</span><b>${fmtMoney(d.unitPrice)}</b></div>
           ${d.tierAdj ? `<div class="th-kv"><span>Tier Adjustment</span><b>${(d.tierAdj > 0 ? '+' : '') + fmtMoney(d.tierAdj)}</b></div>` : ''}
           ${d.disc > 0 ? `<div class="th-kv"><span>Discount</span><b>-${fmtMoney(d.disc)}</b></div>` : ''}
           <div class="th-kv"><span>Material Subtotal</span><b>${fmtMoney(d.matTotal)}</b></div>
           ${(d.saleType === 'Delivery' || d.transTotal > 0) ? `
-            <div class="th-kv"><span>Transport Rate (${escHtml(d.uom)})</span><b>${fmtMoney(d.transRate)}</b></div>
+            <div class="th-kv"><span>Transport Rate (${escHtml(d.transIsFlat ? 'Truck' : d.uom)})</span><b>${fmtMoney(d.transRate)}</b></div>
             <div class="th-kv"><span>Transport Total</span><b>${fmtMoney(d.transTotal)}</b></div>
           ` : ''}
           ${d.tip > 0 ? `<div class="th-kv"><span>Driver Tip</span><b>${fmtMoney(d.tip)}</b></div>` : ''}
@@ -1143,10 +1157,10 @@
         ${d.uom !== 'Ton' && d.tonFactor && d.tonFactor !== 1 ? `<div class="th-kv"><span>Tonnage Equiv.</span><b>${fmtQty(d.tons, 2)} Tons</b></div>` : ''}
         ${d.priceMode === 'priced' ? `
           <div class="th-sep"></div>
-          <div class="th-kv"><span>Mat. Unit Cost (${escHtml(d.uom)})</span><b>${fmtMoney(d.unitCost)}</b></div>
+          <div class="th-kv"><span>Mat. Unit Cost (${escHtml(d.matIsFlat ? 'Truck' : d.uom)})</span><b>${fmtMoney(d.unitCost)}</b></div>
           ${d.disc > 0 ? `<div class="th-kv"><span>Discount</span><b>-${fmtMoney(d.disc)}</b></div>` : ''}
           <div class="th-kv"><span>Leg 1 · Material (Site)</span><b>${fmtMoney(d.matCost)}</b></div>
-          <div class="th-kv"><span>Transport Rate (${escHtml(d.uom)})</span><b>${fmtMoney(d.haulRate)}</b></div>
+          <div class="th-kv"><span>Transport Rate (${escHtml(d.transIsFlat ? 'Truck' : d.uom)})</span><b>${fmtMoney(d.haulRate)}</b></div>
           <div class="th-kv"><span>Leg 2 · Transport (Truck)</span><b>${fmtMoney(d.haulCost)}</b></div>
           <div class="th-dsep"></div>
           <div class="th-total-row"><span>TOTAL PAYABLE</span><b>${fmtMoney(d.totalUsd)}</b></div>

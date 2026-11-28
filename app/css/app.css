@@ -3721,6 +3721,15 @@ table.m-grid tfoot tr td {
   gap: 10px;
 }
 
+.auth-shell-ver {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.auth-shell-ver:empty {
+  display: none;
+}
+
 .auth-link-btn,
 .auth-showcase-link {
   background: none;
@@ -3748,6 +3757,23 @@ table.m-grid tfoot tr td {
 .auth-cloud-ok {
   color: var(--good);
   font-weight: 600;
+}
+
+.auth-reload-btn {
+  white-space: nowrap;
+}
+
+.auth-reload-btn.is-watchdog-prominent {
+  background: var(--brass-tint);
+  border: 1px solid var(--brass);
+  color: var(--ink);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .auth-reload-btn.is-watchdog-prominent {
+  color: #F4F2EE;
 }
 
 /* Toast & Welcome Pill */
@@ -24280,10 +24306,10 @@ tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
 }
 .lsb-head {
   display: flex;
-   flex-direction: column;
+  flex-direction: column;
   gap: 1px;
-  padding-right: 12px;
-  border-right: 1px solid var(--line);
+  padding-inline-end: 12px;
+  border-inline-end: 1px solid var(--line);
   flex-shrink: 0;
 }
 .lsb-badge {
@@ -24334,8 +24360,8 @@ tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid var(--line);
   flex-shrink: 0;
 }
 .lsb-btn {
