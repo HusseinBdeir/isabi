@@ -9523,9 +9523,17 @@ export async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy, cas
       hasCas ? casOpts.docObj : null
     );
     if (viaRows && !viaRows.fallback) return viaRows;
-    // The rows cannot hold this text exactly: it is written as a document, which is the master again from here.
-    if (viaRows && viaRows.fallback) await noteRowsFellBack(db, 'a save the rows could not hold exactly');
+    // The rows cannot hold this text exactly: it is written as a document, which is the master again once it landed.
+    if (viaRows && viaRows.fallback) {
+      const asDoc = await writeKvDocAsDocument(db, key, jsonStr, updatedAt, updatedBy, casOpts);
+      if (asDoc && asDoc.ok) await noteRowsFellBack(db, 'a save the rows could not hold exactly');
+      return asDoc;
+    }
   }
+  return writeKvDocAsDocument(db, key, jsonStr, updatedAt, updatedBy, casOpts);
+}
+
+async function writeKvDocAsDocument(db, key, jsonStr, updatedAt, updatedBy, casOpts = null) {
   const slices = chunkStringSurrogateSafe(jsonStr, KV_CHUNK_CHARS);
   const headSlice = slices[0];
   if (casOpts && typeof casOpts === 'object') {
@@ -11858,8 +11866,10 @@ export async function handleSync(request, env, session, body, _ctx) {
       newTs = Number.isFinite(parsedMs) ? new Date(parsedMs + 1).toISOString() : `${newTs}.1`;
     }
     incomingDoc.updatedAt = newTs;
-    // Whatever the guards put back from the stored document, the document written holds each id once.
-    if (pKey === 'mfg_web_store') {
+    // Whatever the guards of a whole save put back from the stored document, the document written holds each id
+    // once. (Not on a delta save: it carries untouched tables over as stored, and an unrelated save must not be the
+    // one that drops an entry from them.)
+    if (pKey === 'mfg_web_store' && !isDeltaPatch) {
       const repeatedOut = dropRepeatedRowIds(incomingDoc);
       if (repeatedOut) console.error(`[sync] ${repeatedOut} repeated id(s) dropped from the document before it was stored`);
     }

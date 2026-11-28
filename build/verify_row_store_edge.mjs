@@ -37,7 +37,7 @@ import { effectiveMinSyncShellVer, handleRowStore, handleSync, readEdgeKvDoc, wr
 import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
 import { collectRowMaps, docAnchorOf, dropRepeatedRowIds, rowSumsOf } from '../functions/_lib/row_sync.js';
 import {
-  ROWS_HEAD_PREFIX, ROW_STORE_MAX_LINE_CHARS, assembleText, checkShadowRows, forgetRowStoreMemo, isRowsHead, linesOfDoc, planLineDiff, planOrds,
+  ROWS_HEAD_PREFIX, ROW_STORE_MAX_LINE_CHARS, assembleText, isStorableName, checkShadowRows, forgetRowStoreMemo, isRowsHead, linesOfDoc, planLineDiff, planOrds,
   sortStoredLines, syncShadowRows, writeRowsMasterDoc
 } from '../functions/_lib/row_store.js';
 
@@ -118,7 +118,12 @@ class D1 {
   constructor() { this.db = new DatabaseSync(':memory:'); this.withMeta = true; this.written = 0; this.writtenChars = 0; this.beforeBatch = null; }
   prepare(sql) { return new Stmt(this, sql); }
   async batch(stmts) {
-    if (this.beforeBatch) { const hook = this.beforeBatch; this.beforeBatch = null; await hook(stmts); }
+    // One-shot hook run before a batch starts; it answers 'again' to wait for a later batch.
+    if (this.beforeBatch) {
+      const hook = this.beforeBatch;
+      this.beforeBatch = null;
+      if ((await hook(stmts)) === 'again' && !this.beforeBatch) this.beforeBatch = hook;
+    }
     this.db.exec('BEGIN');
     try {
       const out = [];
@@ -365,11 +370,19 @@ console.log('\n[1. The lines are an exact form of any document]');
     if (step % 9 === 0) doc.kioskPunches = [{ id: `k${step}`, s: step }, ...doc.kioskPunches].slice(0, 5);
     const text = JSON.stringify(doc);
     const ts = nextTs();
+    d1.db.prepare("INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ('mfg_web_store', ?, ?, '', 1)").run(text, ts);
     const synced = await syncShadowRows(d1, linesOfDoc(doc), ts, text);
     const back = assembleText(sortStoredLines(d1.rows("SELECT bucket, row_id, kind, ord, hash, json FROM store_rows WHERE doc_key = 'mfg_web_store'")));
-    if (!synced || back !== text) { allExact = false; detail = { step, what, back: back.slice(0, 200), text: text.slice(0, 200) }; }
+    if (!synced || !synced.synced || back !== text) { allExact = false; detail = { step, what, back: back.slice(0, 200), text: text.slice(0, 200) }; }
     else if ((await checkShadowRows(d1, text, synced.anchor)) !== 'ok') { allExact = false; detail = { step, what, check: 'not ok' }; }
   }
+  // Names the database would not keep exactly.
+  const lone = 'x\ud800y';
+  const viaLone = linesOfDoc({ customRecords: { t: [{ id: lone, v: 1 }, { id: 'fine', v: 2 }] } });
+  ok('1f. a table holding an id with half a surrogate pair is stored whole (never keyed by an id the database would change), and stays exact',
+    viaLone.filter(l => l.b === 'cr:t').length === 0 && exact({ customRecords: { t: [{ id: lone, v: 1 }, { id: 'fine', v: 2 }] } }) && isStorableName('ok \ud83d\ude00') && !isStorableName(lone) && !isStorableName('a\u0000b'));
+  ok('1g. a table name or a top-level key like that: the document is not written as rows at all',
+    linesOfDoc({ customRecords: { [lone]: [{ id: 'a' }] } }) === null && linesOfDoc({ customRecords: { 'a\u0000b': [] } }) === null && linesOfDoc({ [lone]: 1 }) === null && linesOfDoc({ 'k\u0000': 1 }) === null);
   ok('1e. 160 random edits (add at the front, the end, the middle; remove; move; reverse; a repeated id) read back from real rows exactly', allExact, detail);
 }
 
@@ -608,7 +621,7 @@ console.log('\n[6. Stale stamps and racing saves]');
   // Another save lands between this save's head read and its batch.
   let raced = false;
   W.d1.beforeBatch = async stmts => {
-    if (!stmts.some(s => /UPDATE edge_kv_store SET payload_json/.test(s.sql))) return;
+    if (!stmts.some(s => /UPDATE edge_kv_store SET payload_json/.test(s.sql))) return 'again';
     raced = true;
     W.d1.db.prepare("UPDATE edge_kv_store SET updated_at = '2026-11-28T11:00:00.500Z', rev = rev + 1 WHERE doc_key = 'mfg_web_store'").run();
   };
@@ -829,7 +842,7 @@ console.log('\n[13. What the rows cannot hold, or the database refuses, is saved
   // The database refuses the batch that would write the rows.
   let threw = false;
   X.d1.beforeBatch = async stmts => {
-    if (!stmts.some(s => /UPDATE edge_kv_store SET payload_json/.test(s.sql))) return;
+    if (!stmts.some(s => /UPDATE edge_kv_store SET payload_json/.test(s.sql))) return 'again';
     threw = true;
     throw new Error('D1_ERROR: simulated');
   };
@@ -839,6 +852,110 @@ console.log('\n[13. What the rows cannot hold, or the database refuses, is saved
     cut3.json.ok === true && threw && p3.json.ok === true && !p3.json.conflict && !isRowsHead(X.head().payload_json) && end.doc.customRecords.expenses.some(r => r.id === 'ex-after-error') && Boolean(X.state().fell_back_at), { p3: p3.json, st: X.state() });
   const again = await X.legacy.patch({ lbpFxRate: 5 });
   ok('13f. the next save brings the rows in step with that document', again.json.ok === true && X.rowsText() === (await X.stored()).text && X.state().rows_ts === await X.anchor(), X.state());
+}
+
+console.log('\n[14. A save whose turn comes late writes nothing]');
+{
+  const Y = await makeWorld();
+  await Y.buildTicketPatch(seedDoc());
+  const isShadowWrite = stmts => stmts.some(s => /UPDATE store_rows_state SET rows_ts/.test(s.sql));
+  // S1's rows step is held; meanwhile a newer save lands and finishes.
+  let s2 = null;
+  Y.d1.beforeBatch = async stmts => {
+    if (!isShadowWrite(stmts)) return 'again';
+    s2 = await Y.legacy.patch({ lbpFxRate: 222 });
+  };
+  const okBefore = Y.state().rows_ok;
+  const s1 = await Y.legacy.patch({ lbpFxRate: 111 });
+  const cur = await Y.stored();
+  ok('14a. document master: a save whose rows step runs after a newer save leaves the rows on the newer text and counts no comparison of its own',
+    s1.json.ok === true && s2 && s2.json.ok === true && cur.doc.lbpFxRate === 222 && Y.rowsText() === cur.text && Y.state().rows_ts === await Y.anchor() && Y.state().rows_ok === okBefore + 1 && Y.state().rows_bad === 0, { st: Y.state(), okBefore });
+  // S3's rows step is held; meanwhile a newer save, the switch-over, and a save onto the rows.
+  let cut = null;
+  let s5 = null;
+  Y.d1.beforeBatch = async stmts => {
+    if (!isShadowWrite(stmts)) return 'again';
+    await Y.legacy.patch({ lbpFxRate: 444 });
+    cut = await Y.ticketAction('cutover');
+    s5 = await Y.legacy.patch({ lbpFxRate: 555 });
+  };
+  const okMid = Y.state().rows_ok;
+  const s3 = await Y.legacy.patch({ lbpFxRate: 333 });
+  forgetRowStoreMemo();
+  const end = await Y.stored();
+  const st = Y.state();
+  ok('14b. a save still finishing when the switch-over runs cannot touch the rows afterwards: the store reads back, cold, as the last save left it',
+    s3.json.ok === true && cut && cut.json.ok === true && s5 && s5.json.ok === true && isRowsHead(Y.head().payload_json) && end.doc !== null && end.doc.lbpFxRate === 555 && !end.row.rowsDamaged, { cut: cut && cut.json, damaged: end.row.rowsDamaged });
+  ok('14c. and nothing is reported: no fall-back, the rows still the master, no comparison counted for the late save',
+    !st.fell_back_at && st.master === 1 && st.rows_bad === 0 && st.rows_ok === okMid + 1, { st, okMid });
+  // A comparison left over from before the switch-over counts nothing either.
+  const lateCheck = await checkShadowRows(Y.d1, cur.text, await docAnchorOf({ updated_at: cur.ts, payload_json: cur.text }));
+  ok('14d. a comparison left over from before the switch-over is skipped, not counted as failed', lateCheck === 'skipped' && Y.state().rows_bad === 0, { lateCheck });
+}
+
+console.log('\n[15. Ids and names the database would not keep exactly]');
+{
+  const Z = await makeWorld();
+  await Z.buildTicketPatch(seedDoc());
+  const lone = 'ex-\ud800-half';
+  const p = await Z.legacy.patch({ customRecords: { expenses: [{ id: lone, company: 'WTC', amount: 3, source: 'app' }] } });
+  const s = await Z.stored();
+  const perEntry = Z.d1.rows("SELECT row_id FROM store_rows WHERE doc_key = 'mfg_web_store' AND bucket = 'cr:expenses'").length;
+  ok('15a. an entry whose id holds half a surrogate pair is saved; its table is kept whole in the rows, which still equal the stored text',
+    p.json.ok === true && s.doc.customRecords.expenses.some(r => r.id === lone) && perEntry === 0 && Z.rowsText() === s.text && Z.state().rows_bad === 0, { perEntry, st: Z.state() });
+  const cut = await Z.ticketAction('cutover');
+  const p2 = await Z.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-2', company: 'WTC', date: '2026-11-20', customer: 'ZzCust Other', total: 2, source: 'app' }] } });
+  forgetRowStoreMemo();
+  const after = await Z.stored();
+  ok('15b. after the switch-over a save to another entry leaves the store readable, cold, with that id intact',
+    cut.json.ok === true && p2.json.ok === true && isRowsHead(Z.head().payload_json) && after.doc !== null && !after.row.rowsDamaged && after.doc.customRecords.expenses.some(r => r.id === lone), { cut: cut.json, damaged: after.row.rowsDamaged });
+  const p3 = await Z.legacy.patch({ customRecords: { expenses: [{ id: lone, company: 'WTC', amount: 4, source: 'app' }] } });
+  forgetRowStoreMemo();
+  const after3 = await Z.stored();
+  ok('15c. and so does a save to that entry itself', p3.json.ok === true && after3.doc !== null && after3.doc.customRecords.expenses.find(r => r.id === lone).amount === 4 && isRowsHead(Z.head().payload_json), { p3: p3.json });
+}
+
+console.log('\n[16. Smaller rules]');
+{
+  const V = await makeWorld();
+  await V.buildTicketPatch(seedDoc());
+  // Entries already stored under one id (an older state), and a delta save to another table.
+  const cur = await V.stored();
+  const withDup = JSON.parse(cur.text);
+  withDup.kioskPunches.push({ id: 'kp-1', company: 'WTC', staff: 'ZzStaff One', date: '2026-11-26', direction: 'OUT', time: '16:00', punched_at: '2026-11-26T16:00:00Z' });
+  withDup.updatedAt = nextTs();
+  V.d1.db.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store%'").run();
+  V.d1.db.prepare("INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ('mfg_web_store', ?, ?, '', 1)").run(JSON.stringify(withDup), withDup.updatedAt);
+  const p = await V.legacy.patch({ customRecords: { expenses: [{ id: 'ex-unrelated', company: 'WTC', amount: 1, source: 'app' }] } });
+  const now = await V.stored();
+  ok('16a. a delta save to another table does not drop an entry from a table that already held an id twice',
+    p.json.ok === true && now.doc.kioskPunches.filter(r => r.id === 'kp-1').length === 2 && V.rowsText() === now.text, { n: now.doc.kioskPunches.filter(r => r.id === 'kp-1').length });
+  // The rows step fails outright: the save is untouched.
+  let threw = false;
+  V.d1.beforeBatch = async stmts => {
+    if (!stmts.some(s => /UPDATE store_rows_state SET rows_ts/.test(s.sql))) return 'again';
+    threw = true;
+    throw new Error('D1_ERROR: simulated');
+  };
+  const badBefore = V.state().rows_bad;
+  const p2 = await V.legacy.patch({ lbpFxRate: 777 });
+  const after = await V.stored();
+  ok('16b. document master: a rows step the database refuses changes nothing about the save, and nothing is counted as failed',
+    threw && p2.status === 200 && p2.json.ok === true && !p2.json.conflict && after.doc.lbpFxRate === 777 && after.ts === p2.json.updatedAt && V.state().rows_bad === badBefore, { p2: p2.json, st: V.state() });
+  const p3 = await V.legacy.patch({ lbpFxRate: 778 });
+  ok('16c. the next save brings the rows in step', p3.json.ok === true && V.rowsText() === (await V.stored()).text && V.state().rows_ts === await V.anchor());
+  // The switch-over wants the stored text in the spelling the rows assemble to.
+  const fresh = await makeWorld();
+  await fresh.buildTicketPatch(seedDoc());
+  const spaced = JSON.stringify((await fresh.stored()).doc, null, 1);
+  fresh.d1.db.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%'").run();
+  fresh.d1.db.prepare("UPDATE edge_kv_store SET payload_json = ? WHERE doc_key = 'mfg_web_store'").run(spaced);
+  const refused = await fresh.ticketAction('cutover');
+  ok('16d. a stored document in another JSON spelling is not switched over (the text would change under the same stamp)',
+    refused.status === 409 && /spelling/.test(String(refused.json.error)) && !isRowsHead(fresh.head().payload_json), refused.json);
+  const p4 = await fresh.legacy.patch({ lbpFxRate: 1 });
+  const cut = await fresh.ticketAction('cutover');
+  ok('16e. after the next save it is', p4.json.ok === true && cut.status === 200 && cut.json.ok === true, cut.json);
 }
 
 console.log(`\nSummary: ${pass} passed, ${fail} failed`);

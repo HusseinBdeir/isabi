@@ -67,14 +67,23 @@ function lineKey(bucket, id) {
 
 // ---- the document as lines ------------------------------------------------------------------------------------------
 
-// [[id, JSON text]] when the list can be keyed by id (every element a plain object with an id of its own), else null.
+// A name the database keeps exactly as it is: no half of a surrogate pair (SQLite stores text as UTF-8, which has no
+// place for one, so it comes back as another character) and no NUL (the separator of lineKey).
+const LONE_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+export function isStorableName(s) {
+  if (typeof s !== 'string' || s.includes(KEY_SEP)) return false;
+  return typeof s.isWellFormed === 'function' ? s.isWellFormed() : !LONE_SURROGATE_RE.test(s);
+}
+
+// [[id, JSON text]] when the list can be keyed by id (every element a plain object with an id of its own, one the
+// database keeps exactly), else null.
 function exactRowsOf(list) {
   if (!Array.isArray(list)) return null;
   const out = [];
   const seen = new Set();
   for (const r of list) {
     const rid = rowIdOf(r);
-    if (!rid || seen.has(rid)) return null;
+    if (!rid || seen.has(rid) || !isStorableName(rid)) return null;
     const js = JSON.stringify(r);
     if (typeof js !== 'string') return null;
     seen.add(rid);
@@ -83,16 +92,20 @@ function exactRowsOf(list) {
   return out;
 }
 
-// The document as lines, in document order: [{ b: bucket, id, k: kind, json, h: hash }].
+// The document as lines, in document order: [{ b: bucket, id, k: kind, json, h: hash }]. Null when the lines cannot
+// stand for it: a top-level key or a table name the database would not keep exactly (isStorableName). Such a document
+// is never written as rows (the rows are left behind, no switch-over, a save goes out as a document).
 export function linesOfDoc(doc) {
   const out = [];
   if (!isPlainObj(doc)) return out;
   const push = (b, id, k, json) => out.push({ b, id, k, json, h: hashText(json) });
   for (const key of Object.keys(doc)) {
+    if (!isStorableName(key)) return null;
     const v = doc[key];
     if (key === 'customRecords' && isPlainObj(v)) {
       push(B_TOP, key, KIND_SET, '');
       for (const t of Object.keys(v)) {
+        if (!isStorableName(t)) return null;
         const ex = exactRowsOf(v[t]);
         if (ex) {
           push(B_CR, t, KIND_SET, '');
@@ -351,6 +364,10 @@ function diffStmts(db, plan, guardSql, g3, g4) {
   return stmts;
 }
 
+// "The head row holds a document stamped ?4" (never true of a commit record).
+const HEAD_HOLDS_DOC_SQL = `EXISTS (SELECT 1 FROM edge_kv_store h WHERE h.doc_key = ?1 AND h.updated_at = ?4
+         AND substr(h.payload_json, 1, ${ROWS_HEAD_PREFIX.length}) <> '${ROWS_HEAD_PREFIX}')`;
+
 function stateStmt(db) {
   return db.prepare(
     `SELECT mode, master, rows_ts, rows_ok, rows_bad, rows_note, checked_at, apply_bad, apply_at, fell_back_at, master_at
@@ -422,15 +439,22 @@ export async function syncShadowRows(db, desired, ts, text) {
   const stored = lineMapOf(sortStoredLines(resultsOf(res, 2)));
   const plan = planLineDiff(stored, desired);
   const nowIso = new Date().toISOString();
-  const guard = 'EXISTS (SELECT 1 FROM store_rows_state s WHERE s.doc_key = ?1 AND s.rows_ts = ?3)';
-  const stmts = diffStmts(db, plan, guard, state.rows_ts);
+  // Two conditions on every statement. The lines are still the ones the difference was planned against (rows_ts as
+  // read), and the head row still holds the document this save stored (its stamp, and a document, not a commit
+  // record). So a save whose turn comes late, after a newer save or after the switch-over, writes nothing: it
+  // would take the lines back to an older text, and once the lines are the master that would be the store itself.
+  const guard = `EXISTS (SELECT 1 FROM store_rows_state s WHERE s.doc_key = ?1 AND s.rows_ts = ?3)
+       AND ${HEAD_HOLDS_DOC_SQL}`;
+  const stmts = diffStmts(db, plan, guard, state.rows_ts, String(ts));
   // A document written while the lines were thought to be the master: the store fell back to the document.
   stmts.push(db.prepare(
-    `UPDATE store_rows_state SET rows_ts = ?2, updated_at = ?3,
-       fell_back_at = CASE WHEN master = 1 THEN ?3 ELSE fell_back_at END, master = 0
-     WHERE doc_key = ?1 AND rows_ts = ?4`
-  ).bind(ROW_SYNC_DOC_KEY, anchor, nowIso, state.rows_ts));
+    `UPDATE store_rows_state SET rows_ts = ?2, updated_at = ?5,
+       fell_back_at = CASE WHEN master = 1 THEN ?5 ELSE fell_back_at END, master = 0
+     WHERE doc_key = ?1 AND rows_ts = ?3 AND ${HEAD_HOLDS_DOC_SQL}`
+  ).bind(ROW_SYNC_DOC_KEY, anchor, state.rows_ts, String(ts), nowIso));
   await db.batch(stmts);
+  const after = normState(await stateStmt(db).first());
+  if (!after || after.rows_ts !== anchor) return { state, anchor, synced: false };
   if (state.master === 1) console.error('[row-store] a document was written while the rows were the master: the document is the master again');
   return { state, anchor, synced: true };
 }
@@ -468,11 +492,16 @@ export async function checkShadowRows(db, text, anchor) {
 }
 
 // After a save while the document is the master: lines in step, then (every save at first, later about one in
-// ROW_STORE_CHECK_EVERY) the comparison. Swallows everything: this must never fail or slow a save's answer.
+// ROW_STORE_CHECK_EVERY) the comparison. Swallows everything: this must never fail a save. It runs before the save
+// answers (the gates' database cannot run two batches at once, and a late run is refused by the guard anyway), so
+// it costs that save the time of one read of the line keys, one small batch and, when a comparison is due, one read
+// of every line.
 export async function shadowAfterSave(db, desired, ts, text, checkNow = false) {
   try {
+    if (!Array.isArray(desired)) return 'unkeyable';
     const out = await syncShadowRows(db, desired, ts, text);
     if (!out) return 'off';
+    if (!out.synced) return 'behind';
     const due = checkNow || out.state.rows_ok < ROW_STORE_CHECK_TARGET || Math.random() * ROW_STORE_CHECK_EVERY < 1;
     return due ? await checkShadowRows(db, text, out.anchor) : 'synced';
   } catch (err) {
@@ -567,7 +596,7 @@ export async function writeRowsMasterDoc(db, jsonStr, updatedAt, updatedBy, cas 
     }
     if (!isPlainObj(doc)) return { fallback: true };
     const desired = linesOfDoc(doc);
-    if (assembleText(desired) !== jsonStr || oversizedLine(desired)) return { fallback: true };
+    if (!desired || assembleText(desired) !== jsonStr || oversizedLine(desired)) return { fallback: true };
     const m = memoFor(head);
     const stored = m ? m.lines : lineMapOf(sortStoredLines((await linesStmt(db, false).all()).results || []));
     const plan = planLineDiff(stored, desired);
@@ -643,10 +672,16 @@ export async function cutoverToRows(db, docRow) {
   try { doc = JSON.parse(text); } catch (_) { doc = null; }
   if (!isPlainObj(doc)) return { ok: false, error: 'the stored document does not parse' };
   const canon = JSON.stringify(doc);
+  // The rows assemble to JSON.stringify's spelling. A document a build script stored in another spelling would change
+  // under the same stamp at the switch-over; the next save from any device stores it in this one.
+  if (canon !== text) return { ok: false, error: 'the stored document is in another JSON spelling (a build script wrote it last); try again after the next save' };
   const ts = String(docRow.updated_at || '');
+  const wanted = linesOfDoc(doc);
+  if (!wanted) return { ok: false, error: 'the document has a key or a table name the rows cannot hold exactly' };
   await ensureRowSyncSchema(db);
-  const synced = await syncShadowRows(db, linesOfDoc(doc), ts, text);
-  if (!synced) return { ok: false, error: 'the rows are switched off (store_rows_state.mode)' };
+  const synced = await syncShadowRows(db, wanted, ts, text);
+  if (!synced) return { ok: false, error: 'the rows are switched off (store_rows_state.mode) or a part is larger than one row holds' };
+  if (!synced.synced) return { ok: false, error: 'the stored document changed meanwhile; try again' };
   const res = await db.batch([stateStmt(db), linesStmt(db, true), headStmt(db)]);
   const state = normState(resultsOf(res, 0)[0]);
   const lines = sortStoredLines(resultsOf(res, 1));
@@ -676,10 +711,12 @@ export async function cutoverToRows(db, docRow) {
       `DELETE FROM edge_kv_store WHERE doc_key LIKE ?2
          AND EXISTS (SELECT 1 FROM edge_kv_store h WHERE h.doc_key = ?1 AND h.rev = ?3 AND h.payload_json = ?4)`
     ).bind(ROW_SYNC_DOC_KEY, `${ROW_SYNC_DOC_KEY}__part_%`, newRev, commit),
+    // rows_ts no longer names a stored text: from here the lines move with the head row, and a save or a comparison
+    // left over from before the switch-over finds nothing it may write or count.
     db.prepare(
-      `UPDATE store_rows_state SET master = 1, master_at = ?2, fell_back_at = NULL, updated_at = ?2
+      `UPDATE store_rows_state SET master = 1, master_at = ?2, fell_back_at = NULL, updated_at = ?2, rows_ts = ?5
        WHERE doc_key = ?1 AND EXISTS (SELECT 1 FROM edge_kv_store h WHERE h.doc_key = ?1 AND h.rev = ?3 AND h.payload_json = ?4)`
-    ).bind(ROW_SYNC_DOC_KEY, nowIso, newRev, commit)
+    ).bind(ROW_SYNC_DOC_KEY, nowIso, newRev, commit, `${ROWS_HEAD_PREFIX}${newRev}`)
   ]);
   const now = await headStmt(db).first();
   if (!now || String(now.payload_json || '') !== commit) return { ok: false, error: 'the stored document changed meanwhile; try again' };
