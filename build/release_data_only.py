@@ -704,28 +704,59 @@ def stage_upload() -> None:
 
 
 def stage_r2() -> None:
-    """Upload the changed private seeds (core, records) to R2. The hashes must be the ones HEAD's manifest names."""
+    """Upload the changed private seeds (core, records, industries) to R2. The hashes must be the ones HEAD's manifest names."""
     _, D = mods()
+    head = head_sha()
     hm = head_manifest()
+    r_orig = git(["cat-file", "blob", "refs/remotes/origin/main:app/js/seed_manifest.js"], check=False)
+    orig_hm = parse_manifest(r_orig.stdout) if (r_orig.returncode == 0 and MANIFEST_RE.search(r_orig.stdout or "")) else {}
     env = D.build_env()
     ok, _acct = D.ensure_logged_in(env)
     if not ok:
         raise SystemExit(2)
     meta = D.load_edge_meta()
+    synced_head = str(meta.get("r2_seed_synced_head") or "")
     r2_shas = dict(meta.get("r2_seed_shas") or {})
-    for kind, key in (("core", "coreHash"), ("records", "recordsHash")):
+    r2_ver_shas = {
+        k: list(v)
+        for k, v in (meta.get("r2_versioned_seed_shas") or {}).items()
+        if k in ("core", "records", "industries") and isinstance(v, list)
+    }
+    for kind, key in (("core", "coreHash"), ("records", "recordsHash"), ("industries", "industriesHash")):
         src = _seed_file(kind)
-        full = hashlib.sha256(src.read_bytes()).hexdigest()
-        if full[:10] != hm.get(key):
-            raise SystemExit(f"ABORT: seed_{kind}.json on disk ({full[:10]}) is not the one HEAD's manifest names ({hm.get(key)}); run the commit stage first")
-        if r2_shas.get(kind) == full:
-            print(f"R2 seeds/seed_{kind}.json already holds {full[:10]} (no upload)")
+        want_h = str(hm.get(key) or "")
+        orig_h = str(orig_hm.get(key) or "")
+        if kind == "industries" and (not want_h or not src.is_file()):
             continue
-        print(f"Uploading seeds/seed_{kind}.json ({src.stat().st_size:,} B, {full[:10]}) to R2 isabi-vault...", flush=True)
-        D.run_wrangler(["r2", "object", "put", f"isabi-vault/seeds/seed_{kind}.json", f"--file={src}", "--content-type=application/json", "--remote"], env, check=True)
-        r2_shas[kind] = full
-        meta = D.load_edge_meta()
-        meta["r2_seed_shas"] = r2_shas
+        full = hashlib.sha256(src.read_bytes()).hexdigest()
+        if full[:10] != want_h:
+            raise SystemExit(f"ABORT: seed_{kind}.json on disk ({full[:10]}) is not the one HEAD's manifest names ({want_h}); run the commit stage first")
+        vkey = f"seeds/seed_{kind}.{full[:10]}.json"
+        lkey = f"seeds/seed_{kind}.json"
+        stale_vs_origin = bool(orig_h) and want_h != orig_h and synced_head != head
+        need_ver = stale_vs_origin or (full[:10] not in r2_ver_shas.get(kind, []))
+        need_lat = stale_vs_origin or (r2_shas.get(kind) != full)
+        if not need_ver and not need_lat:
+            print(f"R2 {lkey} & {vkey} already hold {full[:10]} (no upload)")
+            continue
+        if need_ver:
+            print(f"Uploading {vkey} ({src.stat().st_size:,} B, {full[:10]}) to R2 isabi-vault...", flush=True)
+            D.run_wrangler(["r2", "object", "put", f"isabi-vault/{vkey}", f"--file={src}", "--content-type=application/json", "--remote"], env, check=True)
+            if hasattr(D, "_record_versioned_seed_sha"):
+                D._record_versioned_seed_sha(meta, kind, full[:10])
+                r2_ver_shas[kind] = list(meta["r2_versioned_seed_shas"][kind])
+            else:
+                cur = [x for x in r2_ver_shas.get(kind, []) if x != full[:10]] + [full[:10]]
+                r2_ver_shas[kind] = cur[-50:]
+                meta["r2_versioned_seed_shas"] = r2_ver_shas
+        if need_lat:
+            print(f"Uploading {lkey} ({src.stat().st_size:,} B, {full[:10]}) to R2 isabi-vault...", flush=True)
+            D.run_wrangler(["r2", "object", "put", f"isabi-vault/{lkey}", f"--file={src}", "--content-type=application/json", "--remote"], env, check=True)
+            r2_shas[kind] = full
+            meta["r2_seed_shas"] = r2_shas
+        D.save_edge_meta(meta)
+    if meta.get("r2_seed_synced_head") != head:
+        meta["r2_seed_synced_head"] = head
         D.save_edge_meta(meta)
     print("Private seeds in R2 match the committed manifest.")
 
@@ -798,6 +829,8 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
         if not keep:
             shutil.rmtree(bundle, ignore_errors=True)
             git(["worktree", "remove", "--force", str(wt)], check=False)
+    if hasattr(D, "prune_old_r2_private_seeds"):
+        D.prune_old_r2_private_seeds(env, acct, manifest=hm, repo_dir=ISABI)
     try:
         lm = live_manifest()
         print(f"Live manifest now: core {lm.get('coreHash')} records {lm.get('recordsHash')} (committed core {hm.get('coreHash')})")

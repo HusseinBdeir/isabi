@@ -178,6 +178,22 @@ for (const kind of ['core', 'records', 'industries']) {
     });
   }
 }
+const hashSeedFixture = path.join(tmpPersist, 'seed_core_0123456789.json');
+fs.writeFileSync(hashSeedFixture, JSON.stringify({ __hashSeedTest: '0123456789', ok: true }));
+execFileSync(NODE_BIN, [
+  WRANGLER_JS,
+  'r2', 'object', 'put',
+  'isabi-vault/seeds/seed_core.0123456789.json',
+  `--file=${hashSeedFixture}`,
+  '--content-type=application/json',
+  '--local',
+  '--persist-to', tmpPersist
+], {
+  cwd: ROOT,
+  env: wranglerEnv,
+  stdio: 'ignore',
+  windowsHide: true
+});
 
 const E43_MAP_LINK_MOCKS = {
   'https://maps.app.goo.gl/edge1hop': {
@@ -3494,6 +3510,9 @@ finally:
     const e33SeedAnon = await httpReq('GET', '/app/api/seed/core');
     const e33SeedDemo = await httpReq('GET', '/app/api/seed/core', null, { 'X-ISABI-Session': ownerToken, 'X-ISABI-Demo': '1' });
     const e33SeedOwner = await httpReq('GET', '/app/api/seed/core', null, { 'X-ISABI-Session': ownerToken });
+    const e33SeedHashed = await httpReq('GET', '/app/api/seed/core?d=0123456789', null, { 'X-ISABI-Session': ownerToken });
+    const e33SeedMissFallback = await httpReq('GET', '/app/api/seed/core?d=fffffffff0', null, { 'X-ISABI-Session': ownerToken });
+    const e33SeedBadHash = await httpReq('GET', '/app/api/seed/core?d=../bad', null, { 'X-ISABI-Session': ownerToken });
     const e33SeedBadKind = await httpReq('GET', '/app/api/seed/unknown', null, { 'X-ISABI-Session': ownerToken });
 
     // Vault raw HTML attachment quarantine (forces octet-stream + attachment + CSP sandbox + nosniff)
@@ -3541,6 +3560,13 @@ finally:
       e33SeedOwner.status === 200 &&
       String(e33SeedOwner.headers['cache-control'] || '').includes('no-store') &&
       Boolean(e33SeedOwner.json && typeof e33SeedOwner.json === 'object') &&
+      e33SeedHashed.status === 200 &&
+      String(e33SeedHashed.headers['cache-control'] || '').includes('no-store') &&
+      e33SeedHashed.json?.__hashSeedTest === '0123456789' &&
+      e33SeedMissFallback.status === 200 &&
+      Boolean(e33SeedMissFallback.json && typeof e33SeedMissFallback.json === 'object') &&
+      !e33SeedMissFallback.json.__hashSeedTest &&
+      e33SeedBadHash.status === 400 &&
       e33SeedBadKind.status === 400 &&
       e33HtmlPut.status === 200 &&
       e33HtmlRaw.status === 200 &&

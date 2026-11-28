@@ -132,6 +132,9 @@ def main() -> int:
         "parse_app_seed_manifest",
         "verify_local_manifest_and_demo_bundle",
         "verify_r2_seed_parity_for_pages_only",
+        "stage_r2_private_seeds",
+        "prune_old_r2_private_seeds",
+        "r2_versioned_seed_key",
     )
     for sym in required_dc_symbols:
         check(hasattr(dc, sym), f"dc-symbol-{sym}", f"missing {sym}")
@@ -167,6 +170,8 @@ def main() -> int:
                 "--ping-indexnow",
                 "--check-seat-pins",
                 "--parity-only",
+                "--pages-only",
+                "--stage-r2-seeds",
                 "--delta",
                 "--full-seed",
                 "--force-schema",
@@ -329,6 +334,10 @@ def main() -> int:
                 (["--delta", "--full-seed"], "delta+full-seed"),
                 (["--pages-only", "--skip-seed"], "pages-only+skip-seed"),
                 (["--pages-only", "--force-r2-seeds"], "pages-only+force-r2-seeds"),
+                (["--stage-r2-seeds", "--pages-only"], "stage-r2-seeds+pages-only"),
+                (["--stage-r2-seeds", "--skip-seed"], "stage-r2-seeds+skip-seed"),
+                (["--stage-r2-seeds", "--rotate-secrets"], "stage-r2-seeds+rotate-secrets"),
+                (["--stage-r2-seeds", "--configure-domain"], "stage-r2-seeds+configure-domain"),
                 (["--check-seat-pins", "--pages-only"], "check-seat-pins+pages-only"),
                 (["--ping-indexnow", "--pages-only"], "ping-indexnow+pages-only"),
                 (["--configure-domain", "--skip-seed"], "configure-domain+skip-seed"),
@@ -423,6 +432,7 @@ def main() -> int:
                 (["--dry", "--ping-indexnow"], "dry-ping-indexnow", "Ping IndexNow"),
                 (["--dry", "--check-seat-pins"], "dry-check-seat-pins", "Read-only D1 check"),
                 (["--dry", "--parity-only", "--no-sync-release-log"], "dry-parity-only", "verify_live_parity.mjs"),
+                (["--dry", "--stage-r2-seeds"], "dry-stage-r2-seeds", "Stage immutable R2 seeds"),
             )
             for args, label, expected_step in dry_cases:
                 buf = io.StringIO()

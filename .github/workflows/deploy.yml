@@ -156,6 +156,7 @@ jobs:
           python3 build/verify_r2_seed_parity.py --check-manifest app/js/seed_manifest.js --app-dir app
           # Pass 1: validate every local or remote R2 seed before any upload mutates R2.
           for kind in core records industries; do
+            want_hash="$(python3 -c "import json,sys; t=open('app/js/seed_manifest.js').read(); p=t.find('{'); m=json.JSONDecoder().raw_decode(t[p:])[0]; print(m[{'core':'coreHash','records':'recordsHash','industries':'industriesHash'}[sys.argv[1]]])" "$kind")"
             found_local=0
             for candidate in "../isabi-app/js/seed_${kind}.json" "app/js/seed_${kind}.json"; do
               if [ -f "$candidate" ]; then
@@ -167,23 +168,37 @@ jobs:
             if [ "$found_local" -eq 0 ]; then
               chk_file="$RUNNER_TEMP/seed_chk_${kind}.json"
               rm -f "$chk_file"
-              npx --yes wrangler@4 r2 object get "isabi-vault/seeds/seed_${kind}.json" --file="$chk_file" --remote
+              npx --yes wrangler@4 r2 object get "isabi-vault/seeds/seed_${kind}.${want_hash}.json" --file="$chk_file" --remote || true
+              if [ ! -s "$chk_file" ]; then
+                npx --yes wrangler@4 r2 object get "isabi-vault/seeds/seed_${kind}.json" --file="$chk_file" --remote
+              fi
               if [ ! -s "$chk_file" ]; then
                 echo "::error::Missing or empty private R2 snapshot isabi-vault/seeds/seed_${kind}.json; run build/deploy_cloudflare.py once to populate R2 before deploying."
                 exit 1
               fi
               python3 build/verify_r2_seed_parity.py --check-seed-file "$kind" "$chk_file" --manifest app/js/seed_manifest.js
-              rm -f "$chk_file"
             fi
           done
-          # Pass 2: upload validated local seeds only after all 3 kinds passed.
+          # Pass 2: upload validated local or promoted seeds only after all 3 kinds passed.
           for kind in core records industries; do
+            want_hash="$(python3 -c "import json,sys; t=open('app/js/seed_manifest.js').read(); p=t.find('{'); m=json.JSONDecoder().raw_decode(t[p:])[0]; print(m[{'core':'coreHash','records':'recordsHash','industries':'industriesHash'}[sys.argv[1]]])" "$kind")"
+            found_local=0
             for candidate in "../isabi-app/js/seed_${kind}.json" "app/js/seed_${kind}.json"; do
               if [ -f "$candidate" ]; then
+                npx --yes wrangler@4 r2 object put "isabi-vault/seeds/seed_${kind}.${want_hash}.json" --file="$candidate" --content-type="application/json" --remote
                 npx --yes wrangler@4 r2 object put "isabi-vault/seeds/seed_${kind}.json" --file="$candidate" --content-type="application/json" --remote
+                found_local=1
                 break
               fi
             done
+            if [ "$found_local" -eq 0 ]; then
+              chk_file="$RUNNER_TEMP/seed_chk_${kind}.json"
+              if [ -s "$chk_file" ]; then
+                npx --yes wrangler@4 r2 object put "isabi-vault/seeds/seed_${kind}.${want_hash}.json" --file="$chk_file" --content-type="application/json" --remote
+                npx --yes wrangler@4 r2 object put "isabi-vault/seeds/seed_${kind}.json" --file="$chk_file" --content-type="application/json" --remote
+                rm -f "$chk_file"
+              fi
+            fi
           done
 
       - name: Apply idempotent D1 schema migrations

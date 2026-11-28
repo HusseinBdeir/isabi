@@ -393,8 +393,8 @@ def verify_seed_manifest_parity(
             if changed:
                 print(
                     "NOTICE: Private seed hash(es) changed vs origin/main "
-                    f"({', '.join(changed)}); upload updated seeds to R2 "
-                    "(deploy_cloudflare.py or release_data_only.py r2) before --pages-only or git push deploy."
+                    f"({', '.join(changed)}); `deploy_cloudflare.py --pages-only` auto-uploads local matching "
+                    "seeds to R2 (or pre-stage via `--stage-r2-seeds` / `release_data_only.py r2`)."
                 )
 
     return manifest
