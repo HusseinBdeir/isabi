@@ -24,7 +24,9 @@ export const ROW_SYNC_DOC_KEY = 'mfg_web_store';
 export const ROW_SYNC_MAX_DELTA_ROWS = 1500;
 // A seat that does not see the whole store is not told "too many changes" on the count of every company's changes
 // (it could measure them that way): its changed lines are read up to this many, and the limit above is then applied
-// to what the seat would actually be sent.
+// to what the seat would actually be sent. Past this many changed lines the seat does get the whole document, which
+// tells it that much changed; the store holds about 3,600 entries and deleted-entry lines are pruned, so that is far
+// out of reach. Lower it and that signal comes within reach; raise it and one request can read more of the index.
 export const ROW_SYNC_SCOPED_SCAN_ROWS = 20000;
 // Deleted-entry lines are kept for this many revisions; a device further behind gets the whole document.
 export const ROW_SYNC_TOMBSTONE_KEEP_REVS = 5000;
@@ -724,6 +726,8 @@ export async function noteRowAuditResult(db, result, meta) {
       bad: Number(result.bad) || 0,
       sample: String(result.sample || '').slice(0, 200)
     });
+    // Only the last note is kept in the store; each one is also in the Worker log, where repeats can be counted.
+    console.error(`[row-sync] a device reported a ${counts ? 'failed comparison' : 'copy that could not follow'}: ${note}`);
     await db.prepare(
       counts
         ? 'UPDATE store_row_meta SET audit_bad = audit_bad + 1, audit_note = ?3 WHERE doc_key = ?1 AND epoch = ?2'

@@ -1060,6 +1060,35 @@ console.log('\n[17. Scoped seats and the comparison; repeated ids; the mode valu
   docV.updatedAt = tsV2;
   await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docV), tsV2, 'system-reconcile');
 
+  // The limit applied to what the scoped seat is itself sent: exactly the limit of its own entries is still a
+  // partial answer, one more is the whole document.
+  const scCap = new Device(W, W.tok.wtc, 'wtc-cap');
+  await scCap.read();
+  const addOwn = async (tag, n) => {
+    const stC = await W.stored();
+    const docC = JSON.parse(JSON.stringify(stC.doc));
+    for (let i = 0; i < n; i++) docC.customRecords.sales_tickets.push({ id: `st-wtc-${tag}-${i}`, company: 'WTC', date: '2026-11-27', customer: 'ZzCap', total: i, source: 'app' });
+    const tsC = nextTs();
+    docC.updatedAt = tsC;
+    await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docC), tsC, 'system-reconcile');
+  };
+  await addOwn('capa', ROW_SYNC_MAX_DELTA_ROWS);
+  const rAt = await scCap.read();
+  await addOwn('capb', ROW_SYNC_MAX_DELTA_ROWS + 1);
+  const rOver = await scCap.read();
+  ok('17m2. a scoped seat with exactly the limit of its own entries changed gets them as a partial answer; with one more it gets the whole document and no partial answer',
+    rAt.kind === 'partial' && !rAt.refetched && deltaIds(rAt.delta).rows.length === ROW_SYNC_MAX_DELTA_ROWS && rAt.delta.size === ROW_SYNC_MAX_DELTA_ROWS
+      && rOver.kind === 'whole' && !rOver.refetched && rOver.delta === null && rOver.json.rowSyncV1 === true && firstDiff(rOver.doc, await wholeNow(W.tok.wtc)) === '',
+    { at: rAt.kind, atRows: deltaIds(rAt.delta).rows.length, atSize: rAt.delta && rAt.delta.size, over: rOver.kind, overDelta: rOver.delta === null });
+  {
+    const stC = await W.stored();
+    const docC = JSON.parse(JSON.stringify(stC.doc));
+    docC.customRecords.sales_tickets = docC.customRecords.sales_tickets.filter(x => !/^st-wtc-cap[ab]-/.test(String(x.id)));
+    const tsC = nextTs();
+    docC.updatedAt = tsC;
+    await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docC), tsC, 'system-reconcile');
+  }
+
   // A table key with a line break in it is indexed under its own name.
   const stN = await W.stored();
   const docN = JSON.parse(JSON.stringify(stN.doc));
@@ -1080,6 +1109,46 @@ console.log('\n[17. Scoped seats and the comparison; repeated ids; the mode valu
   const tsN3 = nextTs();
   docN.updatedAt = tsN3;
   await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docN), tsN3, 'system-reconcile');
+}
+
+console.log('\n[18. The clean-up of old deleted-entry lines]');
+{
+  // Its own store: the revision counter is moved by hand to where the clean-up starts (5,000 revisions kept).
+  const P = await makeWorld();
+  const docP = seedDoc();
+  docP.customRecords.sales_tickets = docP.customRecords.sales_tickets.slice(0, 12);
+  await P.buildTicketPatch(docP);
+  const early = new Device(P, P.tok.owner, 'owner-early');
+  const dev = new Device(P, P.tok.owner, 'owner-floor');
+  await early.read();
+  await dev.read();
+  await P.legacy.patch({ _deletedCrIds: { sales_tickets: ['st-wtc-1'] } });
+  await dev.read();
+  const lineOf = id => P.d1.one("SELECT rev, deleted FROM store_row_index WHERE bucket = 'cr:sales_tickets' AND row_id = ?", id);
+  const oldLine = lineOf('st-wtc-1');
+  P.d1.db.prepare("UPDATE store_row_meta SET rev = 5098 WHERE doc_key = 'mfg_web_store'").run();
+  const rJump = await dev.read();
+  await P.legacy.patch({ _deletedCrIds: { sales_tickets: ['st-wtc-2'] } });
+  const m5099 = P.meta();
+  const stillThere = lineOf('st-wtc-1');
+  await P.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-p-1', company: 'WTC', date: '2026-11-27', customer: 'ZzPrune', total: 1, source: 'app' }] } });
+  const m5100 = P.meta();
+  const afterPrune = lineOf('st-wtc-1');
+  const justAbove = lineOf('st-wtc-2');
+  ok('18a. a save landing on a revision that is not a hundredth leaves old deleted-entry lines and the floor alone',
+    oldLine && Number(oldLine.deleted) === 1 && Number(oldLine.rev) < 100 && Number(m5099.rev) === 5099 && Number(m5099.floor_rev) === 0 && Boolean(stillThere), { oldLine, m5099, stillThere });
+  ok('18b. the save landing on revision 5,100 removes deleted-entry lines below revision 100 and moves the floor to 100; a deletion above the floor keeps its line',
+    Number(m5100.rev) === 5100 && Number(m5100.floor_rev) === 100 && !afterPrune && justAbove && Number(justAbove.deleted) === 1 && Number(justAbove.rev) === 5099, { m5100, afterPrune, justAbove });
+  await P.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-p-2', company: 'WTC', date: '2026-11-27', customer: 'ZzPrune', total: 2, source: 'app' }] } });
+  const m5101 = P.meta();
+  ok('18c. the next save (5,101) leaves the floor and the remaining lines alone', Number(m5101.rev) === 5101 && Number(m5101.floor_rev) === 100 && Boolean(lineOf('st-wtc-2')), { m5101 });
+  const r = await dev.read();
+  const ids = deltaIds(r.delta);
+  ok('18d. a device at a revision above the floor is still sent the deletion made just above it, as a partial answer',
+    rJump.kind === 'partial' && r.kind === 'partial' && !r.refetched && sameList(ids.gone, ['sales_tickets/st-wtc-2']) && sameList(ids.rows, ['sales_tickets/st-wtc-p-1', 'sales_tickets/st-wtc-p-2'])
+      && firstDiff(r.doc, (await P.api('sync', { token: P.tok.owner, body: { op: 'get_mfg', doc: DOC_KEY, noTrails: true, rowSync: { v: 1 } } })).json.docs[DOC_KEY]) === '', { jump: rJump.kind, kind: r.kind, ids });
+  const rEarly = await early.read();
+  ok('18e. a device whose revision is under the floor gets the whole document', rEarly.kind === 'whole' && !rEarly.refetched && !rEarly.doc.customRecords.sales_tickets.some(x => x.id === 'st-wtc-1' || x.id === 'st-wtc-2'), { kind: rEarly.kind });
 }
 
 console.log('\n[12. The index at the end]');
