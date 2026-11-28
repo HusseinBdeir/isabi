@@ -11946,7 +11946,7 @@ export async function handleSync(request, env, session, body, _ctx) {
         }
       } else {
         const syncRlsResp = await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
-        if (syncRlsResp) return syncRlsResp;
+        if (syncRlsResp instanceof Response) return syncRlsResp;
       }
       reconcileTruncatedAndRetiredCustomRecords(incomingDoc, prevDoc, session, rawTruncMap, crSyncMeta);
     }
