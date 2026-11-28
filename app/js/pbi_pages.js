@@ -9006,6 +9006,36 @@
       const chartGrain = STATE.cfChartGrain === 'daily' ? 'daily' : 'monthly';
       const allDailyRows = typeof ctx.buildDailyTillSheetRows === 'function' ? ctx.buildDailyTillSheetRows() : [];
       const allCashMoves = typeof ctx.buildCashTillMoves === 'function' ? ctx.buildCashTillMoves() : [];
+      const pbiUser = ctx.activeUser ? ctx.activeUser() : null;
+      const hasFullFinRows = typeof ctx.isCashFlowFullFin === 'function'
+        ? ctx.isCashFlowFullFin(pbiUser)
+        : allCashMoves.some(mv => mv.stream === 'ext' || mv.stream === 'extd' || mv.stream === 'sal' || mv.stream === 'loan');
+      const pbiCanTbl = tk => (typeof ctx.canAccessTable === 'function' ? ctx.canAccessTable(tk, pbiUser) : true);
+      const pbiCanSalesOnly = pbiCanTbl('sales_tickets');
+      const pbiCanReceiptsOnly = pbiCanTbl('receipts');
+      const pbiCanExp = pbiCanTbl('expenses') || pbiCanTbl('settlements');
+      const pbiCanBor = hasFullFinRows && (pbiCanTbl('loans') || pbiCanTbl('loan_settlements'));
+      const pbiCanSal = hasFullFinRows && pbiCanTbl('salaries');
+      const pbiCanExt = hasFullFinRows && pbiCanTbl('external_movements');
+      const pbiCanConv = pbiCanTbl('conversions');
+      const pbiAllCashPermitted = hasFullFinRows && ['sales_tickets', 'receipts', 'expenses', 'settlements', 'salaries', 'attendance', 'external_movements', 'loans', 'loan_settlements', 'conversions', 'jv_distributions'].every(pbiCanTbl);
+
+      let pbiVisInU = 0, pbiVisOutU = 0;
+      for (let i = 0; i < allCashMoves.length; i++) {
+        pbiVisInU += Number(allCashMoves[i].in_usd || 0);
+        pbiVisOutU += Number(allCashMoves[i].out_usd || 0);
+      }
+      pbiVisInU = round2(pbiVisInU);
+      pbiVisOutU = round2(pbiVisOutU);
+      const pbiVisNetU = round2(pbiVisInU - pbiVisOutU);
+
+      const rawRestrictedMonths = (!pbiAllCashPermitted && typeof ctx.buildRestrictedCashMonthlyRows === 'function')
+        ? ctx.buildRestrictedCashMonthlyRows(typeof ctx.buildCashTillMoves === 'function' ? ctx.buildCashTillMoves({ user: pbiUser, ignorePeriod: true }) : [], null, rateLbp)
+        : [];
+      const effChartMonths = pbiAllCashPermitted
+        ? months
+        : (typeof ctx.getScopedMonthly === 'function' ? ctx.getScopedMonthly(rawRestrictedMonths, 14) : rawRestrictedMonths);
+      const effProgMonths = pbiAllCashPermitted ? months : rawRestrictedMonths;
 
       const tillChartItems = chartGrain === 'daily'
         ? allDailyRows.slice(0, 30).reverse().map(d => ({
@@ -9018,7 +9048,7 @@
             inUsd: d.in_usd,
             outUsd: d.out_usd
           }))
-        : months.slice(-14).map(r => {
+        : effChartMonths.slice(-14).map(r => {
             const rawLbl = String(r['Year Month'] || r.YearMonthNo || '');
             return {
               ymIso: ymToIso(r),
@@ -9032,7 +9062,7 @@
             };
           });
 
-      const progRows = [...months].reverse().map(r => {
+      const progRows = [...effProgMonths].reverse().map(r => {
         const opIn = Number(r.cash_sales || 0) + Number(r.receipts || 0);
         const opOut = Number(r.cash_expenses || 0) + Number(r.settlements_paid || 0) + Number(r.salaries || 0);
         return Object.assign({}, r, {
@@ -9065,7 +9095,6 @@
         if (focusPartyNorm && norm(mv.party) !== focusPartyNorm) return false;
         return true;
       });
-      const hasFullFinRows = allCashMoves.some(mv => mv.stream === 'ext' || mv.stream === 'extd' || mv.stream === 'sal' || mv.stream === 'loan');
       const streamCounts = { sales: 0, exp: 0, loan: 0, sal: 0, ext: 0, extd: 0, fx: 0 };
       for (let i = 0; i < drillScopedMoves.length; i++) {
         const sk = drillScopedMoves[i].stream;
@@ -9101,7 +9130,7 @@
       let mvUsdNet = round2(mvInUsd - mvOutUsd);
       mvLbpSum = Math.round(mvLbpSum);
       const isAllTimePbi = STATE.period === 'all' && !STATE.dateFrom && !STATE.dateTo;
-      if (isAllTimePbi && !hasDrill && !qComb && cfChip === 'all' && hasFullFinRows && STATE.company !== 'lionstransport') {
+      if (isAllTimePbi && !hasDrill && !qComb && cfChip === 'all' && pbiAllCashPermitted && STATE.company !== 'lionstransport') {
         mvInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : mvInUsd));
         mvOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : mvOutUsd));
         mvUsdNet = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (mvInUsd - mvOutUsd)));
@@ -9112,7 +9141,7 @@
       const pbiToday = typeof ctx.todayISO === 'function' ? ctx.todayISO() : new Date().toISOString().slice(0, 10);
       const pbiTillAsOf = Boolean(pbiRange && pbiRange.to && pbiRange.to < pbiToday);
       const pbiSplit = (!tillOffK(k) && !pbiTillAsOf && typeof ctx.computeCashTillCutoffSplit === 'function')
-        ? ctx.computeCashTillCutoffSplit({ company: STATE.company })
+        ? ctx.computeCashTillCutoffSplit({ company: STATE.company, user: pbiUser })
         : null;
       const pbiUnclosedByDate = new Map();
       if (pbiSplit && Array.isArray(pbiSplit.unclosedDays)) {
@@ -9149,17 +9178,35 @@
             {
               label: 'USD Cash Till ($)',
               value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till), 2),
-              sub: `In ${fmtUSD(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow, 0)} · Out ${fmtUSD(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow, 0)}`,
+              sub: `In ${fmtUSD(pbiAllCashPermitted ? (k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow) : pbiVisInU, 0)} · Out ${fmtUSD(pbiAllCashPermitted ? (k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow) : pbiVisOutU, 0)}`,
               subHtml: pbiSplit
-                ? `<span class="cf-till-split" id="pbiCfTillCutoffSplit"><span class="cf-till-split-seg"><span>Confirmed to</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(pbiSplit.cutoff))}</b>: <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(pbiSplit.confirmedUsd, 2))}</b></span><span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg"><span>Keyed since</span>: <b class="${pbiSplit.keyedSinceUsd > 0.005 ? 'good' : (pbiSplit.keyedSinceUsd < -0.005 ? 'crit' : '')}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(pbiSplit.keyedSinceUsd, 2))}</b></span>${pbiUnclosedByDate.size > 0 ? `<span class="cf-till-sep" aria-hidden="true">·</span><button type="button" class="cockpit-pill-tag warn cf-unclosed-pill" data-nav-jump="cashflow" data-ui-tip="Workbook days close to $0, while cash keyed since the last update has not closed to $0"><b data-no-i18n="1">${fmtNum(pbiSplit.unclosedDays.length)}</b> <span>${pbiSplit.unclosedDays.length === 1 ? 'Unclosed Day' : 'Unclosed Days'}</span></button>` : ''}</span>`
+                ? (typeof ctx.renderCfTillCutoffSplitHtml === 'function'
+                  ? ctx.renderCfTillCutoffSplitHtml(pbiSplit, cleanUsd(k.cash_till), Math.round(k.cash_till_lbp || 0), {
+                    id: 'pbiCfTillCutoffSplit',
+                    isPbi: true,
+                    extraHtml: pbiUnclosedByDate.size > 0 ? `<span class="cf-till-sep" aria-hidden="true">·</span><button type="button" class="cockpit-pill-tag warn cf-unclosed-pill" data-nav-jump="cashflow" data-ui-tip="Workbook days close to $0, while cash keyed since the last update has not closed to $0"><b data-no-i18n="1">${fmtNum(pbiSplit.unclosedDays.length)}</b> <span>${pbiSplit.unclosedDays.length === 1 ? 'Unclosed Day' : 'Unclosed Days'}</span></button>` : ''
+                  })
+                  : '')
                 : '',
-              tone: pbiUnclosedByDate.size > 0 ? 'warn' : 'good'
+              tone: (pbiSplit && !pbiSplit.tieOutOk) ? 'crit' : (pbiUnclosedByDate.size > 0 ? 'warn' : 'good')
             },
-            { label: 'LBP Cash Till (LL)', value: tillOffK(k) ? 'Not Tracked Yet' : fmtLL(k.cash_till_lbp || 0), sub: `Rate ${fmtNum(rateLbp, 0)} LL/$`, tone: 'good' },
+              {
+                label: 'LBP Cash Till (LL)',
+                value: tillOffK(k) ? 'Not Tracked Yet' : fmtLL(k.cash_till_lbp || 0),
+                sub: `Rate ${fmtNum(rateLbp, 0)} LL/$`,
+                subHtml: (() => {
+                  const lbpGap = Boolean(pbiSplit && (Math.abs(pbiSplit.tieOutGapLbp) > 10 || pbiSplit.tieOutRows.some(r => Math.abs(r.deltaLbp) > 5)));
+                  const showPbiLbp = Boolean(pbiSplit && (Math.abs(pbiSplit.confirmedLbp) > 5 || Math.abs(pbiSplit.keyedSinceLbp) > 5 || Math.abs(pbiSplit.liveLbp) > 5 || lbpGap));
+                  return (showPbiLbp && typeof ctx.renderCfTillLbpSplitHtml === 'function')
+                    ? ctx.renderCfTillLbpSplitHtml(pbiSplit, { id: 'pbiCfTillCutoffSplitLbp', isPbi: true })
+                    : '';
+                })(),
+                tone: (pbiSplit && (Math.abs(pbiSplit.tieOutGapLbp) > 10 || pbiSplit.tieOutRows.some(r => Math.abs(r.deltaLbp) > 5))) ? 'crit' : 'good'
+              },
             { label: 'Closing Cash Till', value: tillOffK(k) ? 'Not Tracked Yet' : fmtUSD(cleanUsd(k.cash_till), 2), sub: 'Combined USD + LBP book till', tone: 'brass' },
-            { label: 'Cash Inflows (Total)', value: fmtUSD(k.cash_inflow, 0), sub: 'Op. Sales/AR + Treasury/FX in', tone: 'good' },
-            { label: 'Cash Outflows (Total)', value: fmtUSD(k.cash_outflow, 0), sub: 'Op. Exp/AP/Payroll + Sweeps out', tone: 'crit' },
-            { label: 'Net Cash Flow', value: fmtUSD(cleanUsd(k.net_cash_flow), 2), sub: 'Inflows − Outflows in period', neg: true }
+            { label: 'Cash Inflows (Total)', value: fmtUSD(pbiAllCashPermitted ? k.cash_inflow : pbiVisInU, 0), sub: 'Op. Sales/AR + Treasury/FX in', tone: 'good' },
+            { label: 'Cash Outflows (Total)', value: fmtUSD(pbiAllCashPermitted ? k.cash_outflow : pbiVisOutU, 0), sub: 'Op. Exp/AP/Payroll + Sweeps out', tone: 'crit' },
+            { label: 'Net Cash Flow', value: fmtUSD(cleanUsd(pbiAllCashPermitted ? k.net_cash_flow : pbiVisNetU), 2), sub: 'Inflows − Outflows in period', neg: true }
           ])}
         </div>
 
@@ -9171,7 +9218,7 @@
             <div class="cf-grain-ctrl">
               <span class="cf-grain-lbl">Till Balance View</span>
               <div class="cf-mode-switch" role="group" aria-label="Closing Till Chart Grain">
-                <button type="button" class="cf-mode-btn ${chartGrain === 'monthly' ? 'active' : ''}" data-cf-chart-grain="monthly">Monthly (${months.slice(-14).length}m)</button>
+                <button type="button" class="cf-mode-btn ${chartGrain === 'monthly' ? 'active' : ''}" data-cf-chart-grain="monthly">Monthly (${effChartMonths.slice(-14).length}m)</button>
                 <button type="button" class="cf-mode-btn ${chartGrain === 'daily' ? 'active' : ''}" data-cf-chart-grain="daily">Daily (Last ${Math.min(30, allDailyRows.length)}d)</button>
               </div>
             </div>
@@ -9179,7 +9226,7 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Monthly Cash Inflows vs Outflows · Operating vs Treasury Sweeps', buildCashFlowSplitColumnSvg(months, focusYm), {
+          ${pbiPanel('Monthly Cash Inflows vs Outflows · Operating vs Treasury Sweeps', buildCashFlowSplitColumnSvg(effChartMonths, focusYm), {
             subtitle: 'Left column = Inflows · Right column = Outflows · Click any month to filter entries below',
             legend: [
               { label: 'Op. Cash In (Sales+AR)', color: C.good },
@@ -9204,17 +9251,17 @@
         <div class="pbi-grid-1">
           ${pbiTable('Monthly Cash Flow & Till Progression', [
             { label: 'Month', key: 'Year Month', fmt: (v, r) => r._ymIso ? `<button type="button" class="cf-month-drill-btn${focusYm === r._ymIso ? ' active' : ''}" data-cf-focus-ym="${esc(r._ymIso)}" title="Inspect all cash till entries in ${esc(v)}"><strong>${esc(v)}</strong></button>` : `<b>${esc(v)}</b>` },
-            { label: 'Cash Sales ($)', key: 'cash_sales', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'AR Receipts ($)', key: 'receipts', r: true, fmt: v => fmtUSD(v, 0) },
+            ...(pbiCanSalesOnly ? [{ label: 'Cash Sales ($)', key: 'cash_sales', r: true, fmt: v => fmtUSD(v, 0) }] : []),
+            ...(pbiCanReceiptsOnly ? [{ label: 'AR Receipts ($)', key: 'receipts', r: true, fmt: v => fmtUSD(v, 0) }] : []),
             { label: 'Treasury & FX In ($)', key: 'treasury_in', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Total Cash In ($)', key: 'cash_in', r: true, bar: true, barGroup: 'cf_tot', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
-            { label: 'Cash Expenses ($)', key: 'cash_expenses', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'AP Settlements ($)', key: 'settlements_paid', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'Salaries Paid ($)', key: 'salaries', r: true, fmt: v => fmtUSD(v, 0) },
+            ...(pbiCanTbl('expenses') ? [{ label: 'Cash Expenses ($)', key: 'cash_expenses', r: true, fmt: v => fmtUSD(v, 0) }] : []),
+            ...(pbiCanTbl('settlements') ? [{ label: 'AP Settlements ($)', key: 'settlements_paid', r: true, fmt: v => fmtUSD(v, 0) }] : []),
+            ...(pbiCanSal ? [{ label: 'Salaries Paid ($)', key: 'salaries', r: true, fmt: v => fmtUSD(v, 0) }] : []),
             { label: 'Sweeps & FX Out ($)', key: 'sweeps_out', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Total Cash Out ($)', key: 'cash_out', r: true, bar: true, barGroup: 'cf_tot', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
             { label: 'Net Cash Flow ($)', key: 'clean_net', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
-            { label: 'Closing Till ($)', key: 'clean_till', r: true, negRed: true, fmt: v => fmtUSD(v, 0) }
+            ...(pbiAllCashPermitted ? [{ label: 'Closing Till ($)', key: 'clean_till', r: true, negRed: true, fmt: v => fmtUSD(v, 0) }] : [])
           ], progRows, {
             subtitle: 'Operating Cash + Treasury Sweeps/FX reconcile 100% to Total Cash In & Out · Click any month to filter the Cash Till Entries Explorer below',
             unitLabel: 'months'
@@ -9249,13 +9296,13 @@
                     ${chipBtn('all', `All (${fmtNum(drillScopedMoves.length)})`)}
                     ${chipBtn('cf_in', '▲ Cash In')}
                     ${chipBtn('cf_out', '▼ Cash Out')}
-                    ${chipBtn('cf_sales', `Sales & AR (${fmtNum(streamCounts.sales)})`)}
-                    ${chipBtn('cf_exp', `Expenses & AP (${fmtNum(streamCounts.exp)})`)}
-                    ${hasFullFinRows ? chipBtn('cf_loan', `Borrowing (${fmtNum(streamCounts.loan)})`) : ''}
-                    ${hasFullFinRows ? chipBtn('cf_sal', `Salary (${fmtNum(streamCounts.sal)})`) : ''}
-                    ${hasFullFinRows ? chipBtn('cf_ext', `External (${fmtNum(streamCounts.ext)})`) : ''}
-                    ${hasFullFinRows && streamCounts.extd > 0 ? chipBtn('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
-                    ${chipBtn('cf_fx', `FX Conversions (${fmtNum(streamCounts.fx)})`)}
+                    ${(pbiCanTbl('sales_tickets') || pbiCanTbl('receipts')) ? chipBtn('cf_sales', `Sales & AR (${fmtNum(streamCounts.sales)})`) : ''}
+                    ${pbiCanExp ? chipBtn('cf_exp', `Expenses & AP (${fmtNum(streamCounts.exp)})`) : ''}
+                    ${pbiCanBor ? chipBtn('cf_loan', `Borrowing (${fmtNum(streamCounts.loan)})`) : ''}
+                    ${pbiCanSal ? chipBtn('cf_sal', `Salary (${fmtNum(streamCounts.sal)})`) : ''}
+                    ${pbiCanExt ? chipBtn('cf_ext', `External (${fmtNum(streamCounts.ext)})`) : ''}
+                    ${pbiCanExt && streamCounts.extd > 0 ? chipBtn('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
+                    ${pbiCanConv ? chipBtn('cf_fx', `FX Conversions (${fmtNum(streamCounts.fx)})`) : ''}
                     ${chipBtn('cf_lbp', 'LBP (LL)')}
                   ` : `
                     ${chipBtn('all', `All Days (${fmtNum(allDailyRows.length)})`)}

@@ -2173,6 +2173,10 @@ body.is-daily-ops-view .period-basis-row {
 :root[data-theme="dark"] .dops-group-row.is-expanded .dops-exp-chev {
   color: var(--brass);
 }
+[dir="rtl"] .dops-group-row:not(.is-expanded) .dops-exp-chev svg,
+[dir="rtl"] .dops-exp-chev.is-jump svg {
+  transform: scaleX(-1);
+}
 
 .dops-sub-pad {
   padding-left: 17px;
