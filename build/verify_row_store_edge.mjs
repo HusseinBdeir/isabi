@@ -858,11 +858,13 @@ console.log('\n[14. A save whose turn comes late writes nothing]');
 {
   const Y = await makeWorld();
   await Y.buildTicketPatch(seedDoc());
-  const isShadowWrite = stmts => stmts.some(s => /UPDATE store_rows_state SET rows_ts/.test(s.sql));
+  // The rows step is held at its first read (the state and the line keys), so everything it goes on to do is planned
+  // from what it finds after the others have run: the order in which a late step does harm.
+  const isShadowRead = stmts => stmts.some(s => /INSERT OR IGNORE INTO store_rows_state/.test(s.sql)) && stmts.some(s => /FROM store_rows WHERE/.test(s.sql));
   // S1's rows step is held; meanwhile a newer save lands and finishes.
   let s2 = null;
   Y.d1.beforeBatch = async stmts => {
-    if (!isShadowWrite(stmts)) return 'again';
+    if (!isShadowRead(stmts)) return 'again';
     s2 = await Y.legacy.patch({ lbpFxRate: 222 });
   };
   const okBefore = Y.state().rows_ok;
@@ -873,9 +875,11 @@ console.log('\n[14. A save whose turn comes late writes nothing]');
   // S3's rows step is held; meanwhile a newer save, the switch-over, and a save onto the rows.
   let cut = null;
   let s5 = null;
+  let atCut = null;
   Y.d1.beforeBatch = async stmts => {
-    if (!isShadowWrite(stmts)) return 'again';
+    if (!isShadowRead(stmts)) return 'again';
     await Y.legacy.patch({ lbpFxRate: 444 });
+    atCut = await Y.stored();
     cut = await Y.ticketAction('cutover');
     s5 = await Y.legacy.patch({ lbpFxRate: 555 });
   };
@@ -888,8 +892,9 @@ console.log('\n[14. A save whose turn comes late writes nothing]');
     s3.json.ok === true && cut && cut.json.ok === true && s5 && s5.json.ok === true && isRowsHead(Y.head().payload_json) && end.doc !== null && end.doc.lbpFxRate === 555 && !end.row.rowsDamaged, { cut: cut && cut.json, damaged: end.row.rowsDamaged });
   ok('14c. and nothing is reported: no fall-back, the rows still the master, no comparison counted for the late save',
     !st.fell_back_at && st.master === 1 && st.rows_bad === 0 && st.rows_ok === okMid + 1, { st, okMid });
-  // A comparison left over from before the switch-over counts nothing either.
-  const lateCheck = await checkShadowRows(Y.d1, cur.text, await docAnchorOf({ updated_at: cur.ts, payload_json: cur.text }));
+  // A comparison left over from before the switch-over (of the very text it was made at) counts nothing either:
+  // the rows have moved on with the head row since.
+  const lateCheck = await checkShadowRows(Y.d1, atCut.text, await docAnchorOf({ updated_at: atCut.ts, payload_json: atCut.text }));
   ok('14d. a comparison left over from before the switch-over is skipped, not counted as failed', lateCheck === 'skipped' && Y.state().rows_bad === 0, { lateCheck });
 }
 
