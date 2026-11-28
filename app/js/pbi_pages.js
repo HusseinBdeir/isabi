@@ -816,7 +816,8 @@
 
     const rows = Array.from(pairMap.values()).filter(r => r.loads > 0 && r.trans_rev > 0).map(cur => {
       const rule = findBestDeliveryTransRule(cur.company, cur.customer, cur.site);
-      const isFlat = Boolean((rule && isRuleFlatTrans(rule)) || (cur.last_qty > 1.5 && Math.abs(cur.last_tup - cur.last_tp) < 0.05) || /^truck$/i.test(cur.uom || ''));
+      const isMultiTruckCur = /^truck$/i.test(cur.uom || '') && cur.last_qty > 1.001 && Math.abs(cur.last_tup - cur.last_tp) >= 0.05;
+      const isFlat = Boolean(!isMultiTruckCur && ((rule && isRuleFlatTrans(rule)) || (cur.last_qty > 1.5 && Math.abs(cur.last_tup - cur.last_tp) < 0.05) || /^truck$/i.test(cur.uom || '')));
       const agreed = rule
         ? roundFn(isFlat ? Number(ruleFlatTransVal(rule) ?? rule.trans_unit_price ?? 0) : Number(rule.trans_unit_price ?? rule.trans_price ?? ruleFlatTransVal(rule) ?? 0))
         : null;

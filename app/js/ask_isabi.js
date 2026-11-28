@@ -15778,6 +15778,15 @@
       }
     };
 
+    // App version this device is running, as the last Display row of both Quick Menus, so two devices can be compared
+    const shellVerTxt = String(window.__MFG_SHELL_VER || '').replace(/[^0-9.]/g, '');
+    const shellVerRowHtml = valId => (shellVerTxt
+      ? `<div class="tm-pref-row tm-ver-row">
+            <span class="tm-pref-lbl">Version</span>
+            <div class="tm-pref-ctrl"><span class="tm-ver-val" id="${valId}" data-no-i18n="1" dir="ltr">v${shellVerTxt}</span></div>
+          </div>`
+      : '');
+
     // 1. Desktop progressive-disclosure Quick Menu (#topbarMoreWrap -> #topbarMorePopover)
     //    Keeps #topbar .top-left clean for #topbarTitle while housing Page Guide, Listen, Smart Scan, Language & Theme 1 tap away.
     const toolActions = document.querySelector('#topbar .tool-actions');
@@ -15822,6 +15831,7 @@
             <span class="tm-pref-lbl">Appearance</span>
             <div class="tm-pref-ctrl" id="topbarMoreThemeSlot"></div>
           </div>
+          ${shellVerRowHtml('topbarMoreShellVer')}
         </div>
       `;
       document.body.appendChild(dPop);
@@ -15898,6 +15908,7 @@
             <span class="tm-pref-lbl">Appearance</span>
             <div class="tm-pref-ctrl" id="mobileMoreThemeSlot"></div>
           </div>
+          ${shellVerRowHtml('mobileMoreShellVer')}
         </div>
       `;
       document.body.appendChild(mPop);
