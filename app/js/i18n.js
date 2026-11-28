@@ -16765,6 +16765,12 @@
       "Enter both Start and End time, or leave both blank for grace-only": "أدخل وقتي البدء والانتهاء معاً، أو اتركهما فارغين للسماح فقط",
       "Enter weekday hours or arrival/leaving grace first": "أدخل ساعات يوم العمل أو سماح الحضور/الانصراف أولاً",
       "Export Selected CSV": "تصدير المحدد CSV",
+      "Copy Excel": "نسخ لـ Excel",
+      "Copy selected rows for Excel or Sheets (Ctrl+V)": "نسخ الأسطر المحددة إلى Excel أو Google Sheets (Ctrl+V)",
+      "Copy WhatsApp": "نسخ لواتساب",
+      "Copy selected rows formatted for WhatsApp": "نسخ الأسطر المحددة منسّقة لواتساب",
+      "Your seat has no access to copy rows from this register": "صلاحية حسابك لا تسمح بنسخ الأسطر من هذا السجل",
+      "Clipboard copy was blocked by the browser": "تم حظر النسخ إلى الحافظة من المتصفح",
       "Download selected rows as CSV (Excel, UTF-8)": "تنزيل الأسطر المحددة بصيغة CSV (Excel, UTF-8)",
       "Open combined Bilingual Contract & NSSF print pack for selected employees": "فتح ملف طباعة العقد والضمان الاجتماعي الثنائي اللغة المجمّع للموظفين المحددين",
       "Your seat has no access to export CSV from this register": "صلاحية حسابك لا تسمح بتصدير ملف CSV من هذا السجل",
@@ -33520,6 +33526,12 @@
       "Enter both Start and End time, or leave both blank for grace-only": "Saisissez les heures de début et de fin, ou laissez-les vides pour la tolérance seule",
       "Enter weekday hours or arrival/leaving grace first": "Saisissez d'abord les heures du jour ou la tolérance d'arrivée/départ",
       "Export Selected CSV": "Exporter sélection CSV",
+      "Copy Excel": "Copier Excel",
+      "Copy selected rows for Excel or Sheets (Ctrl+V)": "Copier les lignes sélectionnées pour Excel ou Sheets (Ctrl+V)",
+      "Copy WhatsApp": "Copier WhatsApp",
+      "Copy selected rows formatted for WhatsApp": "Copier les lignes sélectionnées formatées pour WhatsApp",
+      "Your seat has no access to copy rows from this register": "Votre rôle n'est pas autorisé à copier des lignes depuis ce registre",
+      "Clipboard copy was blocked by the browser": "La copie dans le presse-papiers a été bloquée par le navigateur",
       "Download selected rows as CSV (Excel, UTF-8)": "Télécharger les lignes sélectionnées en CSV (Excel, UTF-8)",
       "Open combined Bilingual Contract & NSSF print pack for selected employees": "Ouvrir le dossier d'impression bilingue Contrat & CNSS groupé pour les salariés sélectionnés",
       "Your seat has no access to export CSV from this register": "Votre rôle n'est pas autorisé à exporter ce registre en CSV",
@@ -40470,6 +40482,28 @@
         out: lang === 'ar'
           ? `تم تصدير ${m[1]} ${n === 1 ? 'سطر محدد' : 'أسطر محددة'} إلى CSV`
           : `${m[1]} ${n === 1 ? 'ligne sélectionnée exportée' : 'lignes sélectionnées exportées'} en CSV`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Copied\s+(\d[\d,]*)\s+selected\s+rows?\s+for\s+Excel$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? `تم نسخ ${m[1]} ${n === 1 ? 'سطر محدد' : 'أسطر محددة'} لـ Excel`
+          : `${m[1]} ${n === 1 ? 'ligne sélectionnée copiée' : 'lignes sélectionnées copiées'} pour Excel`,
+        ok: true
+      };
+    }
+
+    m = trimmed.match(/^Copied\s+(\d[\d,]*)\s+selected\s+rows?\s+for\s+WhatsApp$/i);
+    if (m) {
+      const n = Number(String(m[1]).replace(/,/g, ''));
+      return {
+        out: lang === 'ar'
+          ? `تم نسخ ${m[1]} ${n === 1 ? 'سطر محدد' : 'أسطر محددة'} لواتساب`
+          : `${m[1]} ${n === 1 ? 'ligne sélectionnée copiée' : 'lignes sélectionnées copiées'} pour WhatsApp`,
         ok: true
       };
     }

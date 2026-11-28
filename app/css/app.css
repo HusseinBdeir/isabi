@@ -24280,10 +24280,10 @@ tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
 }
 .lsb-head {
   display: flex;
-   flex-direction: column;
+  flex-direction: column;
   gap: 1px;
-  padding-right: 12px;
-  border-right: 1px solid var(--line);
+  padding-inline-end: 12px;
+  border-inline-end: 1px solid var(--line);
   flex-shrink: 0;
 }
 .lsb-badge {
@@ -24334,8 +24334,8 @@ tr.rrow.is-row-selected:not(.is-mob-peek-current):not(.sn-panel-flash) > td {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid var(--line);
   flex-shrink: 0;
 }
 .lsb-btn {

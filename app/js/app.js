@@ -211925,52 +211925,335 @@
     return true;
   }
 
-  function exportSelectedRowsCsv(selRows) {
-    if (!STATE.authed || STATE.kioskLocked || !Array.isArray(selRows) || !selRows.length) return false;
-    if (!_canExportSelectedRowsCsv(selRows)) {
-      toast('Your seat has no access to export CSV from this register', 'err');
-      return false;
-    }
+  const _LSB_STRIP_SEL = '.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, [data-row-sel], .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .staff-hr-pack-inline-btn, .emp-hr-pack-btn, .tkt-print-mini, .tbl-th-tools, .th-filter-btn, .tbl-col-resizer, .btn-ind-wf, [data-open-prepayday-card], [data-set-pending-salary-id], [data-open-hr-pack]';
+
+  function _filterLiveSelectedRows(selRows) {
+    return (Array.isArray(selRows) ? selRows : []).filter(tr =>
+      tr && tr.isConnected && !tr.hidden && getComputedStyle(tr).display !== 'none'
+    );
+  }
+
+  function _extractSelectedTablesMatrix(selRows) {
+    const liveRows = _filterLiveSelectedRows(selRows);
     const byTbl = new Map();
-    selRows.forEach(tr => {
-      const tbl = tr && tr.closest ? tr.closest('table') : null;
+    liveRows.forEach(tr => {
+      const tbl = tr.closest ? tr.closest('table') : null;
       if (!tbl) return;
       if (!byTbl.has(tbl)) byTbl.set(tbl, []);
       byTbl.get(tbl).push(tr);
     });
-    if (!byTbl.size) return false;
-    const stripSel = '.ind-agr-pill, .cf-cand-pill, .void-btn, .row-sel-dot, .raw-fleet-deduct-pill, .raw-leg-stmt-actions, .staff-hr-pack-inline-btn, .emp-hr-pack-btn, .tkt-print-mini, .tbl-th-tools, .th-filter-btn, .tbl-col-resizer, .btn-ind-wf, [data-open-prepayday-card], [data-set-pending-salary-id]';
     const blocks = [];
     byTbl.forEach((rows, tbl) => {
-      const lines = [];
+      const panel = tbl.closest ? tbl.closest('.panel-card, .panel') : null;
+      const titleEl = panel ? panel.querySelector('.panel-head h2, .panel-head h3, .panel-title, h2, h3') : null;
+      let panelTitle = '';
+      if (titleEl) {
+        const tClone = titleEl.cloneNode(true);
+        tClone.querySelectorAll('button, .badge, .pill, .tag, .count, .chip, small, .mu, .sv-wrap, .tbl-col-mgr-wrap, svg').forEach(n => n.remove());
+        panelTitle = (tClone.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      if (!panelTitle) {
+        const vt = (typeof VIEW_TITLES !== 'undefined' && VIEW_TITLES[STATE.view]) || STATE.view || 'Records';
+        panelTitle = wsUiT(vt);
+      }
+
+      const headers = [];
       const headTr = tbl.querySelector('thead tr:first-child');
       if (headTr) {
-        const hCells = Array.from(headTr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
-          .filter(th => th.hasAttribute('colspan') || getComputedStyle(th).display !== 'none')
-          .map(th => {
-            if (th.hasAttribute('data-masked-payroll') || th.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
-            if (th.dataset && th.dataset.colCleanLabel) return _csvQuoteCell(th.dataset.colCleanLabel);
+        Array.from(headTr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+          .filter(th => getComputedStyle(th).display !== 'none')
+          .forEach(th => {
+            const masked = th.hasAttribute('data-masked-payroll') || Boolean(th.querySelector('[data-masked-payroll]'));
             const clone = th.cloneNode(true);
-            clone.querySelectorAll(stripSel + ', i').forEach(n => n.remove());
-            return _csvQuoteCell(clone.textContent);
+            clone.querySelectorAll(_LSB_STRIP_SEL + ', i').forEach(n => n.remove());
+            const visText = (clone.textContent || '').replace(/[▲▼▾▴]/g, '').replace(/\s+/g, ' ').trim();
+            const cleanHeader = masked
+              ? 'Restricted'
+              : ((th.dataset && th.dataset.colCleanLabel) ? String(th.dataset.colCleanLabel).trim() : visText);
+            const localizedHeader = masked
+              ? wsUiT('Restricted')
+              : (visText || (cleanHeader ? wsUiT(cleanHeader) : ''));
+            const span = Math.max(1, parseInt(th.getAttribute('colspan') || '1', 10) || 1);
+            headers.push({ cleanHeader, localizedHeader, masked });
+            for (let s = 1; s < span; s++) headers.push({ cleanHeader: '', localizedHeader: '', masked });
           });
-        if (hCells.length) lines.push(hCells.join(','));
       }
+
+      const bodyRows = [];
       rows.forEach(tr => {
-        const rCells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
-          .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
+        const cells = Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+          .filter(td => getComputedStyle(td).display !== 'none')
           .map(td => {
-            if (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) return _csvQuoteCell('Restricted');
-            return _csvQuoteCell(_extractDetachedCellText(td));
+            const domMasked = td.hasAttribute('data-masked-payroll') || Boolean(td.querySelector('[data-masked-payroll]'));
+            let raw = '';
+            if (!domMasked) {
+              const tdClone = td.cloneNode(true);
+              tdClone.querySelectorAll(_LSB_STRIP_SEL).forEach(n => n.remove());
+              raw = _extractDetachedCellText(tdClone).replace(/\s+/g, ' ').trim();
+            }
+            const masked = domMasked
+              || (typeof isRestrictedSharePlaceholder === 'function' && isRestrictedSharePlaceholder(raw, 'en'))
+              || /^(?:Restricted|مقيد|Restreint)$/i.test(raw);
+            const isEmptyDash = !masked && (
+              raw === ''
+              || raw === '\u2014'
+              || raw === '--'
+              || raw === '-'
+              || (Boolean(td.querySelector('.cell-empty')) && raw === '\u2014')
+            );
+            return { raw, masked, isEmptyDash };
           });
-        if (rCells.length) lines.push(rCells.join(','));
+        if (cells.length) bodyRows.push(cells);
       });
-      if (lines.length) blocks.push(lines.join('\r\n'));
+      if (bodyRows.length) blocks.push({ panelTitle, headers, rows: bodyRows });
     });
-    if (!blocks.length) return false;
-    const csv = blocks.join('\r\n\r\n');
+    return { liveRows, blocks };
+  }
+
+  async function _copyTextToClipboard(text) {
+    const str = String(text == null ? '' : text);
+    if (typeof window !== 'undefined' && window.__MFG_HEADLESS_TEST) {
+      window.__LAST_LSB_CLIPBOARD = str;
+    }
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(str);
+        return true;
+      } catch (_) { /* fall through to textarea fallback */ }
+    }
+    try {
+      const prevActive = document.activeElement;
+      const ta = document.createElement('textarea');
+      ta.value = str;
+      ta.readOnly = true;
+      ta.setAttribute('aria-hidden', 'true');
+      ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;font-size:16px;pointer-events:none;';
+      document.body.appendChild(ta);
+      ta.focus({ preventScroll: true });
+      ta.select();
+      ta.setSelectionRange(0, str.length);
+      const ok = Boolean(document.execCommand && document.execCommand('copy'));
+      ta.remove();
+      if (prevActive && typeof prevActive.focus === 'function' && prevActive.isConnected) {
+        try { prevActive.focus({ preventScroll: true }); } catch (_) {}
+      }
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function _tsvSanitizeCell(cell) {
+    if (!cell || cell.isEmptyDash) return '';
+    if (cell.masked) return 'Restricted';
+    let s = String(cell.raw == null ? '' : cell.raw)
+      .replace(/[\t\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^\u2212(?=\s*[$€£]?\s*\d)/, '-');
+    if (/^[=+@]/.test(s) || (s.startsWith('-') && s !== '-' && !/^-[\s$€£]*\d+(?:[.,]\d+)*(?:\s*(?:USD|LBP|LL|L\.L\.?)|%)?$/i.test(s))) {
+      s = "'" + s;
+    }
+    return s;
+  }
+
+  function _sanitizeWhatsappOutwardText(str, langCode) {
+    const arrowRepl = langCode === 'ar' ? ' إلى ' : (langCode === 'fr' ? ' vers ' : ' to ');
+    const lines = String(str == null ? '' : str).split(/\r?\n/).map(line => {
+      let s = line
+        .replace(/[✎↗]/g, '')
+        .replace(/\s*[\u2014\u2013]+\s*/g, ' - ')
+        .replace(/\s*(?:\u2192|\u21D2|->)\s*/g, arrowRepl)
+        .replace(/\s*(?:\u2190|\u21D0|<-|[\u2190-\u21FF])\s*/g, ' - ')
+        .replace(/\s*\|\s*/g, ' - ')
+        .replace(/\bTHEO\b/gi, '')
+        .replace(/\bZ-Read\b/gi, 'Till Close')
+        .replace(/\bTotal\s+TTC\b/gi, 'Total')
+        .replace(/\bSales\s+TTC\b/gi, 'Sales')
+        .replace(/\s*\(\s*TTC\s*\)/gi, '')
+        .replace(/\bTTC\b/gi, '')
+        .replace(/\(\s*\)/g, '');
+      return s.replace(/[^\S\n]{2,}/g, ' ').trim();
+    });
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function _computeSelectionMetrics(selRows) {
+    const fxRate = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
+    let sumQty = 0, qtyUnit = '', sumBase = 0, sumVat = 0, sumTot = 0, hasMoneyCols = false;
+    (selRows || []).forEach(tr => {
+      const tbl = tr.closest('table');
+      const ths = tbl
+        ? Array.from(tbl.querySelectorAll('thead tr:first-child th'))
+          .filter(th => !th.classList.contains('tbl-col-hidden') && getComputedStyle(th).display !== 'none')
+          .map(th => getCanonicalEnDomText(th).toUpperCase())
+        : [];
+      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none');
+      const rowUsdVals = [];
+      const rowLbpVals = [];
+      const parseMoneyCell = s => {
+        const t = String(s || '').replace(/\u2212/g, '-').trim();
+        const neg = /^\(.*\)$/.test(t) || ((/-\s*\$|\$\s*-|^[-+]/.test(t)) && t.includes('-'));
+        const n = parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
+        return neg ? -Math.abs(n) : n;
+      };
+      tds.forEach((td, i) => {
+        if (td.hasAttribute('data-masked-payroll') || td.querySelector('[data-masked-payroll]')) return;
+        const h = ths[i] || '';
+        const txt = (typeof cleanDomainCellText === 'function' ? cleanDomainCellText(td) : (td.textContent || '')).trim();
+        if (!txt || isRestrictedSharePlaceholder(txt, 'en') || /^(?:Restricted|مقيد|Restreint)$/i.test(txt)) return;
+        if (/\b(QTY|QUANTITY|LITERS|TONS|VOLUME|UNITS|NIGHTS|GUESTS|HOURS|SQM)\b/i.test(h)) {
+          const qm = txt.replace(/\u2212/g, '-').match(/([+-]?[\d,]+(?:\.\d+)?)\s*([a-zA-Z³²]+)?/);
+          if (qm) {
+            sumQty += parseFloat(qm[1].replace(/,/g, '')) || 0;
+            if (!qtyUnit && qm[2]) qtyUnit = qm[2];
+          }
+        }
+        if (/\$/.test(txt) || (/\bUSD\b/i.test(h) && /\d/.test(txt))) {
+          const v = parseMoneyCell(txt);
+          rowUsdVals.push({ h, v });
+          if (/EX-VAT|BASE|GROSS PAY|NET RENT|GWP|SUBTOTAL|PRINCIPAL/i.test(h)) sumBase += v;
+          else if (/\bVAT\b/i.test(h) && !/INCL/i.test(h)) sumVat += v;
+        } else if (/\bLBP\b|\bL\.L\b/i.test(txt) || (/\bLBP\b|\bLL\b/i.test(h) && /\d/.test(txt))) {
+          const lv = parseMoneyCell(txt);
+          if (lv !== 0) rowLbpVals.push({ h, v: lv / (fxRate > 0 ? fxRate : 89500) });
+        }
+      });
+      const moneyPool = rowUsdVals.length ? rowUsdVals : rowLbpVals;
+      if (moneyPool.length) {
+        hasMoneyCols = true;
+        const totCol = moneyPool.find(x => /VAT INCL|TOTAL|NET PAY|AMOUNT|GROSS BILLED|BILLED|COLLECTED|SETTLED|REVENUE|RENT|PREMIUM|PAYABLE|RECEIVABLE|BALANCE|VALUE|COST|PRICE/i.test(x.h)) || moneyPool[moneyPool.length - 1];
+        sumTot += totCol.v;
+      }
+    });
+    const avgRow = (selRows && selRows.length > 0) ? (sumTot / selRows.length) : 0;
+    return { sumQty, qtyUnit, sumBase, sumVat, sumTot, avgRow, hasMoneyCols };
+  }
+
+  function exportSelectedRowsCsv(selRows) {
+    if (!STATE.authed || STATE.kioskLocked) return false;
+    const { liveRows, blocks } = _extractSelectedTablesMatrix(selRows);
+    if (!liveRows.length) return false;
+    if (!_canExportSelectedRowsCsv(liveRows)) {
+      toast(wsUiT('Your seat has no access to export CSV from this register'), 'err');
+      return false;
+    }
+    const csvBlocks = [];
+    blocks.forEach(blk => {
+      const lines = [];
+      if (blk.headers.length) {
+        lines.push(blk.headers.map(h => _csvQuoteCell(h.masked ? 'Restricted' : h.cleanHeader)).join(','));
+      }
+      blk.rows.forEach(cells => {
+        lines.push(cells.map(c => _csvQuoteCell(c.masked ? 'Restricted' : c.raw)).join(','));
+      });
+      if (lines.length) csvBlocks.push(lines.join('\r\n'));
+    });
+    if (!csvBlocks.length) return false;
+    const csv = csvBlocks.join('\r\n\r\n');
     downloadCsv(`ISABI_Selected_${String(STATE.view || 'table').replace(/[^A-Za-z0-9_-]/g, '_')}_${STATE.company}_${todayISO()}.csv`, csv);
-    toast(wsUiT(`Exported ${selRows.length} selected rows to CSV`), 'ok');
+    toast(wsUiT(`Exported ${liveRows.length} selected rows to CSV`), 'ok');
+    return true;
+  }
+
+  async function copySelectedRowsTsv(selRows) {
+    if (!STATE.authed || STATE.kioskLocked) return false;
+    const { liveRows, blocks } = _extractSelectedTablesMatrix(selRows);
+    if (!liveRows.length) return false;
+    if (!_canExportSelectedRowsCsv(liveRows)) {
+      toast(wsUiT('Your seat has no access to copy rows from this register'), 'err');
+      return false;
+    }
+    const tsvBlocks = [];
+    blocks.forEach(blk => {
+      const lines = [];
+      if (blk.headers.length) {
+        lines.push(blk.headers.map(h => _tsvSanitizeCell({ raw: h.cleanHeader, masked: h.masked, isEmptyDash: false })).join('\t'));
+      }
+      blk.rows.forEach(cells => {
+        lines.push(cells.map(c => _tsvSanitizeCell(c)).join('\t'));
+      });
+      if (lines.length) tsvBlocks.push(lines.join('\r\n'));
+    });
+    if (!tsvBlocks.length) return false;
+    const ok = await _copyTextToClipboard(tsvBlocks.join('\r\n\r\n'));
+    if (!ok) {
+      toast(wsUiT('Clipboard copy was blocked by the browser'), 'err');
+      return false;
+    }
+    toast(wsUiT(`Copied ${liveRows.length} selected ${liveRows.length === 1 ? 'row' : 'rows'} for Excel`), 'ok');
+    return true;
+  }
+
+  async function copySelectedRowsWhatsapp(selRows) {
+    if (!STATE.authed || STATE.kioskLocked) return false;
+    const { liveRows, blocks } = _extractSelectedTablesMatrix(selRows);
+    if (!liveRows.length || !blocks.length) return false;
+    if (!_canExportSelectedRowsCsv(liveRows)) {
+      toast(wsUiT('Your seat has no access to copy rows from this register'), 'err');
+      return false;
+    }
+    const langCode = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
+    const coSel = $('companySwitch');
+    const coOpt = coSel && coSel.selectedOptions && coSel.selectedOptions[0];
+    const scopeLbl = (coOpt ? coOpt.textContent : '') || (typeof COMPANY_LABELS !== 'undefined' && COMPANY_LABELS[STATE.company]) || STATE.company || '';
+    const cleanScope = _sanitizeWhatsappOutwardText(scopeLbl, langCode);
+    const restrictedLbl = langCode === 'ar' ? 'مقيد' : (langCode === 'fr' ? 'Restreint' : 'Restricted');
+    const waBlocks = [];
+    blocks.forEach(blk => {
+      const bodyLines = [];
+      blk.rows.forEach(cells => {
+        const parts = [];
+        cells.forEach((c, colIdx) => {
+          if (c.isEmptyDash) return;
+          const hdr = blk.headers[colIdx];
+          const val = c.masked
+            ? restrictedLbl
+            : _sanitizeWhatsappOutwardText(String(c.raw || '').replace(/\u2212/g, '-'), langCode);
+          if (!val) return;
+          const lbl = hdr
+            ? _sanitizeWhatsappOutwardText(hdr.masked ? restrictedLbl : hdr.localizedHeader, langCode)
+            : '';
+          parts.push(lbl ? `${lbl}: ${val}` : val);
+        });
+        if (parts.length) bodyLines.push(`${bodyLines.length + 1}. ${parts.join(' · ')}`);
+      });
+      if (!bodyLines.length) return;
+      const n = bodyLines.length;
+      const countLbl = langCode === 'ar'
+        ? (n === 1 ? 'سطر' : 'أسطر')
+        : (langCode === 'fr' ? (n === 1 ? 'ligne' : 'lignes') : (n === 1 ? 'row' : 'rows'));
+      const cleanPanel = _sanitizeWhatsappOutwardText(blk.panelTitle, langCode);
+      const rawCombo = (cleanScope && cleanPanel && !cleanPanel.toLowerCase().includes(cleanScope.toLowerCase()))
+        ? `${cleanScope} - ${cleanPanel}`
+        : (cleanPanel || cleanScope);
+      const titleCombo = rawCombo.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+      waBlocks.push([`*${titleCombo}* (${n} ${countLbl})`, ...bodyLines].join('\n'));
+    });
+
+    const m = _computeSelectionMetrics(liveRows);
+    const footerParts = [];
+    const colon = langCode === 'fr' ? ' : ' : ': ';
+    if (m.hasMoneyCols) {
+      const totLbl = langCode === 'ar' ? 'الإجمالي' : (langCode === 'fr' ? 'Total' : 'Total');
+      footerParts.push(`${totLbl}${colon}${fmtUSD(m.sumTot, 2)}`);
+    }
+    if (m.sumQty > 0) {
+      const qtyLbl = langCode === 'ar' ? 'الكمية' : (langCode === 'fr' ? 'Qté' : 'Qty');
+      footerParts.push(`${qtyLbl}${colon}${fmtNum(m.sumQty, 1)}${m.qtyUnit ? ' ' + m.qtyUnit : ''}`);
+    }
+    if (footerParts.length) {
+      waBlocks.push(footerParts.join(' · '));
+    }
+
+    const waText = _sanitizeWhatsappOutwardText(waBlocks.join('\n\n'), langCode);
+    if (!waText) return false;
+    const ok = await _copyTextToClipboard(waText);
+    if (!ok) {
+      toast(wsUiT('Clipboard copy was blocked by the browser'), 'err');
+      return false;
+    }
+    toast(wsUiT(`Copied ${liveRows.length} selected ${liveRows.length === 1 ? 'row' : 'rows'} for WhatsApp`), 'ok');
     return true;
   }
 
@@ -212020,59 +212303,14 @@
       prevArm._bulkVoidArmTimer = null;
     }
     const selRows = (STATE.authed && !STATE.kioskLocked && container)
-      ? Array.from(container.querySelectorAll('tr.rrow.is-row-selected'))
+      ? _filterLiveSelectedRows(Array.from(container.querySelectorAll('tr.rrow.is-row-selected')))
       : [];
     if (!selRows.length) {
       bar.innerHTML = '';
       bar.hidden = true;
       return;
     }
-    const fxRate = (typeof getLbpFxRate === 'function' ? getLbpFxRate() : 89500) || 89500;
-    let sumQty = 0, qtyUnit = '', sumBase = 0, sumVat = 0, sumTot = 0;
-    selRows.forEach(tr => {
-      const tbl = tr.closest('table');
-      const ths = tbl
-        ? Array.from(tbl.querySelectorAll('thead tr:first-child th'))
-          .filter(th => !th.classList.contains('tbl-col-hidden') && getComputedStyle(th).display !== 'none')
-          .map(th => getCanonicalEnDomText(th).toUpperCase())
-        : [];
-      const tds = Array.from(tr.children).filter(td => td.tagName === 'TD' && !td.classList.contains('tbl-col-hidden') && getComputedStyle(td).display !== 'none');
-      const rowUsdVals = [];
-      const rowLbpVals = [];
-      const parseMoneyCell = s => {
-        const t = String(s || '').replace(/\u2212/g, '-').trim();
-        const neg = /^\(.*\)$/.test(t) || ((/-\s*\$|\$\s*-|^[-+]/.test(t)) && t.includes('-'));
-        const n = parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
-        return neg ? -Math.abs(n) : n;
-      };
-      tds.forEach((td, i) => {
-        const h = ths[i] || '';
-        const txt = (typeof cleanDomainCellText === 'function' ? cleanDomainCellText(td) : (td.textContent || '')).trim();
-        if (!txt || isRestrictedSharePlaceholder(txt, 'en') || /^(?:Restricted|مقيد|Restreint)$/i.test(txt)) return;
-        if (/\b(QTY|QUANTITY|LITERS|TONS|VOLUME|UNITS|NIGHTS|GUESTS|HOURS|SQM)\b/i.test(h)) {
-          const qm = txt.replace(/\u2212/g, '-').match(/([+-]?[\d,]+(?:\.\d+)?)\s*([a-zA-Z³²]+)?/);
-          if (qm) {
-            sumQty += parseFloat(qm[1].replace(/,/g, '')) || 0;
-            if (!qtyUnit && qm[2]) qtyUnit = qm[2];
-          }
-        }
-        if (/\$/.test(txt) || (/\bUSD\b/i.test(h) && /\d/.test(txt))) {
-          const v = parseMoneyCell(txt);
-          rowUsdVals.push({ h, v });
-          if (/EX-VAT|BASE|GROSS PAY|NET RENT|GWP|SUBTOTAL|PRINCIPAL/i.test(h)) sumBase += v;
-          else if (/\bVAT\b/i.test(h) && !/INCL/i.test(h)) sumVat += v;
-        } else if (/\bLBP\b|\bL\.L\b/i.test(txt) || (/\bLBP\b|\bLL\b/i.test(h) && /\d/.test(txt))) {
-          const lv = parseMoneyCell(txt);
-          if (lv !== 0) rowLbpVals.push({ h, v: lv / (fxRate > 0 ? fxRate : 89500) });
-        }
-      });
-      const moneyPool = rowUsdVals.length ? rowUsdVals : rowLbpVals;
-      if (moneyPool.length) {
-        const totCol = moneyPool.find(x => /VAT INCL|TOTAL|NET PAY|AMOUNT|GROSS BILLED|BILLED|COLLECTED|SETTLED|REVENUE|RENT|PREMIUM|PAYABLE|RECEIVABLE|BALANCE|VALUE|COST|PRICE/i.test(x.h)) || moneyPool[moneyPool.length - 1];
-        sumTot += totCol.v;
-      }
-    });
-    const avgRow = selRows.length > 0 ? (sumTot / selRows.length) : 0;
+    const { sumQty, qtyUnit, sumBase, sumVat, sumTot, avgRow } = _computeSelectionMetrics(selRows);
     const summaryCopyText = `${selRows.length} rows selected` +
       (sumQty > 0 ? ` · Qty: ${fmtNum(sumQty, 1)}${qtyUnit ? ' ' + qtyUnit : ''}` : '') +
       (sumBase > 0 ? ` · Ex-VAT: ${fmtUSD(sumBase, 2)}` : '') +
@@ -212102,6 +212340,8 @@
       <div class="lsb-actions">
         <button type="button" class="lsb-btn" id="lsbSelectTop10Btn" data-ui-tip="Select first 10 visible rows">Top 10</button>
         <button type="button" class="lsb-btn" id="lsbCopySumBtn" data-ui-tip="Copy live sum summary to clipboard">Copy Sum</button>
+        ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbCopyTsvBtn" data-ui-tip="Copy selected rows for Excel or Sheets (Ctrl+V)">${ic('copy')} <span>Copy Excel</span></button>` : ''}
+        ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbCopyWaBtn" data-ui-tip="Copy selected rows formatted for WhatsApp">${ic('send_msg')} <span>Copy WhatsApp</span></button>` : ''}
         ${allowSelCsvExport ? `<button type="button" class="lsb-btn" id="lsbExportCsvBtn" data-ui-tip="Download selected rows as CSV (Excel, UTF-8)">${ic('download')} <span>Export Selected CSV</span></button>` : ''}
         ${hrPackTargets.length >= 2 ? `<button type="button" class="lsb-btn lsb-hr-pack-btn" id="lsbPrintHrPacksBtn" data-hr-count="${hrPackTargets.length}" data-ui-tip="Open combined Bilingual Contract &amp; NSSF print pack for selected employees">${ic('printer')} <span>Print Selected HR Packs (${hrPackTargets.length})</span></button>` : ''}
         ${bulkVoidEligibleCount > 0 ? `<button type="button" class="lsb-btn btn-danger-outline lsb-void-btn" id="lsbBulkVoidBtn" data-void-count="${bulkVoidEligibleCount}" data-ui-tip="Void selected records (click once to arm, click again to confirm)" aria-label="Void Selected (${bulkVoidEligibleCount})">${ic('trash')} <span>Void Selected (${bulkVoidEligibleCount})</span></button>` : ''}
@@ -212112,10 +212352,15 @@
     if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
       _translateVoidEl(bar);
     }
+    const getLiveSelRows = () => {
+      const scopeEl = (container && container.isConnected) ? container : ($('workspace') || document);
+      return _filterLiveSelectedRows(Array.from(scopeEl.querySelectorAll('tr.rrow.is-row-selected')));
+    };
     const top10Btn = $('lsbSelectTop10Btn');
     if (top10Btn) top10Btn.onclick = e => {
       e.stopPropagation();
-      const firstTbl = selRows[0] ? selRows[0].closest('table') : container.querySelector('table.ledger-table, table.data-table');
+      const liveSel = getLiveSelRows();
+      const firstTbl = liveSel[0] ? liveSel[0].closest('table') : container.querySelector('table.ledger-table, table.data-table');
       if (firstTbl) {
         Array.from(firstTbl.querySelectorAll('tbody tr.rrow'))
           .filter(r => r.querySelector('u.row-sel-dot') && r.style.display !== 'none' && !r.hidden && !r.classList.contains('total-row') && !r.classList.contains('totals-row') && !r.hasAttribute('data-dops-expand'))
@@ -212127,13 +212372,23 @@
     const copyBtn = $('lsbCopySumBtn');
     if (copyBtn) copyBtn.onclick = e => {
       e.stopPropagation();
-      try { navigator.clipboard.writeText(summaryCopyText); } catch (_) {}
+      _copyTextToClipboard(summaryCopyText);
       toast('Copied live selection sum: ' + summaryCopyText);
+    };
+    const copyTsvBtn = $('lsbCopyTsvBtn');
+    if (copyTsvBtn) copyTsvBtn.onclick = e => {
+      e.stopPropagation();
+      copySelectedRowsTsv(getLiveSelRows());
+    };
+    const copyWaBtn = $('lsbCopyWaBtn');
+    if (copyWaBtn) copyWaBtn.onclick = e => {
+      e.stopPropagation();
+      copySelectedRowsWhatsapp(getLiveSelRows());
     };
     const expCsvBtn = $('lsbExportCsvBtn');
     if (expCsvBtn) expCsvBtn.onclick = e => {
       e.stopPropagation();
-      exportSelectedRowsCsv(selRows);
+      exportSelectedRowsCsv(getLiveSelRows());
     };
     const hrPacksBtn = $('lsbPrintHrPacksBtn');
     if (hrPacksBtn) hrPacksBtn.onclick = e => {
