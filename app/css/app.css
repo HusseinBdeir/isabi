@@ -50380,6 +50380,116 @@ html[data-theme="dark"] .ovk-movers-popover {
   background: rgba(31, 122, 76, 0.2) !important;
   border-color: rgba(134, 239, 172, 0.35) !important;
 }
+.rdl-cmp-delta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+  border-color: rgba(192, 137, 47, 0.45) !important;
+  color: #9A3412 !important;
+  background: rgba(201, 106, 34, 0.1) !important;
+}
+.rdl-cmp-delta-btn:hover,
+.rdl-cmp-delta-btn:focus-visible {
+  background: #C96A22 !important;
+  color: #FFFFFF !important;
+  border-color: #9A3412 !important;
+}
+.rdl-cmp-delta-btn svg { width: 12px; height: 12px; }
+:root[data-theme="dark"] .rdl-cmp-delta-btn {
+  color: #FDBA74 !important;
+  background: rgba(201, 106, 34, 0.2) !important;
+  border-color: rgba(253, 186, 116, 0.38) !important;
+}
+.rdl-cmp-saved-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #1F7A4C;
+  box-shadow: 0 0 0 2px rgba(31, 122, 76, 0.2);
+  flex: 0 0 auto;
+}
+.rdl-stmt16-compare-btn.active .rdl-cmp-saved-dot { display: none; }
+:root[data-theme="dark"] .rdl-cmp-saved-dot {
+  background: #4ADE80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.22);
+}
+.stmt16-delta-ctx-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(201, 106, 34, 0.42);
+  background: rgba(201, 106, 34, 0.08);
+  color: var(--ink, #0F172A);
+  font-size: 12px;
+}
+.stmt16-delta-ctx-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+.stmt16-delta-ctx-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.stmt16-delta-ctx-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: rgba(201, 106, 34, 0.16);
+  color: #9A3412;
+}
+.stmt16-delta-ctx-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 11.5px;
+  color: var(--muted, #475569);
+}
+.stmt16-delta-ctx-metrics b { color: var(--ink, #0F172A); }
+.stmt16-delta-ctx-metrics b.is-delta { color: #B45309; }
+.stmt16-delta-ctx-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+:root[data-theme="dark"] .stmt16-delta-ctx-banner {
+  background: rgba(201, 106, 34, 0.16);
+  border-color: rgba(253, 186, 116, 0.36);
+  color: #F8FAFC;
+}
+:root[data-theme="dark"] .stmt16-delta-ctx-eyebrow {
+  background: rgba(251, 146, 60, 0.24);
+  color: #FED7AA;
+}
+:root[data-theme="dark"] .stmt16-delta-ctx-metrics { color: #CBD5E1; }
+:root[data-theme="dark"] .stmt16-delta-ctx-metrics b { color: #F8FAFC; }
+:root[data-theme="dark"] .stmt16-delta-ctx-metrics b.is-delta { color: #FDBA74; }
+@media (max-width: 640px) {
+  .stmt16-delta-ctx-actions { width: 100%; }
+  .stmt16-delta-ctx-actions > * { flex: 1 1 auto; justify-content: center; }
+}
 .rdl-stmt16-disc-print-only { display: none !important; }
 :root[data-theme="dark"] .rdl-cmp-pill-eyebrow { color: #93C5FD; background: rgba(59, 130, 246, 0.22); }
 :root[data-theme="dark"] .rdl-cmp-seg-btn { color: #E2E8F0; }
@@ -50395,7 +50505,8 @@ html[data-theme="dark"] .ovk-movers-popover {
 @media print {
   .rdl-stmt16-compare-panel,
   .rdl-cmp-inline-pill,
-  .rdl-stmt16-disc-print-only {
+  .rdl-stmt16-disc-print-only,
+  .stmt16-delta-ctx-banner {
     display: none !important;
   }
   body.is-printing-stmt16-discrepancy .rdl-stmt16-normal-print {

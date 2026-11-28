@@ -4157,23 +4157,23 @@
     const sList = (SEED && SEED.records && Array.isArray(SEED.records.raw_purchases)) ? SEED.records.raw_purchases : [];
     return sList.find(x => x && !x.voided && String(x.id) === q) || null;
   }
-  function openPendingExpensePriceModal(expId) {
+  function openPendingExpensePriceModal(expId, opts = {}) {
     const row = findExpenseRecordById(expId);
     if (!row) {
       toast('Expense voucher not found', 'err');
       return;
     }
     closeRecordInspector({ restoreFocus: false });
-    openEntryModal('expense', { completePendingId: String(row.id) }, { forceSwitch: true });
+    openEntryModal('expense', { completePendingId: String(row.id) }, { forceSwitch: true, stmt16DeltaCtx: opts && opts.stmt16DeltaCtx });
   }
-  function openPendingRawPriceModal(rawId) {
+  function openPendingRawPriceModal(rawId, opts = {}) {
     const row = findRawPurchaseRecordById(rawId);
     if (!row) {
       toast('Raw material ticket not found', 'err');
       return;
     }
     closeRecordInspector({ restoreFocus: false });
-    openEntryModal('raw', { completePendingRawId: String(row.id) }, { forceSwitch: true });
+    openEntryModal('raw', { completePendingRawId: String(row.id) }, { forceSwitch: true, stmt16DeltaCtx: opts && opts.stmt16DeltaCtx });
   }
   function isPendingSalaryEmployment(e) {
     return Boolean(e && !e.voided && e.salary_pending);
@@ -6730,6 +6730,9 @@
               ref: refNo,
               co: rp.company || '',
               leg: 'material',
+              srcKey: 'raw_purchases',
+              srcId: String(rp.id || ''),
+              srcLeg: 'material',
               type: sgn < 0 ? 'Material Return' : 'Raw Material',
               desc: `${matName} (${fmtQ(qtyVal)} ${rp.uom || 't'})`,
               cr: matCr,
@@ -6756,6 +6759,9 @@
               ref: refNo,
               co: rp.company || '',
               leg: 'transport',
+              srcKey: 'raw_purchases',
+              srcId: String(rp.id || ''),
+              srcLeg: 'transport',
               type: sgn < 0 ? 'Supplier Trans Return' : 'Supplier Transport',
               desc: `Inbound Transport - ${matName}${rp.truck ? ' (' + rp.truck + ')' : ''}`,
               cr: trCr,
@@ -6793,6 +6799,9 @@
             ref: String(st.ticket_no || st.name || st.id || 'ST'),
             co: st.company || '',
             leg: 'transport',
+            srcKey: 'sales_tickets',
+            srcId: String(st.id || ''),
+            srcLeg: 'transport',
             type: sgnSt < 0 ? 'Customer Trans Return' : 'Customer Transport',
             desc: `Customer Haulage - ${st.customer || 'Delivery'}${st.site ? ' - ' + st.site : ''}`,
             cr: custCr,
@@ -6857,6 +6866,9 @@
           ref: String((x.invoice && x.invoice !== '-' ? x.invoice : '') || x.name || x.id || 'EXP'),
           co: x.company || '',
           leg: 'expenses',
+          srcKey: 'expenses',
+          srcId: String(x.id || ''),
+          srcLeg: 'expenses',
           type: mth === 'CR Return' || mth === 'Credit Return' ? 'Expense Return' : (x.category || 'Credit Expense'),
           desc: String(`${x.subcategory || x.category || 'Vendor Invoice'}${x.equipment ? ' · ' + x.equipment : ''}`).trim(),
           cr: expCr,
@@ -6907,6 +6919,9 @@
             ref: String(rx.name || rx.id || 'REC'),
             co: rx.company || '',
             leg: 'expenses',
+            srcKey: 'recurring_expenses',
+            srcId: String(rx.id || ''),
+            srcLeg: 'expenses',
             type: rx.category || 'Recurring Expense',
             desc: String(`${rx.subcategory || rx.category || 'Recurring Charge'} (${dIso.slice(0, 7)})`).trim(),
             cr: recCr,
@@ -6956,6 +6971,9 @@
         ref: String(sp.name || sp.id || 'SETL'),
         co: sp.company || '',
         leg: vLeg,
+        srcKey: 'settlements',
+        srcId: String(sp.id || ''),
+        srcLeg: vLeg,
         type: 'Settlement',
         pay_method: mth,
         desc: String(sp.notes || `Supplier Settlement (${mth} · ${legLbl})`).trim(),
@@ -7780,6 +7798,313 @@
 
     return false;
   }
+
+  function clearStmt16DeltaContextBanner() {
+    if (typeof document === 'undefined') return;
+    document.querySelectorAll('#stmt16DeltaContextBanner').forEach(el => el.remove());
+  }
+
+  function applyStmt16DeltaVendorDraft(applySpec) {
+    if (!applySpec || !(Number(applySpec.vendorAmt || 0) > 0.005)) return false;
+    const vAmt = round2(Number(applySpec.vendorAmt));
+    if (applySpec.mode === 'entry') {
+      if (!canModifyRecord() || canModifyTextOnly()) return false;
+      if (applySpec.srcKey === 'expenses') {
+        if (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 1) return false;
+        if ($('f_gross_amount')) $('f_gross_amount').value = vAmt.toFixed(2);
+        if ($('f_amount')) $('f_amount').value = vAmt.toFixed(2);
+        FORM_UI.lastExpAmtSource = 'amount';
+        if (FORM_UI.autoUnlockedForEdit) FORM_UI.autoUnlockedForEdit.delete('f_amount');
+        FORM_UI.userInteracted = true;
+        recalcForm();
+        return true;
+      }
+      if (applySpec.srcKey === 'settlements') {
+        if (!$('f_amount')) return false;
+        $('f_amount').value = vAmt.toFixed(2);
+        FORM_UI.settleAmtTouched = true;
+        FORM_UI.userInteracted = true;
+        recalcForm();
+        return true;
+      }
+      if (applySpec.srcKey === 'raw_purchases' && applySpec.fieldId) {
+        const el = $(applySpec.fieldId);
+        if (!el || el.readOnly || el.dataset.policyLockedNow === '1') return false;
+        const qVal = num('f_qty');
+        if (!(qVal > 0)) return false;
+        const unitAmt = round2(vAmt / qVal);
+        if (Math.abs(round2(unitAmt * qVal) - vAmt) > 0.01) return false;
+        el.value = unitAmt.toFixed(2);
+        if (applySpec.fieldId === 'f_transunitprice') FORM_UI.transManual = true;
+        else FORM_UI.priceManual = true;
+        if (FORM_UI.autoUnlockedForEdit) FORM_UI.autoUnlockedForEdit.delete(applySpec.fieldId);
+        FORM_UI.userInteracted = true;
+        recalcForm();
+        return true;
+      }
+      return false;
+    }
+    if (applySpec.mode === 'domain' && applySpec.fieldId) {
+      if (!canModifyRecord() || canModifyTextOnly()) return false;
+      const el = $(applySpec.fieldId);
+      const domM = $('indDomainEntryModal');
+      if (!el || el.readOnly || el.disabled) return false;
+      el.value = vAmt.toFixed(2);
+      if (applySpec.fieldId === 'ide_landed_add') el.dataset.userEdited = '1';
+      if (domM && !domM._domHydrating) domM._domDirty = true;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }
+
+  function mountStmt16DeltaContextBanner(containerEl, deltaCtx) {
+    clearStmt16DeltaContextBanner();
+    if (!containerEl || !deltaCtx || typeof document === 'undefined') return null;
+    const banner = document.createElement('div');
+    banner.id = 'stmt16DeltaContextBanner';
+    banner.className = 'stmt16-delta-ctx-banner no-print';
+    banner.setAttribute('role', 'region');
+    banner.setAttribute('aria-label', 'Statement 16 Amount Delta');
+    const dSign = deltaCtx.deltaUsd >= 0 ? '+' : '-';
+    const ruleBtnHtml = deltaCtx.matchedRuleId
+      ? `<button type="button" class="btn btn-sm btn-outline-bar" data-open-site-rule="${esc(deltaCtx.matchedRuleId)}">${ic('file_text')} <span>Open Price Agreement</span></button>`
+      : '';
+    const applyBtnHtml = deltaCtx.applySpec
+      ? `<button type="button" class="btn btn-sm btn-primary" id="stmt16DeltaApplyVendorBtn">${ic('check_circle')} <span>Apply Vendor Amount</span> <b class="mono" data-no-i18n="1">(${esc(fmtUSD(deltaCtx.vendorAmt, 2))})</b></button>`
+      : '';
+    banner.innerHTML = `
+      <div class="stmt16-delta-ctx-main">
+        <div class="stmt16-delta-ctx-head">
+          <span class="stmt16-delta-ctx-eyebrow"><span>Statement 16 Amount Delta</span></span>
+          <strong data-no-i18n="1">${esc(deltaCtx.supName || '')}</strong>
+          ${deltaCtx.date ? `<span class="mono" data-no-i18n="1">${esc(deltaCtx.date)}</span>` : ''}
+          ${deltaCtx.isabiRef && deltaCtx.isabiRef !== '-' ? `<span class="mono" data-no-i18n="1">${esc(deltaCtx.isabiRef)}</span>` : ''}
+        </div>
+        <div class="stmt16-delta-ctx-metrics">
+          <span><span>Vendor SOA</span>: <b class="mono" data-no-i18n="1">${esc(fmtUSD(deltaCtx.vendorAmt, 2))}</b></span>
+          <span><span>ISABI Booked</span>: <b class="mono" data-no-i18n="1">${esc(fmtUSD(deltaCtx.isabiAmt, 2))}</b></span>
+          <span><span>Delta</span>: <b class="mono is-delta" data-no-i18n="1">${esc(dSign + fmtUSD(Math.abs(deltaCtx.deltaUsd), 2))}</b></span>
+        </div>
+      </div>
+      ${(ruleBtnHtml || applyBtnHtml) ? `<div class="stmt16-delta-ctx-actions">${ruleBtnHtml}${applyBtnHtml}</div>` : ''}
+    `;
+    containerEl.insertBefore(banner, containerEl.firstChild || null);
+    const applyBtn = banner.querySelector('#stmt16DeltaApplyVendorBtn');
+    if (applyBtn && deltaCtx.applySpec) {
+      applyBtn.addEventListener('click', () => applyStmt16DeltaVendorDraft(deltaCtx.applySpec));
+    }
+    if (typeof stripNativeTitles === 'function') stripNativeTitles(banner);
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(banner);
+    }
+    return banner;
+  }
+
+  function resolveStmt16DeltaTarget(spec = {}, u) {
+    u = u || activeUser();
+    if (!u || STATE.kioskLocked || isLockedKioskOrCompanionSurface() || !canAccessRdlReport('16', u)) return null;
+    const r = (spec && spec.row) || null;
+    if (!r || r.status !== 'amount_delta') return null;
+    const lens = seatLens(u);
+    if (r.kind === 'payment' && !lens.books) return null;
+    const ind = String(spec.ind || getActiveIndustry(STATE.company) || 'Manufacturing').trim();
+    const allowedCos = allowedCompanyNames(u);
+    const rowCo = String(r.co || (spec.co && spec.co !== 'ALL' ? spec.co : '') || '').trim();
+    const canCo = coVal => !coVal || isOwner(u) || allowedCos.some(c => canonCompany(c) === canonCompany(coVal));
+    if (rowCo && !canCo(rowCo)) return null;
+
+    const srcKey = String(r.srcKey || '').trim();
+    const srcId = String(r.srcId || '').trim();
+    const srcLeg = String(r.srcLeg || spec.leg || '').trim().toLowerCase();
+    if (srcKey && srcId) {
+      const targetRow = resolveInspectorRecord(srcKey, srcId);
+      if (!targetRow || targetRow.voided) return null;
+      const recCo = String(targetRow.company || rowCo || '').trim();
+      if (recCo && !canCo(recCo)) return null;
+      let permitted = false;
+      if (srcKey === 'settlements') permitted = Boolean(lens.books && canEnterForm('settlement', u));
+      else if (srcKey === 'expenses') permitted = Boolean(lens.expenses && canEnterForm('expense', u));
+      else if (srcKey === 'recurring_expenses') permitted = Boolean(lens.expenses && canEnterForm('recurringexpense', u));
+      else if (srcKey === 'raw_purchases') permitted = Boolean((lens.expenses || lens.books) && canEnterForm('raw', u));
+      else if (srcKey === 'sales_tickets') permitted = Boolean((lens.expenses || lens.books) && (canEnterForm('raw', u) || canEnterForm('sales', u)));
+      if (!permitted) return null;
+      return {
+        mode: 'record',
+        ind,
+        srcKey,
+        srcId: String(targetRow.id || srcId),
+        srcLeg,
+        targetRow,
+        targetCo: recCo
+      };
+    }
+
+    const srcDomainTbl = String(r.srcDomainTbl || '').trim();
+    const srcDomainId = String(r.srcDomainId || '').trim();
+    if (srcDomainTbl && srcDomainId) {
+      if (!canEnterDomainForm(srcDomainTbl, u)) return null;
+      if (srcDomainTbl === 'ins_remittances') {
+        if (!lens.books || !canEnterForm('settlement', u)) return null;
+      } else if (srcDomainTbl === 'trd_purchases' || srcDomainTbl === 'hsp_stock' || srcDomainTbl === 're_workorders') {
+        if (!lens.expenses || !canEnterForm('expense', u)) return null;
+        if (r.kind === 'payment' && !lens.books) return null;
+      } else {
+        return null;
+      }
+      const resolvedModal = findDomainRecordPrefillForModal(ind, srcDomainTbl, srcDomainId, [], [srcDomainId], rowCo, '');
+      const domHit = (!resolvedModal) ? lookupIndustryDomainRecord(srcDomainId) : null;
+      if (!resolvedModal && !domHit) return null;
+      const domCo = String((resolvedModal && resolvedModal.prefill && resolvedModal.prefill.company) || (domHit && domHit.company) || rowCo || '').trim();
+      if (domCo && !canCo(domCo)) return null;
+      if (resolvedModal && resolvedModal.prefill && (resolvedModal.prefill.voided || resolvedModal.prefill._scheduleVoided)) return null;
+      return {
+        mode: 'domain',
+        ind,
+        srcDomainTbl,
+        srcDomainId,
+        srcLeg,
+        srcMultiUplift: Boolean(r.srcMultiUplift),
+        srcFromLanded: Boolean(r.srcFromLanded),
+        targetCo: domCo,
+        resolvedModal
+      };
+    }
+    return null;
+  }
+
+  function canInspectAdjustStmt16DeltaRow(spec = {}, u) {
+    return Boolean(resolveStmt16DeltaTarget(spec, u));
+  }
+
+  function buildStmt16DeltaBannerCtx(spec, tgt, u) {
+    const r = (spec && spec.row) || {};
+    const supName = String(spec.supName || '').trim();
+    const vendorAmt = round2(Number(r.vendorAmt || 0));
+    const isabiAmt = round2(Number(r.isabiAmt || 0));
+    const deltaUsd = round2(Number(r.deltaUsd != null ? r.deltaUsd : (vendorAmt - isabiAmt)));
+    const recDate = String(r.date || (tgt.targetRow && (tgt.targetRow.rep_date || tgt.targetRow.date)) || '').slice(0, 10);
+    const deltaCtx = {
+      supName,
+      leg: tgt.srcLeg || '',
+      kind: r.kind || 'invoice',
+      date: recDate,
+      vendorRef: String(r.vendorRef || '-'),
+      isabiRef: String(r.isabiRef || '-'),
+      vendorAmt,
+      isabiAmt,
+      deltaUsd,
+      matchedRuleId: '',
+      matchedRuleLabel: '',
+      applySpec: null
+    };
+
+    const rec = tgt.targetRow || null;
+    if (tgt.mode === 'record' && tgt.srcKey === 'raw_purchases' && rec) {
+      const ruleDate = String(rec.rep_date || rec.date || recDate || '').slice(0, 10);
+      const is3PTr = tgt.srcLeg === 'transport' && String(rec.transport_by || '') === 'Third-party truck';
+      const rule = is3PTr
+        ? findRule({ company: rec.company, supplier: rec.truck_owner, site: rec.site, product: rec.product || rec.material, date: ruleDate, types: ['Transport Price (Site)'] })
+        : (tgt.srcLeg !== 'transport'
+            ? findRule({ company: rec.company, supplier: rec.site_owner, site: rec.site, product: rec.product || rec.material, date: ruleDate, types: ['Purchase Price (Site)'] })
+            : null);
+      if (rule && rule.id && canEnterForm('pricerule', u) && canModifyRecord(u) && !canModifyTextOnly(u)) {
+        deltaCtx.matchedRuleId = String(rule.id);
+        deltaCtx.matchedRuleLabel = String(rule.name || rule.site || 'Price Agreement');
+      }
+    }
+
+    const canEditMoney = canModifyRecord(u) && !canModifyTextOnly(u) && vendorAmt > 0.005;
+    const recRepDate = String((rec && (rec.rep_date || rec.set_date)) || recDate || '').slice(0, 10);
+    const pcg = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function' && (tgt.targetCo || tgt.ind) && recDate)
+      ? window.MFG_AI_EDGE.checkPeriodCloseGuard(tgt.targetCo || tgt.ind, recDate, recRepDate, { industry: tgt.ind })
+      : null;
+    const wmTbl = (tgt.mode === 'domain' && tgt.srcDomainTbl && STMT_LOCK_TABLE_IND[tgt.srcDomainTbl])
+      ? tgt.srcDomainTbl
+      : (tgt.srcKey && STMT_LOCK_TABLE_IND[tgt.srcKey])
+        ? tgt.srcKey
+        : ({ Manufacturing: 'raw_purchases', 'Automotive & Heavy Trading': 'trd_purchases', Hospitality: 'hsp_revenue', 'Hospitality & Resorts': 'hsp_revenue', 'Real Estate': 're_invoicing', 'Real Estate & Property': 're_invoicing', Insurance: 'ins_policies', 'Insurance & Brokerage': 'ins_policies', Holding: 'hld_distributions', 'Holding & Treasury': 'hld_distributions' }[tgt.ind] || '');
+    const wmParties = [supName, rec && rec.site_owner, rec && rec.truck_owner, rec && rec.supplier].filter(Boolean);
+    const wmDates = [recDate, rec && rec.rep_date, rec && rec.date].filter(Boolean);
+    const wmLock = (wmTbl && wmParties.length && wmDates.length)
+      ? statementLockFor(wmTbl, tgt.targetCo, wmParties, wmDates, 'cost')
+      : null;
+
+    if (canEditMoney && !(pcg && (pcg.blocked || pcg.locked)) && !wmLock) {
+      if (tgt.mode === 'record' && rec) {
+        if (tgt.srcKey === 'expenses' && deltaCtx.kind === 'invoice' && !rec.has_vat_leg && String(rec.method || '') === 'Credit' && Math.abs(Number(rec.discount || 0)) < 0.005) {
+          const allExpItems = [].concat((SEED.records && SEED.records.expense_items) || [], (STATE.customRecords && STATE.customRecords.expense_items) || []);
+          const linkedItems = allExpItems.filter(it => it && !it.voided && String(it.expense_id || '') === String(rec.id || ''));
+          if (linkedItems.length <= 1) {
+            deltaCtx.applySpec = { mode: 'entry', srcKey: 'expenses', vendorAmt };
+          }
+        } else if (tgt.srcKey === 'settlements' && deltaCtx.kind === 'payment' && Math.abs(Number(rec.discount || rec.diff || 0)) < 0.005) {
+          deltaCtx.applySpec = { mode: 'entry', srcKey: 'settlements', vendorAmt };
+        } else if (tgt.srcKey === 'raw_purchases' && deltaCtx.kind === 'invoice' && !deltaCtx.matchedRuleId && Math.abs(Number(rec.discount || 0)) < 0.005) {
+          const recQty = Number(rec.qty || 0);
+          const isFlat = tgt.srcLeg === 'transport'
+            ? Boolean(rec.trans_indiff || rec.trans_flat || /^truck$/i.test(String(rec.uom || '')))
+            : Boolean(rec.mat_indiff || rec.mat_flat || /^truck$/i.test(String(rec.uom || '')));
+          const hasTierAdj = tgt.srcLeg === 'transport'
+            ? Math.abs(Number(rec.trans_tier_adj || 0)) >= 0.005
+            : Math.abs(Number(rec.tier_adj || 0)) >= 0.005;
+          if (!isFlat && !hasTierAdj && recQty > 0) {
+            const unitAmt = round2(vendorAmt / recQty);
+            if (Math.abs(round2(unitAmt * recQty) - vendorAmt) <= 0.01) {
+              deltaCtx.applySpec = {
+                mode: 'entry',
+                srcKey: 'raw_purchases',
+                fieldId: tgt.srcLeg === 'transport' ? 'f_transunitprice' : 'f_unitprice',
+                vendorAmt
+              };
+            }
+          }
+        }
+      } else if (tgt.mode === 'domain' && deltaCtx.kind === 'invoice') {
+        if (tgt.srcDomainTbl === 'trd_purchases' && !tgt.srcMultiUplift && !(tgt.srcLeg === 'transport' && tgt.srcFromLanded)) {
+          deltaCtx.applySpec = {
+            mode: 'domain',
+            fieldId: tgt.srcLeg === 'transport' ? 'ide_landed_add' : 'ide_fob',
+            vendorAmt
+          };
+        } else if (tgt.srcDomainTbl === 'hsp_stock') {
+          deltaCtx.applySpec = { mode: 'domain', fieldId: 'ide_purch', vendorAmt };
+        } else if (tgt.srcDomainTbl === 're_workorders') {
+          deltaCtx.applySpec = { mode: 'domain', fieldId: 'ide_actual', vendorAmt };
+        }
+      }
+    }
+    return deltaCtx;
+  }
+
+  function openStmt16DeltaRecord(spec = {}) {
+    const u = activeUser();
+    const tgt = resolveStmt16DeltaTarget(spec, u);
+    if (!tgt) {
+      toast('Your seat cannot inspect or adjust this Statement 16 voucher', 'err');
+      return false;
+    }
+    const deltaCtx = buildStmt16DeltaBannerCtx(spec, tgt, u);
+    if (tgt.mode === 'record') {
+      if (canModifyRecord(u)) {
+        openEntryModalForRecord(tgt.srcKey, tgt.srcId, { stmt16DeltaCtx: deltaCtx });
+      } else {
+        showRecordInspector(tgt.srcKey, tgt.srcId, { stmt16DeltaCtx: deltaCtx });
+      }
+      return true;
+    }
+    if (canModifyRecord(u) && !canModifyTextOnly(u) && tgt.resolvedModal && tgt.resolvedModal.formKey) {
+      openIndustryDomainEntryModal(tgt.resolvedModal.formKey, Object.assign({}, tgt.resolvedModal.prefill, { _stmt16DeltaCtx: deltaCtx }));
+      return true;
+    }
+    openIndustryDomainInspectorById(tgt.srcDomainTbl, tgt.srcDomainId, {
+      ind: tgt.ind,
+      rowCompany: tgt.targetCo,
+      stmt16DeltaCtx: deltaCtx
+    });
+    return true;
+  }
+
 
   function getScopedModelSuppliers(mOverride, opts = {}) {
     const m = mOverride || getModel();
@@ -72057,7 +72382,8 @@
         customs_usd: cu,
         clearance_usd: cl,
         insurance_usd: ins,
-        total_uplift_usd: totU
+        total_uplift_usd: totU,
+        from_landed_table: true
       });
     });
     scopedAllImports.forEach(r => {
@@ -88167,6 +88493,7 @@
       ev = force;
       force = false;
     }
+    clearStmt16DeltaContextBanner();
     closeAllModalModulePopovers();
     const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
     if (force !== true && isInteractiveClose && isIndDomainModalDirty()) {
@@ -89199,6 +89526,7 @@
     modal._domHydrating = true;
     modal._domDirty = false;
     hideIndUnsavedPrompt();
+    clearStmt16DeltaContextBanner();
     bodyEl.innerHTML = `
       ${datalistsHtml}
       ${indScanBarHtml}
@@ -89236,6 +89564,9 @@
       </form>
     `;
 
+    if (prefill && prefill._stmt16DeltaCtx && bodyEl) {
+      mountStmt16DeltaContextBanner(bodyEl, prefill._stmt16DeltaCtx);
+    }
     const cancelBtn = $('ideCancelBtn');
     if (cancelBtn) cancelBtn.onclick = ev => closeIndustryDomainEntryModal(false, ev);
 
@@ -90731,7 +91062,7 @@
           budget_usd: numVal('ide_budget'),
           actual_usd: actual,
           rechargeable: rech,
-          status: 'In Progress',
+          status: (isEditMode && prefill && prefill.status) ? prefill.status : 'In Progress',
           ...domNearCopyLink
         });
       } else if (spec.key === 'trd_targets') {
@@ -91093,7 +91424,8 @@
         const opn = numVal('ide_open');
         const pur = numVal('ide_purch');
         const use = Math.max(1, numVal('ide_usage'));
-        const cls = round2(opn + pur - use);
+        const trf = (isEditMode && prefill && prefill.transfers_net_usd != null) ? Number(prefill.transfers_net_usd || 0) : 0;
+        const cls = round2(opn + pur + trf - use);
         const ratio = round2(pur / use);
         addIndustryCustomRow('hsp_stock', {
           id: recId,
@@ -91103,12 +91435,12 @@
           item_group: strVal('ide_group') || 'F&B Stock',
           opening_usd: opn,
           purchases_in_usd: pur,
-          transfers_net_usd: 0,
+          transfers_net_usd: trf,
           recipe_usage_usd: use,
           closing_usd: cls,
           r3_ratio: ratio,
           status: ratio > 1.25 ? 'Ratio Watch' : 'Optimal',
-          notes: 'Commissary stock intake & recipe depletion'
+          notes: (isEditMode && prefill && prefill.notes) ? prefill.notes : 'Commissary stock intake & recipe depletion'
         });
       } else if (spec.key === 'hsp_energy') {
         const hrs = Math.max(0.5, numVal('ide_hours'));
@@ -91959,7 +92291,8 @@
         cells: hit.cells,
         tableTitle: hit.label || VIEW_TITLES[hit.view] || 'Domain Register',
         domainTblKey: hit.bucket || cleanKey || 'ind_domain',
-        rowCompany: extraOpts.rowCompany || hit.company || ''
+        rowCompany: extraOpts.rowCompany || hit.company || '',
+        stmt16DeltaCtx: extraOpts && extraOpts.stmt16DeltaCtx
       });
       return true;
     }
@@ -91970,7 +92303,8 @@
       cells: [String(primaryId || '').trim(), extraOpts.rowCompany || (domHit && domHit.label) || cleanKey, 'Verified'],
       tableTitle: (domHit && domHit.label) || 'Domain Register',
       domainTblKey: cleanKey || 'ind_domain',
-      rowCompany: extraOpts.rowCompany || ''
+      rowCompany: extraOpts.rowCompany || '',
+      stmt16DeltaCtx: extraOpts && extraOpts.stmt16DeltaCtx
     });
     return true;
   }
@@ -104242,6 +104576,7 @@
     };
 
     if (bodyEl) {
+      clearStmt16DeltaContextBanner();
       bodyEl._activeTableContext = null;
       bodyEl.innerHTML = `
         <div id="industryDomainInspectorView" style="display:flex;flex-direction:column;gap:14px">
@@ -105649,6 +105984,7 @@
         closeRecordInspector({ restoreFocus: false });
         openIndustryDomainEntryModal(STATE.view);
       };
+      if (opts && opts.stmt16DeltaCtx) mountStmt16DeltaContextBanner(bodyEl, opts.stmt16DeltaCtx);
       const editModalBtn = $('indInspEditInModalBtn');
       if (editModalBtn) editModalBtn.onclick = () => {
         const resolved = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, rowCompany, editKey);
@@ -133809,6 +134145,15 @@
           gross_amount: effGrossSave,
           discount: effExpDisc,
           amount: c.pricePending ? 0 : round2(c.amount),
+          ...(editCtx && editCtx.crKey === 'expenses' && editCtx.orig && editCtx.orig.pre_vat_amount != null
+            ? { pre_vat_amount: c.pricePending ? 0 : round2(isSupIva ? (c.amount / vatMult) : c.amount) }
+            : {}),
+          ...(editCtx && editCtx.crKey === 'expenses' && editCtx.orig && editCtx.orig.vat_amount != null
+            ? { vat_amount: c.pricePending ? 0 : round2(isSupIva ? (c.amount - (c.amount / vatMult)) : 0) }
+            : {}),
+          ...(editCtx && editCtx.crKey === 'expenses' && editCtx.orig && editCtx.orig.wb_total_ttc != null
+            ? { wb_total_ttc: c.pricePending ? 0 : round2(c.amount) }
+            : {}),
           price_pending: Boolean(c.pricePending),
           reference: val('f_reference'),
           _staged_expense_items: stagedItems
@@ -143310,6 +143655,7 @@
       if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
         window.MFG_GEO.cleanupTicketOriginMiniMap();
       }
+      clearStmt16DeltaContextBanner();
       body.innerHTML = renderEntryModalBody() + renderEntryAttachmentsBarHtml(form, seatCanSaveEdit) + `
         <div class="modal-foot">
           <span class="form-note">${footNoteHtml}</span>
@@ -144276,6 +144622,9 @@
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
     }
+    if (opts && opts.stmt16DeltaCtx && body) {
+      mountStmt16DeltaContextBanner(body, opts.stmt16DeltaCtx);
+    }
     if (modal && typeof stripNativeTitles === 'function') stripNativeTitles(modal);
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(modal || document.body);
@@ -144297,6 +144646,7 @@
 
   function closeEntryModal(force, ev) {
     if (STATE.saving && !force) return;
+    clearStmt16DeltaContextBanner();
     closeAllModalModulePopovers();
     cancelNearCopyLiveCheck();
     if (typeof closeNearCopyPeekPopover === 'function') closeNearCopyPeekPopover(false, 'mfg');
@@ -145481,11 +145831,11 @@
       return;
     }
     if (targetKey === 'expenses' && isPendingPriceExpense(targetRow)) {
-      openPendingExpensePriceModal(targetRow.id);
+      openPendingExpensePriceModal(targetRow.id, opts);
       return;
     }
     if (targetKey === 'raw_purchases' && isPendingPriceRaw(targetRow)) {
-      openPendingRawPriceModal(targetRow.id);
+      openPendingRawPriceModal(targetRow.id, opts);
       return;
     }
     if (targetKey === 'employments' && isPendingSalaryEmployment(targetRow)) {
@@ -145498,7 +145848,7 @@
       return;
     }
     closeRecordInspector({ restoreFocus: false });
-    openEntryModal(formType, Object.assign({ editRecord: { crKey: targetKey, row: targetRow } }, (opts && opts._rateDiffCtx) ? { _rateDiffCtx: opts._rateDiffCtx } : {}), { forceSwitch: true });
+    openEntryModal(formType, Object.assign({ editRecord: { crKey: targetKey, row: targetRow } }, (opts && opts._rateDiffCtx) ? { _rateDiffCtx: opts._rateDiffCtx } : {}), { forceSwitch: true, stmt16DeltaCtx: opts && opts.stmt16DeltaCtx });
   }
 
   function openRecordFromTableRow(crKey, id, trEl) {
@@ -154036,6 +154386,7 @@
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupInspectorGeoMap === 'function') {
       window.MFG_GEO.cleanupInspectorGeoMap();
     }
+    clearStmt16DeltaContextBanner();
     bodyEl._activeTableContext = tc;
     bodyEl._preModifySnap = null;
     const inspTicketGatePin = (() => {
@@ -154092,6 +154443,7 @@
         <datalist id="dl_insp_malf_items">${malfunctionItemMeta(row.company || '', 'all').map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>
       </div>
 
+      ${opts && opts.stmt16DeltaCtx ? '<div id="inspStmt16DeltaAnchor"></div>' : ''}
       <!-- Top Command Bar & Relational Breadcrumb Trail -->
       <div class="pa-cmd-bar">
         <div class="pa-breadcrumbs">
@@ -154520,6 +154872,15 @@
       </div>
     `;
 
+    if (opts && opts.stmt16DeltaCtx) {
+      const dAnch = bodyEl.querySelector('#inspStmt16DeltaAnchor');
+      if (dAnch && dAnch.parentNode) {
+        const bEl = mountStmt16DeltaContextBanner(bodyEl, opts.stmt16DeltaCtx);
+        if (bEl) dAnch.replaceWith(bEl);
+      } else {
+        mountStmt16DeltaContextBanner(bodyEl, opts.stmt16DeltaCtx);
+      }
+    }
     $('inspectorDoneBtn').addEventListener('click', closeRecordInspector);
     const mfgExpBtn = $('inspExplainBriefBtn');
     const mfgLsnBtn = $('inspListenReviewBtn');
@@ -157661,6 +158022,7 @@
     const panel = $('recordInspector');
     if (panel) panel.hidden = true;
     _auxModalDirty = false;
+    clearStmt16DeltaContextBanner();
     const ib = $('inspectorBody');
     if (ib) {
       ib._activeTableContext = null;
@@ -170211,7 +170573,13 @@
     STATE.company = DEMO_COMPANY_KEY;
     STATE.demoCompanyIndustry = indId;
     STATE.ovkMoversReturn = null;
-    if (!prevDemo) syncDemoScopeDataState();
+    if (!prevDemo) {
+      syncDemoScopeDataState();
+      clearStmt16DeltaContextBanner();
+      if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
+        try { window.MFG_RDL.resetStmt16CompareState({ preserveStorage: true }); } catch (_) {}
+      }
+    }
     STATE.cfTillScrubDate = '';
     STATE.cfTillScrubKey = '';
     STATE.cfFocusDate = '';
@@ -170285,6 +170653,10 @@
     const nextDemo = isDemoScopeActive();
     if (prevDemo !== nextDemo) {
       syncDemoScopeDataState();
+      clearStmt16DeltaContextBanner();
+      if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
+        try { window.MFG_RDL.resetStmt16CompareState({ preserveStorage: true }); } catch (_) {}
+      }
     }
     if (prevCompany !== coKey) {
       if (typeof closeBatchSignOffModal === 'function') closeBatchSignOffModal();
@@ -171934,6 +172306,9 @@
     if (window.MFG_APPROVALS && typeof window.MFG_APPROVALS.reset === 'function') window.MFG_APPROVALS.reset();
     if (window.MFG_SAVED_VIEWS && typeof window.MFG_SAVED_VIEWS.reset === 'function') window.MFG_SAVED_VIEWS.reset();
     if (window.MFG_VOID_LOG && typeof window.MFG_VOID_LOG.reset === 'function') window.MFG_VOID_LOG.reset();
+    if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
+      try { window.MFG_RDL.resetStmt16CompareState({ preserveStorage: true }); } catch (_) {}
+    }
     clearCatchUpBatchRepDate();
     STATE.authed = false;
     _seatPreviewActive = false;
@@ -172227,8 +172602,10 @@
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
       try { window.MFG_AI_EDGE.resetTransientDemoInputs(); } catch (_) {}
     }
+    STATE.activeUserId = '';
+    STATE.seatPreviewActive = false;
     if (window.MFG_RDL && typeof window.MFG_RDL.resetStmt16CompareState === 'function') {
-      try { window.MFG_RDL.resetStmt16CompareState(); } catch (_) {}
+      try { window.MFG_RDL.resetStmt16CompareState(isIdleLock ? { preserveStorage: true } : undefined); } catch (_) {}
     }
     if (isDemoSandboxSession()) {
       if (window.MFG_GEO && typeof window.MFG_GEO.resetGeoStoreSession === 'function') {
@@ -172830,6 +173207,7 @@
     STATE.ovkMoversReturn = null;
     finalAuthedUser.last_login_at = nowStr.slice(0, 16);
     STATE.activeUserIdx = idx;
+    STATE.activeUserId = String((finalAuthedUser && (finalAuthedUser.id || finalAuthedUser.email)) || '');
     if (!isDemoSandboxSession()) {
       try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
     }
@@ -172837,6 +173215,7 @@
     // remembered as the device's seat, so the next sign-in screen still belongs to whoever really uses it.
     const isSeatPreviewLogin = authMethod === 'Owner Impersonation';
     _seatPreviewActive = isSeatPreviewLogin;
+    STATE.seatPreviewActive = isSeatPreviewLogin;
     if (serverVerifiedLogin && !isSeatPreviewLogin && !isDemoScopeActive() && finalAuthedUser && finalAuthedUser.email) {
       rememberVerifiedDeviceSeat(finalAuthedUser);
     }
@@ -215510,6 +215889,8 @@
           STATE.users.unshift(resumedSeat);
           STATE.activeUserIdx = 0;
         }
+        STATE.activeUserId = String((resumedSeat && (resumedSeat.id || resumedSeat.email)) || '');
+        STATE.seatPreviewActive = false;
         const allowedCo = getAllowedCompanyKeys(resumedSeat);
         if (swPayload && swPayload.company && swPayload.company !== DEMO_COMPANY_KEY && COMPANY_LABELS[swPayload.company] && !PARAMS.get('industry') && allowedCo.includes(swPayload.company)) {
           STATE.company = swPayload.company;
@@ -220287,6 +220668,11 @@
     openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
     canPostStmt16MissingRow: typeof canPostStmt16MissingRow === 'function' ? canPostStmt16MissingRow : null,
     openStmt16MissingSlip: typeof openStmt16MissingSlip === 'function' ? openStmt16MissingSlip : null,
+    activeUser: () => (typeof activeUser === 'function' ? activeUser() : null),
+    isSeatPreviewActive: () => Boolean(_seatPreviewActive),
+    isDemoScopeActive: () => Boolean(isDemoScopeActive()),
+    canInspectAdjustStmt16DeltaRow: typeof canInspectAdjustStmt16DeltaRow === 'function' ? canInspectAdjustStmt16DeltaRow : null,
+    openStmt16DeltaRecord: typeof openStmt16DeltaRecord === 'function' ? openStmt16DeltaRecord : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     openHoldingNetSettlementModal: typeof openHoldingNetSettlementModal === 'function' ? openHoldingNetSettlementModal : null,
@@ -220405,6 +220791,11 @@
     openStmt16LegSettlement: typeof openStmt16LegSettlement === 'function' ? openStmt16LegSettlement : null,
     canPostStmt16MissingRow: typeof canPostStmt16MissingRow === 'function' ? canPostStmt16MissingRow : null,
     openStmt16MissingSlip: typeof openStmt16MissingSlip === 'function' ? openStmt16MissingSlip : null,
+    activeUser: () => (typeof activeUser === 'function' ? activeUser() : null),
+    isSeatPreviewActive: () => Boolean(_seatPreviewActive),
+    isDemoScopeActive: () => Boolean(isDemoScopeActive()),
+    canInspectAdjustStmt16DeltaRow: typeof canInspectAdjustStmt16DeltaRow === 'function' ? canInspectAdjustStmt16DeltaRow : null,
+    openStmt16DeltaRecord: typeof openStmt16DeltaRecord === 'function' ? openStmt16DeltaRecord : null,
     todayISO: typeof todayISO === 'function' ? todayISO : null,
     retroactiveBackfillTradingTariff: typeof retroactiveBackfillTradingTariff === 'function' ? retroactiveBackfillTradingTariff : null,
     lookupActiveHoldingPartnerSplit: typeof lookupActiveHoldingPartnerSplit === 'function' ? lookupActiveHoldingPartnerSplit : null,

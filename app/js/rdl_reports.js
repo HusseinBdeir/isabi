@@ -1068,7 +1068,13 @@
         unit: rm.unit || 'lot',
         unit_price: r2(tot / Math.max(1, Number(rm.qty || 1))),
         total_usd: tot,
-        paid_usd: paid
+        paid_usd: paid,
+        srcDomainTbl: rm.srcDomainTbl || '',
+        srcDomainId: rm.srcDomainId != null ? String(rm.srcDomainId) : '',
+        srcMultiUplift: Boolean(rm.srcMultiUplift),
+        srcFromLanded: Boolean(rm.srcFromLanded),
+        srcKey: rm.srcKey || '',
+        srcId: rm.srcId != null ? String(rm.srcId) : ''
       };
       rmAll.push(row);
       apRmLegsAll.push(row);
@@ -1121,7 +1127,8 @@
           id: r.id, voucher: r.id, date: r.date, co: r.company,
           supplier: `${r.store || 'Commissary'} Suppliers (${r.company})`,
           material: r.item_group || 'F&B Stock', qty: 1, unit: 'lot',
-          total_usd: r.purchases_in_usd, paid_usd: r2(Number(r.purchases_in_usd || 0) * 0.82)
+          total_usd: r.purchases_in_usd, paid_usd: r2(Number(r.purchases_in_usd || 0) * 0.82),
+          srcDomainTbl: 'hsp_stock', srcDomainId: String(r.id || '')
         });
       });
       (hsp.energyRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
@@ -1174,7 +1181,8 @@
           id: r.id, voucher: r.id, date: r.date, co: r.company, leg: 'material',
           supplier: r.supplier, material: `OEM Contract FOB · ${r.origin || 'Import'} · ${r.container_bl || r.id}`,
           qty: Math.max(1, Number(r.ordered_qty || 1)), unit: 'units',
-          total_usd: fob, paid_usd: 0
+          total_usd: fob, paid_usd: 0,
+          srcDomainTbl: 'trd_purchases', srcDomainId: String(r.id || '')
         });
       };
       (trd.importRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(emitTrdImpFob);
@@ -1188,7 +1196,8 @@
               id: `${d.import_file || 'LC'}-h${dIdx}-${payee.slice(0, 6)}`, voucher: d.import_file || 'LC',
               date: d.date || '2026-10-15', co: d.company, leg: 'haulage',
               supplier: payee, material: `${lbl} · ${d.import_file || 'Import File'}`,
-              qty: 1, unit: 'file', total_usd: v, paid_usd: 0
+              qty: 1, unit: 'file', total_usd: v, paid_usd: 0,
+              srcDomainTbl: 'trd_purchases', srcDomainId: String(d.import_file || ''), srcMultiUplift: !d.freight_vendor, srcFromLanded: Boolean(d.from_landed_table)
             });
           };
           if (d.freight_vendor) {
@@ -1212,7 +1221,8 @@
         pushRm({
           id: `${r.id}-haul`, voucher: r.id, date: r.date, co: r.company, leg: 'haulage',
           supplier: r.freight_vendor || 'Customs & Freight Clearing', material: `Freight, Customs & Clearing · ${r.container_bl || r.id}`,
-          qty: 1, unit: 'file', total_usd: addUsd, paid_usd: 0
+          qty: 1, unit: 'file', total_usd: addUsd, paid_usd: 0,
+          srcDomainTbl: 'trd_purchases', srcDomainId: String(r.id || '')
         });
       });
     } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
@@ -1264,7 +1274,8 @@
           id: r.id, voucher: r.id, date: r.date, co: r.company,
           supplier: r.contractor, material: `${r.property} · ${r.unit} (${r.category})`,
           qty: 1, unit: 'job', total_usd: r.actual_usd,
-          paid_usd: r.status === 'Completed' ? r.actual_usd : r2(Number(r.actual_usd || 0) * 0.5)
+          paid_usd: r.status === 'Completed' ? r.actual_usd : r2(Number(r.actual_usd || 0) * 0.5),
+          srcDomainTbl: 're_workorders', srcDomainId: String(r.id || '')
         });
       });
     } else if (ind === 'Insurance & Brokerage' && typeof E.computeInsuranceOperations === 'function') {
@@ -1298,7 +1309,8 @@
           material: `Carrier Bordereau (${r.period || r.id})`,
           qty: Math.max(1, Number(r.policies_count || r.policies_settled || 1)), unit: 'pol',
           total_usd: r.net_payable_4017_usd || r.payable_usd || 0,
-          paid_usd: r.remitted_usd || r.paid_usd || 0
+          paid_usd: r.remitted_usd || r.paid_usd || 0,
+          srcDomainTbl: 'ins_remittances', srcDomainId: String(r.id || '')
         });
       });
     } else if (ind === 'Holding & Treasury' && typeof E.computeIntercompanyInteractions === 'function') {
@@ -1849,7 +1861,9 @@
             unit: r.uom || 'Ton',
             unit_price: Number(r.unit_cost || r.unit_price || 0),
             total_usd: matCost,
-            paid_usd: isCash ? matCost : 0
+            paid_usd: isCash ? matCost : 0,
+            srcKey: 'raw_purchases',
+            srcId: String(r.id || '')
           });
         }
         if (Math.abs(haulCost) >= 0.005) {
@@ -1870,7 +1884,9 @@
             unit: r.uom || 'Ton',
             unit_price: 0,
             total_usd: haulCost,
-            paid_usd: 0
+            paid_usd: 0,
+            srcKey: 'raw_purchases',
+            srcId: String(r.id || '')
           });
         }
       });
@@ -6155,9 +6171,17 @@
   const _STMT16_CLOSING_LINE_RE = /(?:closing\s+bal(?:ance)?|net\s+payable(?:\s+balance)?|solde\s+(?:final|net|à\s+payer)|الرصيد\s*(?:النهائي|المستحق))/i;
   const _STMT16_HEADER_LINE_RE = /^\s*(?:date|tx\s*date|voucher|ref|reference|description|amount|debit|credit|invoiced|paid)\b/i;
 
+  const _STMT16_CMP_STORAGE_KEY = 'isabi_stmt16_cmp_v1';
+  const _STMT16_CMP_MAX_ENTRIES = 12;
+  const _STMT16_CMP_TTL_MS = 14 * 86400 * 1000;
+  const _STMT16_CMP_MAX_TEXT = 65536;
+  let _stmt16CmpSaveTimer = null;
+  let _stmt16CompareBootHydrated = false;
+
   let _stmt16CompareState = {
     open: false,
     scopeSig: '',
+    persistKey: '',
     text: '',
     statusMsg: '',
     statusTone: '',
@@ -6168,11 +6192,196 @@
     scanGen: 0
   };
 
-  function resetStmt16CompareState() {
+  function _clearStmt16CmpSaveTimer() {
+    if (_stmt16CmpSaveTimer) {
+      clearTimeout(_stmt16CmpSaveTimer);
+      _stmt16CmpSaveTimer = null;
+    }
+  }
+
+  function _isStmt16CmpDemoKey(pKey) {
+    return String(pKey || '').startsWith('demo|');
+  }
+
+  function _stmt16CmpStorageMeta(isDemo) {
+    if (isDemo) {
+      return {
+        area: typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+        key: 'demo_sbx_' + _STMT16_CMP_STORAGE_KEY
+      };
+    }
+    return {
+      area: typeof localStorage !== 'undefined' ? localStorage : null,
+      key: _STMT16_CMP_STORAGE_KEY
+    };
+  }
+
+  function _readStmt16CmpStore(isDemo) {
+    const sm = _stmt16CmpStorageMeta(isDemo);
+    if (!sm.area) return { entries: {} };
+    try {
+      const raw = sm.area.getItem(sm.key);
+      if (!raw) return { entries: {} };
+      const parsed = JSON.parse(raw);
+      const srcEntries = (parsed && parsed.entries && typeof parsed.entries === 'object') ? parsed.entries : {};
+      const now = Date.now();
+      const entries = {};
+      Object.keys(srcEntries).forEach(k => {
+        const it = srcEntries[k];
+        if (!it || typeof it !== 'object') return;
+        const txt = String(it.text || '');
+        const upd = Number(it.updatedAt || 0);
+        if (!txt.trim() || !Number.isFinite(upd) || (now - upd) > _STMT16_CMP_TTL_MS) return;
+        entries[k] = {
+          text: txt.slice(0, _STMT16_CMP_MAX_TEXT),
+          scopeMode: (it.scopeMode === 'all' || it.scopeMode === 'invoices' || it.scopeMode === 'payments') ? it.scopeMode : 'auto',
+          filterChip: String(it.filterChip || 'exceptions'),
+          wasOpen: Boolean(it.wasOpen),
+          updatedAt: upd
+        };
+      });
+      return { entries };
+    } catch (_) {
+      return { entries: {} };
+    }
+  }
+
+  function _writeStmt16CmpStore(store, isDemo) {
+    const sm = _stmt16CmpStorageMeta(isDemo);
+    if (!sm.area) return;
+    try {
+      const entries = (store && store.entries) || {};
+      const kept = Object.entries(entries)
+        .filter(([, v]) => v && typeof v.text === 'string' && v.text.trim())
+        .sort((a, b) => Number((b[1] && b[1].updatedAt) || 0) - Number((a[1] && a[1].updatedAt) || 0))
+        .slice(0, _STMT16_CMP_MAX_ENTRIES);
+      if (!kept.length) {
+        sm.area.removeItem(sm.key);
+        return;
+      }
+      const nextEntries = {};
+      kept.forEach(([k, v]) => { nextEntries[k] = v; });
+      sm.area.setItem(sm.key, JSON.stringify({ v: 1, entries: nextEntries }));
+    } catch (_) {}
+  }
+
+  function _stmt16CmpUid(ctx) {
+    const st = (ctx && ctx.state) || {};
+    if (st.activeUserId != null && String(st.activeUserId).trim() !== '') {
+      return String(st.activeUserId).trim().toLowerCase();
+    }
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    const au = (ent && typeof ent.activeUser === 'function')
+      ? ent.activeUser()
+      : ((Array.isArray(st.users) && st.activeUserIdx != null) ? st.users[st.activeUserIdx] : null);
+    if (au && (au.id || au.email)) return String(au.id || au.email).trim().toLowerCase();
+    return '';
+  }
+
+  function _isStmt16CmpDemo(ctx) {
+    const st = (ctx && ctx.state) || {};
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    const hk = (typeof window !== 'undefined' && window.__mfgStmtHooks) ? window.__mfgStmtHooks : null;
+    return Boolean(
+      (ent && typeof ent.isDemoScopeActive === 'function' && ent.isDemoScopeActive())
+      || (hk && typeof hk.demoScope === 'function' && hk.demoScope())
+      || st.company === 'democompany'
+      || st.demoVisitor
+    );
+  }
+
+  function _stmt16CmpPersistKey(ctx, m) {
+    const st = (ctx && ctx.state) || {};
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    const inSeatPreview = Boolean(
+      st.seatPreviewActive
+      || (ent && typeof ent.isSeatPreviewActive === 'function' && ent.isSeatPreviewActive())
+    );
+    if (!st.authed || st.kioskLocked || inSeatPreview) return '';
+    const uid = _stmt16CmpUid(ctx);
+    const supNorm = String((m && m.supName) || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!uid || !supNorm) return '';
+    return `${_isStmt16CmpDemo(ctx) ? 'demo' : 'live'}|${uid}|${ctx.ind || 'Manufacturing'}|${ctx.co || 'ALL'}|${supNorm}`;
+  }
+
+  function _getStmt16CmpEntry(pKey) {
+    if (!pKey) return null;
+    const st = _readStmt16CmpStore(_isStmt16CmpDemoKey(pKey));
+    return st.entries[pKey] || null;
+  }
+
+  function _saveStmt16CmpForKey(pKey, overrides = null) {
+    _clearStmt16CmpSaveTimer();
+    if (!pKey) return;
+    const isDemo = _isStmt16CmpDemoKey(pKey);
+    const store = _readStmt16CmpStore(isDemo);
+    const txt = overrides && overrides.text !== undefined ? String(overrides.text || '') : String(_stmt16CompareState.text || '');
+    if (!txt.trim()) {
+      delete store.entries[pKey];
+      _writeStmt16CmpStore(store, isDemo);
+      return;
+    }
+    const rawMode = (overrides && overrides.scopeMode !== undefined) ? overrides.scopeMode : _stmt16CompareState.scopeMode;
+    const rawChip = (overrides && overrides.filterChip !== undefined) ? overrides.filterChip : _stmt16CompareState.filterChip;
+    const wasOpen = (overrides && overrides.wasOpen !== undefined) ? Boolean(overrides.wasOpen) : Boolean(_stmt16CompareState.open);
+    store.entries[pKey] = {
+      text: txt.slice(0, _STMT16_CMP_MAX_TEXT),
+      scopeMode: (rawMode === 'all' || rawMode === 'invoices' || rawMode === 'payments') ? rawMode : 'auto',
+      filterChip: String(rawChip || 'exceptions'),
+      wasOpen,
+      updatedAt: Date.now()
+    };
+    _writeStmt16CmpStore(store, isDemo);
+  }
+
+  function _deleteStmt16CmpForKey(pKey) {
+    _clearStmt16CmpSaveTimer();
+    if (!pKey) return;
+    const isDemo = _isStmt16CmpDemoKey(pKey);
+    const store = _readStmt16CmpStore(isDemo);
+    if (Object.prototype.hasOwnProperty.call(store.entries, pKey)) {
+      delete store.entries[pKey];
+      _writeStmt16CmpStore(store, isDemo);
+    }
+  }
+
+  function _scheduleStmt16CmpSave(pKey) {
+    _clearStmt16CmpSaveTimer();
+    if (!pKey) return;
+    _stmt16CmpSaveTimer = setTimeout(() => {
+      _stmt16CmpSaveTimer = null;
+      if (_stmt16CompareState.persistKey === pKey) {
+        _saveStmt16CmpForKey(pKey);
+      }
+    }, 220);
+  }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__stmt16CmpPageHideBound) {
+    window.__stmt16CmpPageHideBound = true;
+    window.addEventListener('pagehide', () => {
+      if (_stmt16CmpSaveTimer && _stmt16CompareState.persistKey) {
+        _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
+      }
+    });
+  }
+
+  function _hydrateStmt16CmpFromSaved(saved, canBooks) {
+    if (!saved || !String(saved.text || '').trim()) return false;
+    _stmt16CompareState.text = String(saved.text || '');
+    const sMode = saved.scopeMode || 'auto';
+    _stmt16CompareState.scopeMode = (!canBooks && (sMode === 'all' || sMode === 'payments')) ? 'invoices' : sMode;
+    _stmt16CompareState.filterChip = saved.filterChip || 'exceptions';
+    _stmt16CompareState.statusMsg = 'Resumed saved comparison';
+    _stmt16CompareState.statusTone = 'is-good';
+    return true;
+  }
+
+  function _resetStmt16CompareInMemory() {
+    _clearStmt16CmpSaveTimer();
     closeStmt14ShareModal();
     closeStmt16ShareModal();
     _stmt16CompareState.open = false;
     _stmt16CompareState.scopeSig = '';
+    _stmt16CompareState.persistKey = '';
     _stmt16CompareState.text = '';
     _stmt16CompareState.statusMsg = '';
     _stmt16CompareState.statusTone = '';
@@ -6183,20 +6392,52 @@
     _stmt16CompareState.scanGen += 1;
   }
 
+  function resetStmt16CompareState(opts = {}) {
+    _resetStmt16CompareInMemory();
+    _stmt16CompareBootHydrated = false;
+    if (!(opts && opts.preserveStorage)) {
+      if (typeof localStorage !== 'undefined') {
+        try { localStorage.removeItem(_STMT16_CMP_STORAGE_KEY); } catch (_) {}
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        try { sessionStorage.removeItem('demo_sbx_' + _STMT16_CMP_STORAGE_KEY); } catch (_) {}
+      }
+    }
+  }
+
   function _stmt16CompareScopeSig(ctx, m) {
     const l = (m && m.lAp16) || _rdlSeatLens(ctx);
     const st = (ctx && ctx.state) || {};
-    const uid = st.activeUserId != null && st.activeUserId !== '' ? String(st.activeUserId) : (st.activeUserIdx != null ? String(st.activeUserIdx) : '');
+    const uid = _stmt16CmpUid(ctx);
     const aCos = Array.isArray(st.allowedCompanyNames) ? st.allowedCompanyNames.join(',') : '';
-    return `${ctx.ind || ''}|${ctx.co || ''}|${(m && m.supName) || ''}|${ctx.basis || 'tx'}|${l.books ? 1 : 0}|${st._officialScopeActive ? 1 : 0}|${uid}|${aCos}`;
+    const demoBit = _isStmt16CmpDemo(ctx) ? 1 : 0;
+    return `${demoBit}|${ctx.ind || ''}|${ctx.co || ''}|${(m && m.supName) || ''}|${l.books ? 1 : 0}|${uid}|${aCos}`;
   }
 
-  function _syncStmt16CompareScope(ctx, m) {
+  function _syncStmt16CompareScope(ctx, m, opts = {}) {
     const sig = _stmt16CompareScopeSig(ctx, m);
-    if (_stmt16CompareState.scopeSig && _stmt16CompareState.scopeSig !== sig) {
-      resetStmt16CompareState();
+    const nextPersistKey = _stmt16CmpPersistKey(ctx, m);
+    if (_stmt16CompareState.scopeSig && (_stmt16CompareState.scopeSig !== sig || (_stmt16CompareState.persistKey && _stmt16CompareState.persistKey !== nextPersistKey))) {
+      if (_stmt16CompareState.persistKey && (_stmt16CmpSaveTimer || String(_stmt16CompareState.text || '').trim())) {
+        _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
+      }
+      _resetStmt16CompareInMemory();
     }
     _stmt16CompareState.scopeSig = sig;
+    _stmt16CompareState.persistKey = nextPersistKey;
+    const canBooks = Boolean(m && m.lAp16 && m.lAp16.books);
+    if (!canBooks && (_stmt16CompareState.scopeMode === 'all' || _stmt16CompareState.scopeMode === 'payments')) {
+      _stmt16CompareState.scopeMode = 'invoices';
+    }
+    if (opts && opts.allowBootResume && !_stmt16CompareBootHydrated && nextPersistKey) {
+      _stmt16CompareBootHydrated = true;
+      if (!_stmt16CompareState.open && !String(_stmt16CompareState.text || '').trim()) {
+        const saved = _getStmt16CmpEntry(nextPersistKey);
+        if (saved && saved.wasOpen && _hydrateStmt16CmpFromSaved(saved, canBooks)) {
+          _stmt16CompareState.open = true;
+        }
+      }
+    }
   }
 
   function _normStmt16CmpRef(raw) {
@@ -6413,9 +6654,17 @@
         date: String(t.date || '').slice(0, 10),
         ref: String(t.ref || '-').trim() || '-',
         refNorm: _normStmt16CmpRef(t.ref),
+        co: String(t.co || ''),
         leg: String(t.leg || 'material'),
         type: String(t.type || ''),
-        desc: String(t.desc || '')
+        desc: String(t.desc || ''),
+        srcKey: String(t.srcKey || ''),
+        srcId: t.srcId != null ? String(t.srcId) : '',
+        srcLeg: String(t.srcLeg || t.leg || ''),
+        srcDomainTbl: String(t.srcDomainTbl || ''),
+        srcDomainId: t.srcDomainId != null ? String(t.srcDomainId) : '',
+        srcMultiUplift: Boolean(t.srcMultiUplift),
+        srcFromLanded: Boolean(t.srcFromLanded)
       };
       const payExtra = { kind: 'payment', amount: drVal, cashUsd, discountUsd };
       if (Math.abs(crVal) > 0.005 && drVal > 0.005) {
@@ -6470,6 +6719,7 @@
         status,
         kind: vr.kind,
         date: vr.date || ir.date,
+        co: ir.co || '',
         vendorRef: vr.ref,
         isabiRef: ir.ref,
         vendorDesc: vr.desc,
@@ -6478,7 +6728,14 @@
         isabiAmt: ir.amount,
         deltaUsd,
         note,
-        stmtIdx: ir.stmtIdx
+        stmtIdx: ir.stmtIdx,
+        srcKey: ir.srcKey || '',
+        srcId: ir.srcId || '',
+        srcLeg: ir.srcLeg || ir.leg || '',
+        srcDomainTbl: ir.srcDomainTbl || '',
+        srcDomainId: ir.srcDomainId || '',
+        srcMultiUplift: Boolean(ir.srcMultiUplift),
+        srcFromLanded: Boolean(ir.srcFromLanded)
       });
       setIsabiRowStatus(ir.stmtIdx, { status, deltaUsd, vendorRef: vr.ref, vendorAmt: vr.amount });
     };
@@ -6752,6 +7009,10 @@
       r && r.status === 'missing_in_isabi' && ent && typeof ent.canPostStmt16MissingRow === 'function'
       && ent.canPostStmt16MissingRow({ ind: ctx.ind, co: m.co, leg: m.leg, kind: r.kind, supName: m.supName, vendorAmt: r.vendorAmt, allLegsTx: m.allLegsTx })
     );
+    const canInspectDeltaForRow = r => Boolean(
+      r && r.status === 'amount_delta' && ent && typeof ent.canInspectAdjustStmt16DeltaRow === 'function'
+      && ent.canInspectAdjustStmt16DeltaRow({ ind: ctx.ind, co: m.co, leg: m.leg, supName: m.supName, row: r })
+    );
     const shownRows = allRows.filter(r => {
       if (chip === 'exceptions') return r.status !== 'matched';
       if (chip === 'missing') return r.status === 'missing_in_isabi';
@@ -6762,7 +7023,7 @@
       if (chip === 'matched') return r.status === 'matched';
       return true;
     });
-    const showActionCol = Boolean(cmp && allRows.some(canPostMissingForRow));
+    const showActionCol = Boolean(cmp && allRows.some(r => canPostMissingForRow(r) || canInspectDeltaForRow(r)));
     const chipBtn = (k, lbl, cnt) => `<button type="button" class="rdl-cmp-chip ${chip === k ? 'active' : ''}" data-stmt16-cmp-chip="${k}"><span>${lbl}</span>${cnt != null ? ` (<span data-no-i18n="1">${cnt}</span>)` : ''}</button>`;
 
     return `
@@ -6840,6 +7101,12 @@
                   const dtl = r.note ? `${r.vendorDesc || r.isabiDesc || '-'} (${r.note})` : (r.vendorDesc || r.isabiDesc || '-');
                   const origIdx = allRows.indexOf(r);
                   const canPostThis = showActionCol && canPostMissingForRow(r) && origIdx >= 0;
+                  const canDeltaThis = showActionCol && !canPostThis && canInspectDeltaForRow(r) && origIdx >= 0;
+                  const actionCellHtml = canPostThis
+                    ? `<button type="button" class="rdl-tb-btn rdl-cmp-post-btn" data-stmt16-post-missing="${origIdx}">${ic('plus')} <span>+ Post Slip</span></button>`
+                    : (canDeltaThis
+                        ? `<button type="button" class="rdl-tb-btn rdl-cmp-delta-btn" data-stmt16-inspect-delta="${origIdx}">${ic('edit')} <span>Inspect / Adjust</span></button>`
+                        : '<span class="muted" data-no-i18n="1">-</span>');
                   return `
                     <tr>
                       <td><span class="rdl-cmp-inline-pill ${stLbl.cls}"><span>${stLbl.text}</span></span></td>
@@ -6850,7 +7117,7 @@
                       <td class="num mono" data-no-i18n="1">${r.vendorAmt ? fmtUsdSigned(r.vendorAmt, 2) : '-'}</td>
                       <td class="num mono" data-no-i18n="1">${r.isabiAmt ? fmtUsdSigned(r.isabiAmt, 2) : '-'}</td>
                       <td class="num mono" data-no-i18n="1">${Math.abs(r.deltaUsd || 0) > 0.005 ? fmtUsdSigned(r.deltaUsd, 2) : '$0.00'}</td>
-                      ${showActionCol ? `<td class="no-print">${canPostThis ? `<button type="button" class="rdl-tb-btn rdl-cmp-post-btn" data-stmt16-post-missing="${origIdx}">${ic('plus')} <span>+ Post Slip</span></button>` : '<span class="muted" data-no-i18n="1">-</span>'}</td>` : ''}
+                      ${showActionCol ? `<td class="no-print">${actionCellHtml}</td>` : ''}
                     </tr>
                   `;
                 }).join('') : `<tr><td colspan="${showActionCol ? 9 : 8}" class="rdl-cmp-empty"><span>${cmp.exceptionsCount === 0 && chip === 'exceptions' ? 'All vendor lines match this Statement 16 leg' : 'No lines in this filter'}</span></td></tr>`}
@@ -6925,6 +7192,9 @@
         ref: v.ref || 'RM',
         co: String(v.co || '').trim(),
         leg: v.leg,
+        srcKey: v.srcKey || '',
+        srcId: v.srcId != null ? String(v.srcId) : '',
+        srcLeg: v.srcLeg || v.leg || '',
         type: leg === 'ALL' ? `${v.type} [${v.leg === 'material' ? 'Material' : (v.leg === 'transport' ? 'Transport' : 'Expenses')}]` : v.type,
         pay_method: v.pay_method || '',
         desc: v.desc,
@@ -6980,7 +7250,14 @@
           dr: lAp16.books ? rawDr : 0,
           cash_usd: lAp16.books ? (isCfg ? 0 : rawCash) : 0,
           discount_usd: lAp16.books ? (isCfg ? 0 : rawDisc) : 0,
-          carried_usd: lAp16.books ? (isCfg ? rawDr : 0) : 0
+          carried_usd: lAp16.books ? (isCfg ? rawDr : 0) : 0,
+          srcKey: r.srcKey || (r.is_settlement_row ? 'settlements' : ''),
+          srcId: r.srcId != null ? String(r.srcId) : (r.is_settlement_row ? String(r.id || '') : ''),
+          srcLeg: rowLeg,
+          srcDomainTbl: r.srcDomainTbl || '',
+          srcDomainId: r.srcDomainId != null ? String(r.srcDomainId) : '',
+          srcMultiUplift: Boolean(r.srcMultiUplift),
+          srcFromLanded: Boolean(r.srcFromLanded)
         };
         allLegsTx.push(rowObj);
         if (leg === 'ALL' || rowLeg === leg) tx.push(rowObj);
@@ -6998,7 +7275,10 @@
           dr: 0,
           cash_usd: 0,
           discount_usd: 0,
-          carried_usd: 0
+          carried_usd: 0,
+          srcKey: 'expenses',
+          srcId: String(r.id || ''),
+          srcLeg: 'expenses'
         };
         allLegsTx.push(expObj);
         if (leg === 'ALL' || leg === 'expenses') tx.push(expObj);
@@ -7720,12 +8000,13 @@
     const dash = '-';
     const stObj = ctx.state || {};
     const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
-    _syncStmt16CompareScope(ctx, m);
     const canCompare = Boolean((lAp16.books || lAp16.expenses) && !stObj.kioskLocked);
+    _syncStmt16CompareScope(ctx, m, { allowBootResume: canCompare });
     const cmpResult = (canCompare && _stmt16CompareState.open && String(_stmt16CompareState.text || '').trim())
       ? compareStmt16WithVendorRows(ctx, m, _stmt16CompareState.text, { scope: _stmt16CompareState.scopeMode })
       : null;
     _stmt16CompareState.lastResult = cmpResult;
+    const hasSavedCmp = Boolean(canCompare && !_stmt16CompareState.open && _stmt16CompareState.persistKey && _getStmt16CmpEntry(_stmt16CompareState.persistKey));
     const retCtx = stObj.stmt16ReturnCtx
       && String(stObj.stmt16ReturnCtx.company || '') === String(stObj.company || '')
       && (stObj.stmt16ReturnCtx.userIdx === undefined || stObj.stmt16ReturnCtx.userIdx === stObj.activeUserIdx)
@@ -7733,7 +8014,7 @@
       : null;
     const retBtnHtml = retCtx ? `<button type="button" class="rdl-tb-btn" data-stmt16-return="1"><span>Back to</span> <span>${esc(retCtx.label || 'Payables')}</span></button>` : '';
     const compareBtnHtml = canCompare
-      ? `<button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn${_stmt16CompareState.open ? ' active' : ''}" id="stmt16CompareBtn">${ic('sparkles')} <span>Compare Vendor Statement</span></button>`
+      ? `<button type="button" class="rdl-tb-btn rdl-stmt16-compare-btn${_stmt16CompareState.open ? ' active' : ''}" id="stmt16CompareBtn">${ic('sparkles')} <span>Compare Vendor Statement</span>${hasSavedCmp ? '<span class="rdl-cmp-saved-dot" aria-hidden="true"></span>' : ''}</button>`
       : '';
     const canEnterSettle = Boolean(lAp16.books && !stObj.kioskLocked && ent && typeof ent.canEnterForm === 'function' && ent.canEnterForm('settlement'));
     const settleBtnHtml = (canEnterSettle && m.canSettleLeg)
@@ -11645,6 +11926,7 @@
           _stmt16CompareState.statusMsg = res.mode === 'local_text' ? 'Loaded CSV/text statement' : 'Extracted vendor statement lines';
           _stmt16CompareState.statusTone = 'is-good';
           _stmt16CompareState.filterChip = 'exceptions';
+          _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
         } else {
           _stmt16CompareState.statusMsg = (res && res.error) || 'Could not read file: paste lines manually';
           _stmt16CompareState.statusTone = 'is-warn';
@@ -11655,6 +11937,7 @@
         const ta = ev.target && ev.target.id === 'stmt16CompareInput' ? ev.target : null;
         if (ta && root.contains(ta)) {
           _stmt16CompareState.text = ta.value;
+          if (_stmt16CompareState.persistKey) _scheduleStmt16CmpSave(_stmt16CompareState.persistKey);
         }
       });
       root.addEventListener('change', ev => {
@@ -11694,6 +11977,13 @@
           if ((curCtx.state && curCtx.state.kioskLocked) || (!curLens.books && !curLens.expenses)) return;
           _syncStmt16CompareScope(curCtx, buildStmt16Model(curCtx));
           _stmt16CompareState.open = !_stmt16CompareState.open;
+          if (_stmt16CompareState.open && !String(_stmt16CompareState.text || '').trim() && _stmt16CompareState.persistKey) {
+            const saved = _getStmt16CmpEntry(_stmt16CompareState.persistKey);
+            if (saved) _hydrateStmt16CmpFromSaved(saved, Boolean(curLens.books));
+          }
+          if (_stmt16CompareState.persistKey && (_stmt16CmpSaveTimer || String(_stmt16CompareState.text || '').trim())) {
+            _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
+          }
           if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
           return;
         }
@@ -11701,6 +11991,9 @@
         if (cmpClose && root.contains(cmpClose)) {
           ev.preventDefault();
           _stmt16CompareState.open = false;
+          if (_stmt16CompareState.persistKey && (_stmt16CmpSaveTimer || String(_stmt16CompareState.text || '').trim())) {
+            _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
+          }
           if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
           return;
         }
@@ -11720,6 +12013,7 @@
           _stmt16CompareState.statusMsg = '';
           _stmt16CompareState.statusTone = '';
           _stmt16CompareState.lastResult = null;
+          _deleteStmt16CmpForKey(_stmt16CompareState.persistKey);
           if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
           return;
         }
@@ -11729,6 +12023,7 @@
           const ta = root.querySelector('#stmt16CompareInput');
           if (ta) _stmt16CompareState.text = ta.value;
           _stmt16CompareState.filterChip = 'exceptions';
+          if (_stmt16CompareState.persistKey) _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
           if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
           return;
         }
@@ -11737,6 +12032,9 @@
           ev.preventDefault();
           const nextSc = cmpScopeBtn.getAttribute('data-stmt16-cmp-scope') || 'invoices';
           _stmt16CompareState.scopeMode = nextSc === 'all' ? 'all' : 'invoices';
+          if (_stmt16CompareState.persistKey && (_stmt16CmpSaveTimer || String(_stmt16CompareState.text || '').trim())) {
+            _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
+          }
           if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
           return;
         }
@@ -11744,6 +12042,9 @@
         if (cmpChipBtn && root.contains(cmpChipBtn)) {
           ev.preventDefault();
           _stmt16CompareState.filterChip = cmpChipBtn.getAttribute('data-stmt16-cmp-chip') || 'exceptions';
+          if (_stmt16CompareState.persistKey && (_stmt16CmpSaveTimer || String(_stmt16CompareState.text || '').trim())) {
+            _saveStmt16CmpForKey(_stmt16CompareState.persistKey);
+          }
           if (typeof root._stmtSentRerender === 'function') root._stmtSentRerender();
           return;
         }
@@ -11827,6 +12128,29 @@
                 if (pnl && typeof pnl.scrollIntoView === 'function') pnl.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }
             }, 60);
+          }
+          return;
+        }
+        const inspectDeltaBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-inspect-delta]') : null;
+        if (inspectDeltaBtn && root.contains(inspectDeltaBtn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const rIdx = Number(inspectDeltaBtn.getAttribute('data-stmt16-inspect-delta'));
+          const cmpNow = _stmt16CompareState.lastResult;
+          const rowObj = (cmpNow && Array.isArray(cmpNow.rows) && Number.isInteger(rIdx) && rIdx >= 0)
+            ? cmpNow.rows[rIdx]
+            : null;
+          const ent = window.MFG_ENTERPRISE;
+          if (rowObj && ent && typeof ent.openStmt16DeltaRecord === 'function') {
+            const curCtx = buildRdlContext(SEED, STATE);
+            const curM = buildStmt16Model(curCtx);
+            ent.openStmt16DeltaRecord({
+              ind: curCtx.ind,
+              co: curM.co,
+              leg: curM.leg,
+              supName: curM.supName,
+              row: rowObj
+            });
           }
           return;
         }
