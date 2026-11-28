@@ -4710,6 +4710,11 @@ export async function handleRecordsPost(request, env, session, body) {
     const sameNameConflict = await checkSameNameRecordConflict(env.DB, canonTable, recordToWrite);
     if (sameNameConflict) return jsonResponse(sameNameConflict, 409);
   }
+  const mofConflict = await checkMofRecordConflict(env.DB, canonTable, recordToWrite, {
+    incomingPatch: record,
+    origOverride: exHydratedRls
+  });
+  if (mofConflict) return jsonResponse(mofConflict, 409);
   const res = await upsertTableRecord(env.DB, canonTable, recordToWrite);
   if (!res.ok) return jsonResponse({ ok: false, error: res.error }, res.status || 400);
   const geoAuditIds = [];
@@ -5064,6 +5069,141 @@ function recordUnivIndustryKey(row) {
     }
   }
   return canonGeoIndustryKey(indRaw || 'Manufacturing').toLowerCase() || 'manufacturing';
+}
+
+function normMofTaxIdEdge(rawM) {
+  let s = String(rawM == null ? '' : rawM).trim().toUpperCase();
+  if (!s) return '';
+  s = s.replace(/^(?:VAT|MOF|TVA|TAX)\s*(?:REG(?:ISTRATION)?\s*)?(?:NO\.?|#|NUMBER)?\s*[:\-]?\s*/i, '').trim();
+  s = s.replace(/[\u2013\u2014\s]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!s || s === '-' || s === '0' || /^(?:N\/?A|NONE|PENDING|TBD|UNKNOWN)$/i.test(s)) return '';
+  return s;
+}
+
+function reconcileMofFieldsEdge(target, incoming = null) {
+  if (!target || typeof target !== 'object') return;
+  if (incoming && typeof incoming === 'object'
+    && (Object.prototype.hasOwnProperty.call(incoming, 'mof_no') || Object.prototype.hasOwnProperty.call(incoming, 'financial_no'))) {
+    const hasM = Object.prototype.hasOwnProperty.call(incoming, 'mof_no');
+    const hasF = Object.prototype.hasOwnProperty.call(incoming, 'financial_no');
+    const rawM = incoming.mof_no == null ? '' : String(incoming.mof_no).trim();
+    const rawF = incoming.financial_no == null ? '' : String(incoming.financial_no).trim();
+    const eff = (hasM && hasF) ? (rawM || rawF) : (hasM ? rawM : rawF);
+    target.mof_no = eff;
+    target.financial_no = eff;
+  } else if (Object.prototype.hasOwnProperty.call(target, 'mof_no') || Object.prototype.hasOwnProperty.call(target, 'financial_no')) {
+    const rawM = target.mof_no == null ? '' : String(target.mof_no).trim();
+    const rawF = target.financial_no == null ? '' : String(target.financial_no).trim();
+    const eff = (isMofFlagTrueEdge(target._mofCleared) && !rawM) ? '' : (rawM || rawF);
+    target.mof_no = eff;
+    target.financial_no = eff;
+  }
+}
+
+function isMofFlagTrueEdge(val) {
+  return Boolean(val === true || val === 1 || val === '1' || String(val || '').toLowerCase() === 'true');
+}
+
+async function checkMofRecordConflict(db, canonTable, recordToWrite, opts = {}) {
+  if ((canonTable !== 'customers' && canonTable !== 'suppliers') || !recordToWrite || typeof recordToWrite !== 'object') {
+    return null;
+  }
+  reconcileMofFieldsEdge(recordToWrite, opts.incomingPatch || null);
+  if (isMofFlagTrueEdge(recordToWrite.voided)) return null;
+  const candMof = normMofTaxIdEdge(recordToWrite.mof_no || recordToWrite.financial_no);
+  const sharedMofOk = isMofFlagTrueEdge(recordToWrite.shared_mof_ok);
+  if (!candMof || sharedMofOk) return null;
+  const orig = opts.origOverride || null;
+  const prevMof = orig ? normMofTaxIdEdge(orig.mof_no || orig.financial_no) : '';
+  const prevVoided = Boolean(orig && isMofFlagTrueEdge(orig.voided));
+  const prevSharedOk = Boolean(orig && isMofFlagTrueEdge(orig.shared_mof_ok));
+  if (orig && candMof === prevMof && !prevVoided && !prevSharedOk) return null;
+
+  const recId = String(recordToWrite.id || '').trim();
+  const recIndMof = recordUnivIndustryKey(recordToWrite);
+  let candidates = null;
+  if (opts.overlayMap instanceof Map) {
+    candidates = Array.from(opts.overlayMap.values());
+  } else {
+    const mofRes = await db.prepare(
+      `SELECT * FROM ${canonTable} WHERE id != ?1 AND COALESCE(voided, 0) = 0`
+    ).bind(recId).all();
+    candidates = (mofRes.results || []).map(mr => hydrateRowJson(mr) || mr);
+  }
+  for (const mHyd of candidates) {
+    if (!mHyd || typeof mHyd !== 'object') continue;
+    const mid = String(mHyd.id || '').trim();
+    if (recId && mid === recId) continue;
+    if (isMofFlagTrueEdge(mHyd.voided)) continue;
+    if (recordUnivIndustryKey(mHyd) !== recIndMof) continue;
+    if (normMofTaxIdEdge(mHyd.mof_no || mHyd.financial_no) === candMof) {
+      const holderLbl = String(mHyd.official_name || mHyd.name || mid || '').trim();
+      return {
+        ok: false,
+        code: 'duplicate_mof_no',
+        table: canonTable,
+        id: recId,
+        error: `MoF Tax Number '${candMof}' is already registered to '${holderLbl}' in this vertical.`
+      };
+    }
+  }
+  return null;
+}
+
+async function checkMofSyncPatchConflict(db, nextDoc, prevDoc) {
+  const nextCr = (nextDoc && typeof nextDoc === 'object' && nextDoc.customRecords && typeof nextDoc.customRecords === 'object') ? nextDoc.customRecords : {};
+  const prevCr = (prevDoc && typeof prevDoc === 'object' && prevDoc.customRecords && typeof prevDoc.customRecords === 'object') ? prevDoc.customRecords : {};
+  for (const tbl of ['customers', 'suppliers']) {
+    const nArr = Array.isArray(nextCr[tbl]) ? nextCr[tbl] : [];
+    if (!nArr.length) continue;
+    const pArr = Array.isArray(prevCr[tbl]) ? prevCr[tbl] : [];
+    const preMap = new Map();
+    const dbRes = await db.prepare(`SELECT * FROM ${tbl}`).all().catch(() => ({ results: [] }));
+    for (const r of (dbRes.results || [])) {
+      const hyd = hydrateRowJson(r) || r;
+      const rid = String((hyd && hyd.id) || '').trim();
+      if (rid) preMap.set(rid, hyd);
+    }
+    for (const pr of pArr) {
+      if (pr && typeof pr === 'object' && pr.id) preMap.set(String(pr.id).trim(), pr);
+    }
+    let needsScan = false;
+    for (const rec of nArr) {
+      if (!rec || typeof rec !== 'object' || !rec.id || isMofFlagTrueEdge(rec.voided)) continue;
+      reconcileMofFieldsEdge(rec);
+      const rid = String(rec.id).trim();
+      const orig = preMap.get(rid) || null;
+      const candMof = normMofTaxIdEdge(rec.mof_no || rec.financial_no);
+      if (!candMof || isMofFlagTrueEdge(rec.shared_mof_ok)) continue;
+      const prevMof = orig ? normMofTaxIdEdge(orig.mof_no || orig.financial_no) : '';
+      if (!orig || candMof !== prevMof || isMofFlagTrueEdge(orig.voided) || isMofFlagTrueEdge(orig.shared_mof_ok)) {
+        needsScan = true;
+        break;
+      }
+    }
+    if (!needsScan) continue;
+    const overlay = new Map(preMap);
+    for (const nr of nArr) {
+      if (nr && typeof nr === 'object' && nr.id) {
+        const nrid = String(nr.id).trim();
+        if (preMap.has(nrid)) {
+          reconcileMofFieldsEdge(nr);
+          overlay.set(nrid, nr);
+        }
+      }
+    }
+    for (const rec of nArr) {
+      if (!rec || typeof rec !== 'object' || !rec.id || isMofFlagTrueEdge(rec.voided)) continue;
+      const rid = String(rec.id).trim();
+      const conflict = await checkMofRecordConflict(db, tbl, rec, {
+        origOverride: preMap.get(rid) || null,
+        overlayMap: overlay
+      });
+      if (conflict) return conflict;
+      overlay.set(rid, rec);
+    }
+  }
+  return null;
 }
 
 function inferDomainIndustry(obj, keyHint = '') {
@@ -11649,6 +11789,10 @@ export async function handleSync(request, env, session, body, _ctx) {
       const sameNameConflict = await checkSameNameSyncPatchConflict(env.DB, incomingDoc, prevDoc);
       if (sameNameConflict) {
         return jsonResponse(sameNameConflict, 409);
+      }
+      const mofSyncConflict = await checkMofSyncPatchConflict(env.DB, incomingDoc, prevDoc);
+      if (mofSyncConflict) {
+        return jsonResponse(mofSyncConflict, 409);
       }
     }
     let newTs = String(incomingDoc.updatedAt || new Date().toISOString());

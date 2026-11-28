@@ -889,6 +889,69 @@ console.log('Edge D1 same-name guard, effective sync floor & father_name migrati
       && ownerMap.get('cust-ind-re')?.phone === '+96170222223' && ownerMap.get('cust-ind-mfg')?.phone === '+96170111112',
       { mfgCust: mfgCust.status, reCust: reCust.status, mfgSup: mfgSup.status, reSup: reSup.status, mfgDup409: mfgDup409.status, crossWrite403: crossWrite403.status, wtcIds, ownerRe: ownerMap.get('cust-ind-re')?.phone, ownerMfg: ownerMap.get('cust-ind-mfg')?.phone });
   }
+
+  // 5m. Duplicate MoF Tax # guard on customers & suppliers with shared_mof_ok opt-in & explicit clear
+  {
+    const { env } = freshEnv(false);
+    const c1 = await postRec(env, 'customers', {
+      id: 'c-mof-1', name: 'zzEdgeMofCustA', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: '3132001-601',
+    });
+    const cDup = await postRec(env, 'customers', {
+      id: 'c-mof-2', name: 'zzEdgeMofCustB', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: 'VAT 3132001 601',
+    });
+    const cShared = await postRec(env, 'customers', {
+      id: 'c-mof-2', name: 'zzEdgeMofCustB', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: '3132001-601', shared_mof_ok: true,
+    });
+    const cCrossInd = await postRec(env, 'customers', {
+      id: 'c-mof-3', name: 'zzEdgeMofCustC', company: 'Shacman', _industry: 'Automotive & Heavy Trading', mof_no: '3132001-601',
+    });
+    const s1 = await postRec(env, 'suppliers', {
+      id: 's-mof-1', name: 'zzEdgeMofSupA', company: 'WTC', mof_no: '5511002-601', financial_no: '5511002-601',
+    });
+    const sDup = await postRec(env, 'suppliers', {
+      id: 's-mof-2', name: 'zzEdgeMofSupB', company: 'WTC', mof_no: '5511002-601',
+    });
+    const sClr = await postRec(env, 'suppliers', {
+      id: 's-mof-1', name: 'zzEdgeMofSupA', company: 'WTC', mof_no: '', financial_no: '5511002-601',
+    });
+    // Red-team vector checks: unchecking shared_mof_ok -> 409; partial mof_no:'' + financial_no:'DUP' -> 409; unvoid -> 409; /api/sync -> 409
+    const cUncheck409 = await postRec(env, 'customers', {
+      id: 'c-mof-2', name: 'zzEdgeMofCustB', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: '3132001-601', shared_mof_ok: false,
+    });
+    const sFinSplit409 = await postRec(env, 'suppliers', {
+      id: 's-mof-2', name: 'zzEdgeMofSupB', company: 'WTC', mof_no: '', financial_no: '5511002-601',
+    });
+    const cVoided = await postRec(env, 'customers', {
+      id: 'c-mof-v', name: 'zzEdgeMofCustV', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: '3132001-601', voided: 1, void_reason: 'test',
+    });
+    const cUnvoid409 = await postRec(env, 'customers', {
+      id: 'c-mof-v', name: 'zzEdgeMofCustV', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: '3132001-601', voided: 0,
+    });
+    const syncMof409 = await postSync(env, {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: {
+          minShellVer: effectiveMinSyncShellVer(),
+          updatedAt: new Date().toISOString(),
+          customRecords: {
+            customers: [
+              { id: 'c-mof-sync-dup', name: 'zzEdgeMofSyncDup', company: '4235 Company S.A.L', _industry: 'Real Estate & Property', mof_no: '3132001-601', modified_at: new Date().toISOString(), modified_by: 'owner@example.test' },
+            ],
+          },
+        },
+      },
+    }, OWNER);
+    ok('5m. customers & suppliers reject same-vertical duplicate mof_no across /records & /sync (incl. uncheck shared, unvoid, fin_no split), allow shared_mof_ok & cross-vertical',
+      c1.status === 200 && cDup.status === 409 && cDup.json.code === 'duplicate_mof_no'
+      && cShared.status === 200 && cCrossInd.status === 200
+      && s1.status === 200 && sDup.status === 409 && sDup.json.code === 'duplicate_mof_no' && sClr.status === 200
+      && cUncheck409.status === 409 && cUncheck409.json.code === 'duplicate_mof_no'
+      && sFinSplit409.status === 409 && sFinSplit409.json.code === 'duplicate_mof_no'
+      && cVoided.status === 200 && cUnvoid409.status === 409 && cUnvoid409.json.code === 'duplicate_mof_no'
+      && syncMof409.status === 409 && syncMof409.json.code === 'duplicate_mof_no',
+      { c1: c1.status, cDup: cDup.status, cShared: cShared.status, cCrossInd: cCrossInd.status, s1: s1.status, sDup: sDup.status, sClr: sClr.status, cUncheck409: cUncheck409.status, sFinSplit409: sFinSplit409.status, cVoided: cVoided.status, cUnvoid409: cUnvoid409.status, syncMof409: syncMof409.status });
+  }
 }
 
 // 6. Outward copy hygiene check on all API responses collected
