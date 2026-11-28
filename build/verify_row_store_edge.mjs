@@ -1,4 +1,4 @@
-﻿// Offline gate for the row store (store-size plan step 2, stage B): the Manufacturing store kept one entry per row,
+// Offline gate for the row store (store-size plan step 2, stage B): the Manufacturing store kept one entry per row,
 // so a save writes the entries that changed instead of the whole document.
 //   functions/_lib/row_store.js + readEdgeKvDoc / writeEdgeKvDoc / handleSync / handleRowStore in d1_store.js
 //   (the real code, run here), and the row sync device blocks of isabi-app js/app.js for the checks that need a device.
@@ -316,7 +316,7 @@ console.log('\n[1. The lines are an exact form of any document]');
     10: 'ten', 2: 'two', b: 1, a: [1, 2, { x: null }],
     'ke"y\\with\nescapes': { 'in"ner': 'v' },
     customRecords: {
-      plain: [{ id: 'p1', v: 1 }, { id: 'p2', v: 'Ø¹Ø±Ø¨ÙŠ Ù†Øµ', nested: { a: [1, { b: 2 }] } }],
+      plain: [{ id: 'p1', v: 1 }, { id: 'p2', v: 'عربي نص', nested: { a: [1, { b: 2 }] } }],
       empty: [],
       repeated: [{ id: 'r1', v: 1 }, { id: 'r1', v: 2 }],
       noId: [{ id: 'n1' }, { v: 'nothing to key by' }],

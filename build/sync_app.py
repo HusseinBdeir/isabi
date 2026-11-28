@@ -116,6 +116,7 @@ RELEASE_GATES = [
     ("isabi-app", "build/verify_row_sync_e2e.mjs", "node"),          # row sync in the browser against the real Edge code: partial reads, own save, conflict, fallback
     ("isabi", "build/verify_row_store_edge.mjs", "node"),          # row store: one entry per row, exact, switch-over and fallback, damaged rows, an id listed twice, Owner notice
     ("isabi-app", "build/verify_sync_health_notice.mjs", "node"),    # Owner notice: Sync Health line and Reset (EN/AR/FR)
+    ("isabi-app", "build/verify_repeated_ids_local.py", "python"),   # local server: a whole save that lists an id twice stores it once
     ("isabi-app", "build/verify_insp_step_and_rates.mjs", "node"),   # #recordInspector Prev/Next stepping + 1-tap Active Price/Rate Agreements share
     ("isabi-app", "build/verify_statement_books.mjs", "node"),       # statements 02-05 and 19: only what was recorded, cash at the counted till, sample figures in the demo only
     ("isabi-app", "build/verify_saved_workbook_row_till.mjs", "node"), # a workbook row saved in the app is counted once: till unchanged, no app mark from the entry form
