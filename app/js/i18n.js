@@ -1838,7 +1838,7 @@
       "Building Fit-Out, MEP Repairs & Municipal Taxes": "تجهيزات المباني وصيانة الميكانيك والكهرباء والرسوم البلدية",
       "Building Generator Reserve & MEP Van GPS Dispatch": "احتياطي مولدات المباني وتتبع مركبات الصيانة GPS",
       "Building MEP & Facilities Supervisor": "مشرف الميكانيك والكهرباء وإدارة المرافق",
-      "Building Unit": "الوحدة العقارية",
+      "Building Unit": "وحدة عقارية",
       "Building Units": "وحدات المباني",
       "Building Units & Vacancy": "الوحدات والشواغر",
       "Building Units Register": "سجل وحدات المباني",
@@ -6899,7 +6899,7 @@
       "OVERDUE OIL": "تغيير زيت متأخر",
       "OVERSEAS IMPORT FILES: SUPPLIER FOB VS. CAPITALIZED LANDED COST": "ملفات الاستيراد الخارجي: سعر FOB مقابل التكلفة الرأسمالية الواصلة",
       "OVERTIME ALLOWANCE RATES BY REGION": "تعرفات بدل العمل الإضافي حسب المنطقة",
-      "Occupied": "مشغولة",
+      "Occupied": "مشغول",
       "Occupied Chalets & Suites": "الشاليهات والأجنحة المشغولة",
       "Oct": "أكتوبر",
       "October": "أكتوبر",
@@ -7703,7 +7703,7 @@
       "Payroll, Salaries & Site Transport": "الرواتب والأجور وبدلات انتقال المواقع",
       "Pcs": "قطعة",
       "Pegged ~89,500–90,000 LBP": "مثبت حول 89,500–90,000 ل.ل.",
-      "Pending": "قيد الانتظار",
+      "Pending": "بانتظار الإدخال",
       "Pending $0": "معلق $0",
       "Pending Action By": "بانتظار إجراء من",
       "Pending Final Deed Transfer": "بانتظار الفراغ النهائي لسند الملكية",
@@ -9601,7 +9601,7 @@
       "Show suggestions": "عرض الاقتراحات",
       "Showing": "عرض",
       "Showing All 3 Cohort Trucks": "عرض جميع شاحنات المجموعة الثلاث",
-      "Showroom": "صالة العرض",
+      "Showroom": "صالة عرض",
       "Showroom & Bonded Cutoff": "نطاق قطع صالات العرض والمنطقة الحرة",
       "Showroom & Import Operations Director": "مدير صالة العرض وعمليات الاستيراد",
       "Showroom & Parts Invoices": "فواتير الصالة وقطع الغيار",
@@ -10527,7 +10527,7 @@
       "Total Spend ($)": "إجمالي الإنفاق ($)",
       "Total Spent ($)": "إجمالي المنفق ($)",
       "Total TTC": "الإجمالي شامل الضريبة",
-      "Total TTC ($)": "الإجمالي شامل الضريبة ($)",
+      "Total TTC ($)": "الإجمالي مع الضريبة ($)",
       "Total Tenant Recharges": "إجمالي المصاريف المعاد تحميلها للمستأجرين",
       "Total Tracked Stock": "إجمالي المخزون المتتبع",
       "Total Trading Sales": "إجمالي مبيعات التجارة",
@@ -10792,7 +10792,7 @@
       "Unit 30-Day Diesel Issued (L)": "مازوت الآلية المصروف خلال 30 يوماً (لتر)",
       "Unit = Truck flat rate": "الوحدة = مقطوعية النقلة",
       "Unit Area (m²) Recharge Split, Cross-Script Tenant Wires & Ring-Fenced Deposits": "توزيع المصاريف حسب المساحة (م²) ومطابقة تحويلات المستأجرين وعزل التأمينات",
-      "Unit Code": "رمز الآلية",
+      "Unit Code": "رمز الوحدة",
       "Unit Cost": "تكلفة الوحدة",
       "Unit Economics & Raw Intake Cost Split": "اقتصاديات الوحدة وتفصيل كلفة استلام المواد",
       "Unit Equivalence": "معادلة الوحدة",
@@ -16786,7 +16786,122 @@
       "ISABI Kiosk Admin": "إدارة كشك ISABI",
       "Enter Admin PIN to unlock controls": "أدخل رمز PIN للمسؤول لفتح عناصر التحكم",
       "Incorrect Admin PIN": "رمز PIN للمسؤول غير صحيح",
-      "Unlock Vault": "فتح الخزنة"
+      "Unlock Vault": "فتح الخزنة",
+      "Full-group scheduling rights are required to delete company-wide shift types": "يلزم وجود صلاحيات جدولة المجموعة الكاملة لحذف أنواع الورديات على مستوى الشركة",
+      "Custom Shift": "وردية مخصصة",
+      "At least one active work shift must remain": "يجب أن تبقى وردية عمل نشطة واحدة على الأقل",
+      "At least one active work shift must remain for each company": "يجب أن تبقى وردية عمل نشطة واحدة على الأقل لكل شركة",
+      "At least one company-wide Policy & Perks group must remain": "يجب أن تبقى مجموعة سياسات ومزايا شاملة للشركات واحدة على الأقل",
+      "At least one active Policy & Perks group must remain": "يجب أن تبقى مجموعة سياسات ومزايا نشطة واحدة على الأقل",
+      "Move Left": "تحريك لليسار",
+      "Move Right": "تحريك لليمين",
+      "Click any shift to edit, reorder with arrows or drag, or delete": "انقر على أي وردية للتعديل، أو أعد الترتيب بالأسهم أو السحب، أو احذفها",
+      "Click any group to edit, reorder with arrows or drag, or delete": "انقر على أي مجموعة للتعديل، أو أعد الترتيب بالأسهم أو السحب، أو احذفها",
+      "Confirm Delete": "تأكيد الحذف",
+      "Reordered work shifts": "تمت إعادة ترتيب ورديات العمل",
+      "Reordered policy groups": "تمت إعادة ترتيب مجموعات السياسات",
+      "Removed shift type": "تمت إزالة نوع الوردية",
+      "Cannot reorder": "تعذرت إعادة الترتيب",
+      "Unlock kiosk first to edit shifts": "افتح قفل الكشك أولاً لتعديل الورديات",
+      "Company is required when deleting a built-in shift from a multi-company view": "تحديد الشركة مطلوب عند حذف وردية أساسية من عرض متعدد الشركات",
+      "Deleted policy group": "تم حذف مجموعة السياسة",
+      "Cannot delete": "تعذّر الحذف",
+      "Cannot delete group": "تعذّر حذف المجموعة",
+      "Order list is required": "قائمة الترتيب مطلوبة",
+      "No policy groups found": "لا توجد مجموعات سياسات",
+      "You do not have rights to reorder shifts for this company": "ليست لديك صلاحية لإعادة ترتيب الورديات لهذه الشركة",
+      "Full-group scheduling rights are required to reorder Policy & Perks groups": "مطلوب صلاحيات جدولة المجموعة الكاملة لإعادة ترتيب مجموعات السياسات والمزايا",
+      "Select a specific company before deleting this shift type": "اختر شركة محددة قبل حذف نوع الوردية هذا",
+      "Select a specific company above to delete this shift type": "اختر شركة محددة أعلاه لحذف نوع الوردية هذا",
+      "Select a single company or delete inside the shift modal": "اختر شركة واحدة أو احذف من داخل نافذة الوردية",
+      "Pick company in modal to delete": "اختر الشركة داخل النافذة للحذف",
+      "Authorized Shared MoF Branch": "فرع مشترك معتمد برقم المالية",
+      "Ground Floor": "الطابق الأرضي",
+      "Mezzanine": "الميزانين",
+      "Unspecified Floor": "طابق غير محدد",
+      "Floor Filter · Clear ×": "تصفية الطابق · مسح ×",
+      "Print Official MoF Invoice": "طباعة الفاتورة الضريبية الرسمية",
+      "Print / View Official MoF Invoice (Statement 20)": "طباعة / عرض الفاتورة الضريبية الرسمية (بيان 20)",
+      "0 (Pending measurement)": "0 (بانتظار المسح الهندسي)",
+      "Optional when Vacant": "اختياري عند الشغور",
+      "Official / Legal Invoice Name": "الاسم القانوني / التجاري للفاتورة",
+      "Optional trade / MoF invoice name": "الاسم التجاري أو المالي للفاتورة (اختياري)",
+      "Invoice / Seq #": "رقم الفاتورة / التسلسل",
+      "Leased Unit / Property": "الوحدة المؤجرة / العقار",
+      "VAT %": "نسبة ق.م %",
+      "Total Amount in Words": "المجموع بالحروف",
+      "Subtotal Excl. VAT": "المبلغ قبل الضريبة",
+      "VAT 11% (USD)": "ض.ق.م 11% (دولار)",
+      "Total Invoice TTC": "إجمالي الفاتورة شامل الضريبة",
+      "Tenant MoF VAT # Missing": "رقم مالية المستأجر مفقود",
+      "Duplicate Tenant MoF VAT # Detected": "تضارب في رقم مالية المستأجر",
+      "Set Official MoF VAT #": "تعيين رقم المالية الرسمي",
+      "Print Official Invoice": "طباعة الفاتورة الرسمية",
+      "Billing Lines": "سطور الفوترة",
+      "Tax Regime": "النظام الضريبي",
+      "MoF 11% VAT Sequential": "ضريبة 11% متسلسلة رسمياً",
+      "0% Residential / Exempt": "معفى 0% / سكني",
+      "Pending Verification": "بانتظار التحقق",
+      "Bill To / Tenant (المستأجر)": "الفاتورة إلى / المستأجر",
+      "Landlord / Authorized Signatory": "المؤجر / المفوض بالتوقيع",
+      "Tenant Acknowledgment / توقيع المستأجر": "استلام وتوقيع المستأجر",
+      "MoF VAT # Needed": "رقم المالية مطلوب",
+      "Duplicate MoF VAT #": "رقم مالية مكرر",
+      "Duplicate MoF #": "رقم مالية مكرر",
+      "Area Needed": "المساحة مطلوبة",
+      "Units Not Entered Yet": "وحدات غير مدخلة بعد",
+      "Not Entered": "غير مدخل",
+      "+ Building Unit": "+ وحدة عقارية",
+      "New Building Unit & Floor Space": "وحدة عقارية ومساحة طابقية جديدة",
+      "Floor / Level *": "الطابق / المستوى *",
+      "Unit / Block Name *": "اسم الوحدة / القسم *",
+      "e.g. Ground Floor, Mezzanine, Floor 2...": "مثال: الطابق الأرضي، ميزانين، الطابق 2...",
+      "e.g. Block 2A East Suite": "مثال: الجناح الشرقي 2A",
+      "Leave 0 if area (m²) is not yet surveyed": "اترك 0 إذا لم تُقَس المساحة (م²) بعد",
+      "Usage Type *": "نوع الاستخدام *",
+      "Commercial Retail": "تجاري - محلات",
+      "Commercial Office": "مكاتب تجارية",
+      "Medical / Clinic": "عيادات / طبي",
+      "Residential": "سكني",
+      "Storage": "مستودع / تخزين",
+      "Occupancy Status *": "حالة الإشغال *",
+      "Under Fit-Out": "قيد التجهيز",
+      "Vacant - Available": "شاغر - متاح",
+      "+ Add Unit": "+ إضافة وحدة",
+      "+ Lease": "+ عقد إيجار",
+      "+ Attach Plan": "+ إرفاق مخطط",
+      "+ Add First Unit": "+ إضافة أول وحدة",
+      "Floor Plans Not Attached": "مخططات الطوابق غير مرفقة",
+      "Review Units": "مراجعة الوحدات",
+      "Set MoF VAT #": "تحديد رقم المالية",
+      "Hide Floors": "إخفاء الطوابق",
+      "Pending m²": "م² قيد الإدخال",
+      "0 Units": "0 وحدات",
+      "Building Stacking & Tax Profile Complete": "مخطط الطوابق والملف الضريبي مكتملان",
+      "Authorized branch / shared legal taxpayer registration": "فرع معتمد أو اشتراك قانوني في نفس الرقم المالي",
+      "Sub-property blocks across 4235 Msaytbeh (Ground, Mezzanine, Floor 1, Floor 3, Floor 4) and regional commercial assets": "الأقسام العقارية في سنتر 4235 المصيطبة (الأرضي، الميزانين، الطابق 1 و3 و4) والأصول الإقليمية",
+      "Property is required.": "اسم العقار مطلوب.",
+      "Floor / Level is required.": "الطابق / المستوى مطلوب.",
+      "Unit / Block Name is required.": "اسم الوحدة / القسم مطلوب.",
+      "Grand Total": "المجموع العام",
+      "Statement 26 · Official 4235 VAT Rent Roll & Lease Expiry": "بيان 26 · سجل إيجارات 4235 الرسمي وانتهاء العقود",
+      "4235 Company S.A.L · Property & Commercial Lessors": "شركة 4235 ش.م.ل · العقارات والتأجير التجاري",
+      "Real Estate & Property · Portfolio Registry, Cadastral Deeds & LGB Valuations": "العقارات والأملاك · سجل المحفظة والصكوك العقارية وتقييمات البنك",
+      "Building Units & Occupancy Matrix": "الوحدات العقارية ومصفوفة الإشغال",
+      "Building Units & Rentable Space Inventory": "سجل الوحدات العقارية والمساحات القابلة للتأجير",
+      "Available for Lease": "متاح للإيجار",
+      "Vacant": "شاغر",
+      "Unit / Block Name": "اسم الوحدة / القسم",
+      "Floor": "الطابق",
+      "Usage Type": "نوع الاستخدام",
+      "Current Tenant": "المستأجر الحالي",
+      "Occupancy": "الإشغال",
+      "Specific Property / Plot": "عقار / قطعة محددة",
+      "Modifying existing counterparty tax profiles requires Modify Data rights.": "يتطلب تعديل الملفات الضريبية للأطراف القائمة صلاحية تعديل البيانات.",
+      "Your seat does not have entry rights to add this counterparty tax profile.": "لا يملك مقعدك صلاحية إدخال لإضافة هذا الملف الضريبي.",
+      "Current Tenant is required when Occupancy Status is Occupied.": "اسم المستأجر الحالي مطلوب عندما تكون حالة الإشغال مشغول.",
+      "Duplicate MoF Tax Number blocked by server.": "تم حظر رقم المالية المكرر من قبل الخادم.",
+      "● Duplicate MoF # blocked sync": "● تعذر المزامنة بسبب رقم مالية مكرر"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -18606,7 +18721,7 @@
       "Building Fit-Out, MEP Repairs & Municipal Taxes": "Aménagements, Maintenance MEP & Taxes Municipales",
       "Building Generator Reserve & MEP Van GPS Dispatch": "Réserve groupes électrogènes et suivi GPS fourgons MEP",
       "Building MEP & Facilities Supervisor": "Superviseur MEP & Maintenance Immeubles",
-      "Building Unit": "Unité / Lot",
+      "Building Unit": "Lot immobilier",
       "Building Units": "Lots & Unités",
       "Building Units & Vacancy": "Unités & Vacance Locative",
       "Building Units Register": "Registre des lots immobiliers",
@@ -20967,7 +21082,7 @@
       "Exp 15W-40": "Attendu 15W-40",
       "Exp Hyd 68": "Attendu Hyd. 68",
       "Exp. Leg": "Volet Charges",
-      "Expand": "Développer",
+      "Expand": "Déplier",
       "Expand All Sites": "Déplier Tous les Sites",
       "Expected": "Attendu",
       "Expected ($)": "Attendu ($)",
@@ -23350,7 +23465,7 @@
       "Net Profit": "Résultat Net",
       "Net Quantity": "Quantité Nette",
       "Net Remittances & Carrier Ledger": "Reversements Nets & Livre Compagnies",
-      "Net Rent ($)": "Loyer Net ($)",
+      "Net Rent ($)": "Loyer net ($)",
       "Net Rev": "Revenu Net",
       "Net Sales": "Ventes Nettes",
       "Net Still Owed ($)": "Solde Net Restant Dû ($)",
@@ -24471,7 +24586,7 @@
       "Payroll, Salaries & Site Transport": "Paie, Salaires & Indemnités Chantier",
       "Pcs": "Pcs",
       "Pegged ~89,500–90,000 LBP": "Ancré ~89 500–90 000 LBP",
-      "Pending": "En Attente",
+      "Pending": "À saisir",
       "Pending $0": "En Attente 0 $",
       "Pending Action By": "Action Attendue de",
       "Pending Final Deed Transfer": "En Attente d'Acte Définitif",
@@ -27560,7 +27675,7 @@
       "Unit 30-Day Diesel Issued (L)": "Gasoil sorti sur 30 jours par engin (L)",
       "Unit = Truck flat rate": "Unité = Forfait camion",
       "Unit Area (m²) Recharge Split, Cross-Script Tenant Wires & Ring-Fenced Deposits": "Ventilation charges au m², virements locataires multilingues et depots cantonnes",
-      "Unit Code": "Code Unité",
+      "Unit Code": "Code lot",
       "Unit Cost": "Coût Unitaire",
       "Unit Economics & Raw Intake Cost Split": "Économie unitaire et ventilation coût d'entrée matières",
       "Unit Equivalence": "Équivalence d'Unité",
@@ -33554,7 +33669,122 @@
       "ISABI Kiosk Admin": "Admin Kiosque ISABI",
       "Enter Admin PIN to unlock controls": "Entrez le PIN Admin pour déverrouiller les contrôles",
       "Incorrect Admin PIN": "PIN Admin incorrect",
-      "Unlock Vault": "Déverrouiller"
+      "Unlock Vault": "Déverrouiller",
+      "Full-group scheduling rights are required to delete company-wide shift types": "Les droits de planification complets sont requis pour supprimer les types de postes globaux",
+      "Custom Shift": "Quart personnalisé",
+      "At least one active work shift must remain": "Au moins un poste de travail actif doit rester",
+      "At least one active work shift must remain for each company": "Au moins un poste de travail actif doit rester pour chaque société",
+      "At least one company-wide Policy & Perks group must remain": "Au moins un groupe Politique et avantages commun doit rester",
+      "At least one active Policy & Perks group must remain": "Au moins un groupe Politique et avantages actif doit rester",
+      "Move Left": "Déplacer à gauche",
+      "Move Right": "Déplacer à droite",
+      "Click any shift to edit, reorder with arrows or drag, or delete": "Cliquez sur un poste pour le modifier, réorganisez par flèches ou glisser-déposer, ou supprimez",
+      "Click any group to edit, reorder with arrows or drag, or delete": "Cliquez sur un groupe pour le modifier, réorganisez par flèches ou glisser-déposer, ou supprimez",
+      "Confirm Delete": "Confirmer la suppression",
+      "Reordered work shifts": "Ordre des postes mis à jour",
+      "Reordered policy groups": "Ordre des groupes de politique mis à jour",
+      "Removed shift type": "Type de poste supprimé",
+      "Cannot reorder": "Réorganisation impossible",
+      "Unlock kiosk first to edit shifts": "Déverrouillez d'abord le kiosque pour modifier les postes",
+      "Company is required when deleting a built-in shift from a multi-company view": "La société est requise pour supprimer un poste intégré depuis une vue multi-sociétés",
+      "Deleted policy group": "Groupe de politique supprimé",
+      "Cannot delete": "Suppression impossible",
+      "Cannot delete group": "Impossible de supprimer le groupe",
+      "Order list is required": "La liste d'ordre est requise",
+      "No policy groups found": "Aucun groupe de politique trouvé",
+      "You do not have rights to reorder shifts for this company": "Vous n'avez pas les droits pour réorganiser les postes de cette société",
+      "Full-group scheduling rights are required to reorder Policy & Perks groups": "Les droits de planification complets sont requis pour réorganiser les groupes Politique et avantages",
+      "Select a specific company before deleting this shift type": "Sélectionnez une société précise avant de supprimer ce type de poste",
+      "Select a specific company above to delete this shift type": "Sélectionnez une société précise ci-dessus pour supprimer ce type de poste",
+      "Select a single company or delete inside the shift modal": "Sélectionnez une seule société ou supprimez dans la fenêtre du poste",
+      "Pick company in modal to delete": "Choisir la société dans la fenêtre pour supprimer",
+      "Authorized Shared MoF Branch": "Succursale partageant le même N° fiscal",
+      "Ground Floor": "Rez-de-chaussée",
+      "Mezzanine": "Mezzanine",
+      "Unspecified Floor": "Étage non précisé",
+      "Floor Filter · Clear ×": "Filtre étage · Effacer ×",
+      "Print Official MoF Invoice": "Imprimer la facture fiscale officielle",
+      "Print / View Official MoF Invoice (Statement 20)": "Imprimer / Voir la facture fiscale officielle (État 20)",
+      "0 (Pending measurement)": "0 (Mesure en attente)",
+      "Optional when Vacant": "Optionnel si vacant",
+      "Official / Legal Invoice Name": "Raison sociale légale (facture)",
+      "Optional trade / MoF invoice name": "Nom commercial / fiscal officiel (optionnel)",
+      "Invoice / Seq #": "N° facture / Séquence",
+      "Leased Unit / Property": "Lot loué / Immeuble",
+      "VAT %": "TVA %",
+      "Total Amount in Words": "Arrêté la présente facture à la somme de",
+      "Subtotal Excl. VAT": "Sous-total HT",
+      "VAT 11% (USD)": "TVA 11 % (USD)",
+      "Total Invoice TTC": "Total facture TTC",
+      "Tenant MoF VAT # Missing": "N° TVA locataire manquant",
+      "Duplicate Tenant MoF VAT # Detected": "Doublon de N° TVA locataire détecté",
+      "Set Official MoF VAT #": "Définir N° TVA officiel",
+      "Print Official Invoice": "Imprimer la facture officielle",
+      "Billing Lines": "Lignes de facturation",
+      "Tax Regime": "Régime fiscal",
+      "MoF 11% VAT Sequential": "TVA 11 % séquentielle officielle",
+      "0% Residential / Exempt": "0 % Résidentiel / Exonéré",
+      "Pending Verification": "À vérifier",
+      "Bill To / Tenant (المستأجر)": "Facturé à / Locataire",
+      "Landlord / Authorized Signatory": "Bailleur / Signataire autorisé",
+      "Tenant Acknowledgment / توقيع المستأجر": "Accusé de réception du locataire",
+      "MoF VAT # Needed": "N° TVA requis",
+      "Duplicate MoF VAT #": "N° TVA en doublon",
+      "Duplicate MoF #": "N° fiscal en doublon",
+      "Area Needed": "Surface requise",
+      "Units Not Entered Yet": "Lots non encore saisis",
+      "Not Entered": "Non saisi",
+      "+ Building Unit": "+ Lot immobilier",
+      "New Building Unit & Floor Space": "Nouveau lot immobilier et surface",
+      "Floor / Level *": "Étage / Niveau *",
+      "Unit / Block Name *": "Nom du lot / bloc *",
+      "e.g. Ground Floor, Mezzanine, Floor 2...": "ex. Rez-de-chaussée, Mezzanine, Étage 2...",
+      "e.g. Block 2A East Suite": "ex. Bloc 2A Est",
+      "Leave 0 if area (m²) is not yet surveyed": "Laisser 0 si la surface (m²) reste à relever",
+      "Usage Type *": "Type d’usage *",
+      "Commercial Retail": "Commerce de détail",
+      "Commercial Office": "Bureaux",
+      "Medical / Clinic": "Médical / Clinique",
+      "Residential": "Résidentiel",
+      "Storage": "Stockage",
+      "Occupancy Status *": "Statut d’occupation *",
+      "Under Fit-Out": "En aménagement",
+      "Vacant - Available": "Vacant - Disponible",
+      "+ Add Unit": "+ Ajouter lot",
+      "+ Lease": "+ Bail",
+      "+ Attach Plan": "+ Joindre plan",
+      "+ Add First Unit": "+ Ajouter le 1er lot",
+      "Floor Plans Not Attached": "Plans d’étages non joints",
+      "Review Units": "Vérifier les lots",
+      "Set MoF VAT #": "Saisir N° TVA",
+      "Hide Floors": "Masquer étages",
+      "Pending m²": "m² à saisir",
+      "0 Units": "0 lots",
+      "Building Stacking & Tax Profile Complete": "Plan d’étages et profil fiscal complets",
+      "Authorized branch / shared legal taxpayer registration": "Succursale autorisée / même identifiant fiscal légal",
+      "Sub-property blocks across 4235 Msaytbeh (Ground, Mezzanine, Floor 1, Floor 3, Floor 4) and regional commercial assets": "Lots détaillés du 4235 Msaytbeh (RDC, Mezzanine, Étages 1, 3, 4) et actifs régionaux",
+      "Property is required.": "L’immeuble est requis.",
+      "Floor / Level is required.": "L’étage / niveau est requis.",
+      "Unit / Block Name is required.": "Le nom du lot est requis.",
+      "Grand Total": "Total général",
+      "Statement 26 · Official 4235 VAT Rent Roll & Lease Expiry": "État 26 · État locatif TVA 4235 et échéances",
+      "4235 Company S.A.L · Property & Commercial Lessors": "4235 Company S.A.L · Immobilier et baux commerciaux",
+      "Real Estate & Property · Portfolio Registry, Cadastral Deeds & LGB Valuations": "Immobilier & Patrimoine · Registre des actifs, titres fonciers et expertises LGB",
+      "Building Units & Occupancy Matrix": "Lots immobiliers et matrice d’occupation",
+      "Building Units & Rentable Space Inventory": "Inventaire des lots et surfaces locatives",
+      "Available for Lease": "Disponible à la location",
+      "Vacant": "Vacant",
+      "Unit / Block Name": "Nom du lot / bloc",
+      "Floor": "Étage",
+      "Usage Type": "Type d’usage",
+      "Current Tenant": "Locataire actuel",
+      "Occupancy": "Occupation",
+      "Specific Property / Plot": "Bien / parcelle spécifique",
+      "Modifying existing counterparty tax profiles requires Modify Data rights.": "La modification des profils fiscaux existants nécessite le droit Modifier les données.",
+      "Your seat does not have entry rights to add this counterparty tax profile.": "Votre poste ne dispose pas des droits de saisie pour ajouter ce profil fiscal.",
+      "Current Tenant is required when Occupancy Status is Occupied.": "Le locataire actuel est requis lorsque le statut d'occupation est Occupé.",
+      "Duplicate MoF Tax Number blocked by server.": "Numéro fiscal MoF en double bloqué par le serveur.",
+      "● Duplicate MoF # blocked sync": "● N° fiscal en double : sync bloquée"
     }
   };
 
@@ -35559,6 +35789,114 @@
 
     m = trimmed.match(/^Seq\s+(#\d+\.\.#\d+)$/i);
     if (m) return lang === 'ar' ? `تسلسل ${m[1]}` : `Séq. ${m[1]}`;
+
+    m = trimmed.match(/^VAT 11% in LBP\s*\(@\s*([\d,]+)\s*LL\/\$\)$/i);
+    if (m) return lang === 'ar' ? `ض.ق.م 11% بالليرة (@ ${m[1]} ل.ل/$)` : `TVA 11 % en LBP (@ ${m[1]} LL/$)`;
+
+    m = trimmed.match(/^Missing Tenant VAT #\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `رقم مالية المستأجر مفقود (${m[1]})` : `N° TVA locataire manquant (${m[1]})`;
+
+    m = trimmed.match(/^Missing Area\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `مساحة مفقودة (${m[1]})` : `Surface manquante (${m[1]})`;
+
+    m = trimmed.match(/^Building Stacking Plan & Missing-Data Completeness\s*·\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `مخطط الطوابق واكتمال البيانات · ${m[1]}` : `Plan d'étages et complétude · ${m[1]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+recorded units\s*\(([\d,]+)\s+occupied,\s*([\d,]+)\s+vacant(?:,\s*([\d,]+)\s+fit-out)?\)\s*·\s*Pro-rata Rent Roll\s+(.+?)(?:\s*·\s*([\d,]+)\s+floors pending entry)?$/i);
+    if (m) {
+      const rRoll = translateCore(m[5].trim(), lang, depth + 1);
+      const fitAr = m[4] ? `، ${m[4]} قيد التجهيز` : '';
+      const fitFr = m[4] ? `, ${m[4]} en aménagement` : '';
+      const pendingAr = m[6] ? ` · ${m[6]} طوابق بانتظار الإدخال` : '';
+      const pendingFr = m[6] ? ` · ${m[6]} étages à saisir` : '';
+      return lang === 'ar'
+        ? `${m[1]} وحدة مسجلة (${m[2]} مشغولة، ${m[3]} شاغرة${fitAr}) · الإيجار السنوي التناسبي ${rRoll}${pendingAr}`
+        : `${m[1]} lots enregistrés (${m[2]} occupés, ${m[3]} vacants${fitFr}) · Loyer annuel proratisé ${rRoll}${pendingFr}`;
+    }
+
+    m = trimmed.match(/^0 units mapped in Building Stacking Plan for (.+?) \(([\d,]+(?:\.\d+)?) m² plot area\)$/i);
+    if (m) return lang === 'ar' ? `0 وحدة مسجلة في مخطط الطوابق لـ ${m[1]} (مساحة العقار ${m[2]} م²)` : `0 lot enregistré dans le plan d'étages pour ${m[1]} (${m[2]} m² de terrain)`;
+
+    m = trimmed.match(/^MoF # (.+?) collides with "(.+?)"\. Assign the tenant's verified MoF registration before filing\.$/i);
+    if (m) return lang === 'ar' ? `رقم المالية ${m[1]} يتطابق مع "${m[2]}". عيّن الرقم الضريبي المعتمد للمستأجر قبل التصريح.` : `Le N° MoF ${m[1]} est déjà utilisé par « ${m[2]} ». Attribuez le N° fiscal vérifié du locataire avant dépôt.`;
+
+    m = trimmed.match(/^Taxable 11% VAT invoice for "(.+?)" is missing the tenant MoF VAT registration number\.$/i);
+    if (m) return lang === 'ar' ? `الفاتورة الخاضعة لضريبة 11% لـ "${m[1]}" تفتقد رقم التسجيل الضريبي للمستأجر.` : `La facture soumise à la TVA 11 % pour « ${m[1]} » manque du N° d'enregistrement TVA du locataire.`;
+
+    m = trimmed.match(/^Gap:\s*(.+?)\s+Not Entered Yet$/i);
+    if (m) return lang === 'ar' ? `فجوة: ${translateCore(m[1], lang, depth + 1)} لم يُدخل بعد` : `Manquant : ${translateCore(m[1], lang, depth + 1)} non saisi`;
+
+    m = trimmed.match(/^Floors\s+(\d+)-(\d+)\s*·\s*(\d+)\s+Floors Not Entered Yet$/i);
+    if (m) return lang === 'ar' ? `الطوابق ${m[1]}-${m[2]} · ${m[3]} طوابق لم تُدخل بعد` : `Étages ${m[1]}-${m[2]} · ${m[3]} étages non saisis`;
+
+    m = trimmed.match(/^Expand Floors\s+(\d+)-(\d+)$/i);
+    if (m) return lang === 'ar' ? `عرض الطوابق ${m[1]}-${m[2]}` : `Déplier étages ${m[1]}-${m[2]}`;
+
+    m = trimmed.match(/^Floors\s+(\d+)-(\d+)$/i);
+    if (m) return lang === 'ar' ? `الطوابق ${m[1]}-${m[2]}` : `Étages ${m[1]}-${m[2]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+Units Missing Area\s*\(m²\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} وحدة دون مساحة (م²)` : `${m[1]} lots sans surface (m²)`;
+
+    m = trimmed.match(/^([\d,]+)\s+VAT Tenants? Missing MoF Tax #\s*\((.+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مستأجر خاضع للضريبة دون رقم مالية (${m[2]})` : `${m[1]} locataire(s) TVA sans N° fiscal (${m[2]})`;
+
+    m = trimmed.match(/^([\d,]+)\s+Portfolio Properties Pending Unit Breakdown$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقاراً بانتظار تفصيل الوحدات` : `${m[1]} biens en attente du détail des lots`;
+
+    m = trimmed.match(/^(\d+)\s+upper floors\s*\(Floors\s+(\d+)-(\d+)\)\s+are still unentered in the unit roll\.$/i);
+    if (m) return lang === 'ar' ? `${m[1]} طوابق عليا (الطوابق ${m[2]}-${m[3]}) لم تُدخل في سجل الوحدات بعد.` : `${m[1]} étages supérieurs (étages ${m[2]}-${m[3]}) ne sont pas encore saisis.`;
+
+    m = trimmed.match(/^No suites recorded yet on\s+(.+?)\s+for\s+(.+)\.$/i);
+    if (m) return lang === 'ar' ? `لا توجد وحدات مسجلة في ${translateCore(m[1], lang, depth + 1)} ضمن ${m[2]} بعد.` : `Aucun lot enregistré au ${translateCore(m[1], lang, depth + 1)} pour ${m[2]}.`;
+
+    m = trimmed.match(/^Sequence gap detected between adjacent floors\s*\((.+?)\s+missing\)\.$/i);
+    if (m) return lang === 'ar' ? `رُصدت فجوة تسلسل بين الطوابق (${translateCore(m[1], lang, depth + 1)} مفقود).` : `Écart de séquence détecté entre étages (${translateCore(m[1], lang, depth + 1)} manquant).`;
+
+    m = trimmed.match(/^\+\s*Add\s+Floor\s+(\d+)\s+Unit$/i);
+    if (m) return lang === 'ar' ? `+ إضافة وحدة الطابق ${m[1]}` : `+ Ajouter lot Étage ${m[1]}`;
+
+    m = trimmed.match(/^Unit Code "(.+)" already exists\. Enter a unique Unit Code\.$/i);
+    if (m) return lang === 'ar' ? `رمز الوحدة "${m[1]}" موجود مسبقاً. أدخل رمزاً فريداً.` : `Le code lot « ${m[1]} » existe déjà. Saisissez un code unique.`;
+
+    m = trimmed.match(/^Floor\s+(\d+)$/i);
+    if (m) return lang === 'ar' ? `الطابق ${m[1]}` : `Étage ${m[1]}`;
+
+    m = trimmed.match(/^MoF Tax\s*\/\s*VAT Reg\. No:\s*(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `رقم التسجيل الضريبي / ق.م: ${inner}` : `N° d'enregistrement fiscal / TVA : ${inner}`;
+    }
+
+    m = trimmed.match(/^Tenant Account:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `حساب المستأجر: ${m[1]}` : `Compte locataire : ${m[1]}`;
+
+    m = trimmed.match(/^Next Pay:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `الدفعة القادمة: ${m[1]}` : `Prochain paiement : ${m[1]}`;
+
+    m = trimmed.match(/^Next Step:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `التدرج القادم: ${m[1]}` : `Prochain palier : ${m[1]}`;
+
+    m = trimmed.match(/^(\d+)\s+billing periods?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فترة فوترة` : `${m[1]} période(s) de facturation`;
+
+    m = trimmed.match(/^([\d,]+)\s+units$/i);
+    if (m) return lang === 'ar' ? `${m[1]} وحدة` : `${m[1]} lots`;
+
+    m = trimmed.match(/^Invoice\s+(.+?)\s*·\s*Customer\s+(.+?)\s*·\s*Date\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `فاتورة ${m[1]} · العميل ${m[2]} · التاريخ ${m[3]}` : `Facture ${m[1]} · Client ${m[2]} · Date ${m[3]}`;
+
+    m = trimmed.match(/^Building Units & Rentable Space Inventory\s*\(([\d,/\s]+)\)$/i);
+    if (m) return lang === 'ar' ? `سجل الوحدات العقارية والمساحات القابلة للتأجير (${m[1]})` : `Inventaire des lots et surfaces locatives (${m[1]})`;
+
+    m = trimmed.match(/^Vacant\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `شاغر (${m[1]})` : `Vacant (${m[1]})`;
+
+    m = trimmed.match(/^([\d,]+(?:\.\d+)?)\s+m²$/i);
+    if (m) return lang === 'ar' ? `${m[1]} م²` : `${m[1]} m²`;
+
+    m = trimmed.match(/^Occupied\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `مشغول (${m[1]})` : `Occupé (${m[1]})`;
 
     m = trimmed.match(/^Units\s+(\d+\/\d+)\s*·\s*Gross Rent\s+(\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `الوحدات ${m[1]} · الإيجار الإجمالي ${m[2]}` : `Lots ${m[1]} · Loyer brut ${m[2]}`;

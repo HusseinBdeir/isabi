@@ -1209,9 +1209,13 @@
       return `
         <div class="form-grid-3">
           ${fld('Customer Name *', inp('f_customer', 'text', '', 'placeholder="Full legal / trade name"'))}
+          ${fld('Official / Legal Invoice Name', inp('f_official_name', 'text', '', 'placeholder="Optional trade / MoF invoice name"'))}
           ${fld('Default Payment Method *', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'))}
           ${fld('VAT Registered (11%)', sel('f_vatreg', [['No', 'No'], ['Yes', 'Yes — 11% VAT Applies']], 'No'))}
-          ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Ministry of Finance #"'), { id: 'wrap_cust_mof' })}
+          ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Ministry of Finance #"'), {
+            id: 'wrap_cust_mof',
+            afterHtml: '<span class="hint warn univ-mof-dup-hint" id="hint_cust_mof" hidden></span><label class="mof-shared-check" id="wrap_f_mof_shared" hidden style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12px"><input type="checkbox" id="f_mof_shared_ok"><span>Authorized branch / shared legal taxpayer registration</span></label>'
+          })}
           ${fld('Phone', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
           ${fld('Region', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
           <div class="form-field check-field"><input type="checkbox" id="f_declqty"><label for="f_declqty">Uses Customer-declared Qty on tickets</label></div>
@@ -1246,7 +1250,10 @@
           ${fld('Region', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
           ${fld('Default Payment Method', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'))}
           ${fld('Standing Discount (%)', inp('f_standing_disc', 'number', '', 'step="0.1" min="0" max="100" inputmode="decimal" placeholder="0 (optional)"'), { hint: 'Optional agreed supplier discount % · flags $0 invoices & offers 1-tap apply' })}
-          ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Tax / MOF registration #"'))}
+          ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Tax / MOF registration #"'), {
+            id: 'wrap_sup_mof',
+            afterHtml: '<span class="hint warn univ-mof-dup-hint" id="hint_sup_mof" hidden></span><label class="mof-shared-check" id="wrap_f_mof_shared" hidden style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12px"><input type="checkbox" id="f_mof_shared_ok"><span>Authorized branch / shared legal taxpayer registration</span></label>'
+          })}
           <div class="form-field check-field"><input type="checkbox" id="f_iva"><label for="f_iva">IVA / VAT Registered (11% Input VAT)</label></div>
           <div class="form-field span-3" id="wrap_sup_drivers"${isFleetInd ? '' : ' hidden'}>
             ${secHdr('2. Hauler Fleet & Drivers (Auto-Enabled when Hauler / Truck Owner is Selected)')}

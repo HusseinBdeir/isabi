@@ -731,7 +731,11 @@
     hubInspectorReturn: null,
     stmt14ReturnCtx: null,
     stmt16ReturnCtx: null,
+    stmt20ReturnCtx: null,
     ovkMoversReturn: null,
+    reStackProp: '',
+    reStackExpandUpper: false,
+    reUnitsChip: 'all',
     dailyOpsDate: '',
     dailyOpsIncludeAfterHours: true,
     dailyOpsCommLens: 'pulse',
@@ -7698,6 +7702,138 @@
       ? `<button type="button" class="raw-leg-act-btn raw-leg-act-wa" data-open-cust-stmt="${esc(party)}" data-stmt-share="1" data-stmt-panel="${esc(panelId || '')}" data-ui-tip="Share Statement (WhatsApp / PDF)" aria-label="Share Statement (WhatsApp / PDF)">${ic('send_msg')}</button>`
       : '';
     return `<span class="raw-leg-stmt-actions no-print"><button type="button" class="raw-leg-act-btn" data-open-cust-stmt="${esc(party)}" data-stmt-panel="${esc(panelId || '')}" data-ui-tip="Open Statement 14 (Customer SOA)" aria-label="Open Statement 14 (Customer SOA)">${ic('statements')}</button>${shareBtn}</span>`;
+  }
+
+  function normMofTaxId(raw) {
+    let s = String(raw == null ? '' : raw).trim().toUpperCase();
+    if (!s) return '';
+    s = s.replace(/^(?:VAT|MOF|TVA|TAX)\s*(?:REG(?:ISTRATION)?\s*)?(?:NO\.?|#|NUMBER)?\s*[:\-]?\s*/i, '').trim();
+    s = s.replace(/[\u2013\u2014\s]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!s || s === '-' || s === '0' || /^(?:N\/?A|NONE|PENDING|TBD|UNKNOWN)$/i.test(s)) return '';
+    return s;
+  }
+
+  function getCoTaxProfile(coName) {
+    const k = String(coName || '').trim().toLowerCase();
+    const nb = (typeof window !== 'undefined' && window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.map === 'function')
+      ? window.MFG_NAMEBOOK.map('co_tax_profiles')
+      : {};
+    if (nb && k && nb[k] && typeof nb[k] === 'object') return nb[k];
+    if (nb && k) {
+      for (const mk of Object.keys(nb)) {
+        if (k.includes(mk) || mk.includes(k)) return nb[mk];
+      }
+    }
+    return null;
+  }
+
+  function resolvePartyTaxProfile(partyName, roleHint) {
+    const nm = String(partyName || '').trim();
+    if (!nm) return { name: '', officialName: '', mofNo: '', missingMof: false, dupHolder: '', customerId: '' };
+    const low = nm.toLowerCase();
+    const nb = (typeof window !== 'undefined' && window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.map === 'function')
+      ? window.MFG_NAMEBOOK.map('party_tax_profiles')
+      : {};
+    const nbProf = (nb && nb[low] && typeof nb[low] === 'object') ? nb[low] : {};
+    const cust = (!roleHint || roleHint === 'customer') ? customerInfo(nm) : null;
+    const sup = (!roleHint || roleHint === 'supplier') ? supplierInfo(nm) : null;
+    const rec = cust || sup || {};
+    const officialName = String(rec.official_name || nbProf.legal_name || rec.name || nm).trim();
+    const rawMof = (rec && (rec.mof_no != null || rec.financial_no != null) && (normMofTaxId(rec.mof_no) || normMofTaxId(rec.financial_no) || rec._mofCleared))
+      ? (rec.mof_no || rec.financial_no || '')
+      : (nbProf.mof_no || '');
+    const mofNo = normMofTaxId(rawMof);
+    const dupRow = (mofNo && !rec.shared_mof_ok && typeof findDuplicateMofCounterparty === 'function')
+      ? findDuplicateMofCounterparty(cust ? 'customers' : 'suppliers', mofNo, rec.id || '', 'Real Estate & Property', nm)
+      : null;
+    return {
+      name: nm,
+      officialName,
+      mofNo,
+      missingMof: !mofNo,
+      dupHolder: dupRow ? String(dupRow.official_name || dupRow.name || dupRow.id || '').trim() : '',
+      customerId: String(rec.id || '').trim(),
+      sharedMofOk: Boolean(rec.shared_mof_ok === true || rec.shared_mof_ok === 1 || rec.shared_mof_ok === '1'),
+      row: rec
+    };
+  }
+
+  function openTenantTaxProfileQuickFix(partyName, roleHint) {
+    const nm = String(partyName || '').trim();
+    if (!nm) return false;
+    const isSup = roleHint === 'supplier';
+    const crKey = isSup ? 'suppliers' : 'customers';
+    const modalForm = isSup ? 'supplier' : 'customer';
+    let existing = isSup ? supplierInfo(nm) : customerInfo(nm);
+    if (existing && !existing.id) {
+      const seedRec = resolveInspectorRecord(crKey, nm);
+      if (seedRec) existing = seedRec;
+    }
+    if (existing) {
+      if (!canModifyData()) {
+        toast('Modifying existing counterparty tax profiles requires Modify Data rights.', 'err');
+        return false;
+      }
+      const eid = existing.id || `seed_${crKey}_${universalMainNormKey(crKey, existing)}`;
+      if (!existing.id) existing.id = eid;
+      openEntryModalForRecord(crKey, String(eid));
+    } else {
+      if (!canEnterForm(modalForm)) {
+        toast('Your seat does not have entry rights to add this counterparty tax profile.', 'err');
+        return false;
+      }
+      const prof = resolvePartyTaxProfile(nm, roleHint);
+      const prefillObj = { official_name: prof.officialName || nm };
+      prefillObj[isSup ? 'supplier' : 'customer'] = nm;
+      openEntryModal(modalForm, prefillObj);
+    }
+    setTimeout(() => {
+      const mofEl = $('f_mof');
+      if (mofEl) { mofEl.focus(); mofEl.select(); }
+    }, 80);
+    return true;
+  }
+
+  function openOfficialSalesInvoice(opts) {
+    const o = (typeof opts === 'string') ? { invoiceNo: opts } : (opts || {});
+    const invNo = String(o.invoiceNo || '').trim();
+    if (!invNo) return false;
+    if (!canAccessRdlReport('20')) {
+      toast('Statement 20 (Sales Invoice Print) requires an authorized finance role.', 'warn');
+      return false;
+    }
+    const curView = STATE.view || '';
+    const curTab = (STATE.viewTabs && STATE.viewTabs[curView]) || '';
+    const panelId = String(o.panelId || '').trim();
+    const wsEl = $('workspace');
+    STATE.stmt20ReturnCtx = (curView && curView !== 'statements')
+      ? {
+          view: curView,
+          tab: curTab,
+          panelId,
+          company: STATE.company || '',
+          userIdx: STATE.activeUserIdx,
+          chipFilter: STATE.chipFilter || 'all',
+          search: STATE.search || '',
+          scrollTop: wsEl ? wsEl.scrollTop : 0,
+          label: String(o.returnLabel || (curView === 're_invoicing' ? 'Rent Invoices' : (curView === 're_leases' ? 'Leases & Rent Roll' : (curView === 're_units' ? 'Properties & Units' : 'Operations')))).trim()
+        }
+      : null;
+    STATE.rdl = STATE.rdl || { activeId: '20', params: {} };
+    STATE.rdl.params = STATE.rdl.params || {};
+    STATE.rdl.params.invoiceNo = invNo;
+    STATE.stmtFilters = STATE.stmtFilters || {};
+    STATE.stmtFilters.invoice = invNo;
+    if (o.customer) STATE.stmtFilters.customer = String(o.customer).trim();
+    STATE.activeStatement = '20';
+    if (curView !== 'statements') setView('statements', { _keepStmt20Return: true });
+    else renderApp();
+    if (o.autoPrint) {
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && typeof window.print === 'function') window.print();
+      }, 240);
+    }
+    return true;
   }
 
   function openStmt16LegSettlement() {
@@ -17128,7 +17264,11 @@
     tillAt: (rawKey, iso) => computeTillAtDate(rawKey, iso),
     demoScope: () => isDemoScopeActive(),
     // Partner, group-company and loan rows are for Owner, Supervisor and full-finance seats (as on Cash Flow).
-    fullFin: () => activeSeatFullFinKey() === 'F1'
+    fullFin: () => activeSeatFullFinKey() === 'F1',
+    coTaxProfile: co => getCoTaxProfile(co),
+    resolvePartyTaxProfile: (nm, role) => resolvePartyTaxProfile(nm, role),
+    normMofTaxId: raw => normMofTaxId(raw),
+    openTenantTaxProfileQuickFix: (nm, role) => openTenantTaxProfileQuickFix(nm, role)
   };
   window.__mfgRevenueClass = {
     classOf: saleRevenueClass,
@@ -43228,8 +43368,17 @@
       { id: 'ws_seed_hld_office', company: 'Bdeir Holding', shift_code: 'office_mon_fri', name: 'Office Mon-Fri', short: 'Mon-Fri', is_bu_default: true, start_time: '08:30', end_time: '17:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5], grace_min: 15, early_leave_grace_min: 15, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: 'Bdeir Holding default Mon-Fri office schedule (08:30-17:00)' }
     ];
 
+    const _voidedShiftByCo = new Map();
+    const isSeededShiftVoided = (coName, codeRaw) => {
+      const cN = norm(coName || 'WTC');
+      if (!_voidedShiftByCo.has(cN)) _voidedShiftByCo.set(cN, _getCompanyVoidedShiftMap(cN));
+      const code = normalizeShiftCodeAlias(codeRaw || '');
+      return Boolean(code && _voidedShiftByCo.get(cN).has(code));
+    };
+
     seedSpecs.forEach(sp => {
       if (voidedIds.has(sp.id) || customById.has(sp.id)) return;
+      if (isSeededShiftVoided(sp.company, sp.shift_code || sp.id)) return;
       const hasCustomOverrideSameStart = customList.some(cr =>
         cr && !cr.voided
         && norm(cr.company || 'WTC') === norm(sp.company)
@@ -43257,6 +43406,7 @@
     (ws.shiftTypes || []).forEach(st => {
       if (!st || st.voided) return;
       const stId = String(st.id || '');
+      if (st._orderOnly && DEFAULT_SHIFT_TYPES.some(d => d.id === normalizeShiftCodeAlias(stId))) return;
       const co = st.company || 'WTC';
       const bridgeId = stId.startsWith('ws_') ? stId : `ws_st_${stId}_${norm(co).replace(/[^a-z0-9]+/g, '')}`;
       if (voidedIds.has(bridgeId) || customById.has(bridgeId) || byId.has(bridgeId)) return;
@@ -43399,9 +43549,17 @@
     const qNorm = norm(aliasedInput || '');
     if (!qNorm) return getBuDefaultShift(companyRaw, d);
     const list = (SEED.records && SEED.records.work_shifts) || [];
+    const targetEffCoNorm = coNorm || norm(defaultEntryCompany() || 'WTC');
+    const voidedShiftCodes = _getCompanyVoidedShiftMap(targetEffCoNorm);
     const matching = list.filter(r => {
       if (!r || r.voided) return false;
       if (coNorm && r.company && norm(r.company) !== norm('All BUs') && norm(r.company) !== norm('All Companies') && norm(r.company) !== coNorm) return false;
+      const codeN = normalizeShiftCodeAlias(r.shift_code || r.shift_id || r.id || '');
+      if (codeN && voidedShiftCodes.has(codeN)) {
+        const rTs = String(r.modified_at || r.updated_at || '');
+        const vTs = voidedShiftCodes.get(codeN) || '';
+        if (!rTs || !vTs || rTs <= vTs) return false;
+      }
       return norm(r.shift_code || '') === qNorm || norm(r.shift_id || '') === qNorm || norm(r.name || '') === qNorm || norm(r.id || '') === qNorm;
     });
     const inWindow = matching.filter(r => {
@@ -43420,8 +43578,10 @@
       s && !s.voided
       && (!coNorm || !s.company || norm(s.company) === norm('All BUs') || norm(s.company) === norm('All Companies') || norm(s.company) === coNorm)
       && (norm(normalizeShiftCodeAlias(s.id || '')) === qNorm || norm(s.name || '') === qNorm)
+      && !voidedShiftCodes.has(normalizeShiftCodeAlias(s.id || ''))
     );
-    const builtinMatch = DEFAULT_SHIFT_TYPES.find(def => norm(def.id) === qNorm || norm(def.name) === qNorm);
+    const rawBuiltin = DEFAULT_SHIFT_TYPES.find(def => norm(def.id) === qNorm || norm(def.name) === qNorm);
+    const builtinMatch = (rawBuiltin && !voidedShiftCodes.has(rawBuiltin.id)) ? rawBuiltin : null;
     if (customMatch || builtinMatch) {
       return hydrateWorkShiftRowComputed(Object.assign({}, builtinMatch || {}, customMatch || {}, {
         company: companyRaw || defaultEntryCompany() || 'WTC',
@@ -52454,7 +52614,7 @@
     return out.replace(/\s+/g, ' ').trim();
   }
 
-  const CLEAN_DOMAIN_CELL_REJECT_SELECTOR = '.att-inline-badge, .sr-only, .ind-agr-pill, .raw-leg-stmt-actions, .rep-shift-ico, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select, .row-sel-dot, [data-row-sel]';
+  const CLEAN_DOMAIN_CELL_REJECT_SELECTOR = '.att-inline-badge, .sr-only, .ind-agr-pill, .raw-leg-stmt-actions, .rep-shift-ico, .re-area-missing-badge, .re-mof-missing-pill, button, .void-btn, .tkt-print-mini, .btn-ind-wf, input, select, .row-sel-dot, [data-row-sel]';
 
   function cleanDomainCellText(tdEl) {
     return walkBlockSeparatedCellText(tdEl, CLEAN_DOMAIN_CELL_REJECT_SELECTOR, false);
@@ -75290,12 +75450,42 @@
     workorders.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_workorders', r.id); if (p) workorders[i] = Object.assign({}, r, p); });
     recharges.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_recharges', r.id); if (p) recharges[i] = Object.assign({}, r, p); });
 
+    const reEditsMap = (STATE && STATE.industryRowEdits) || {};
+    const reUnitCellEditsById = new Map();
+    Object.keys(reEditsMap).forEach(ek => {
+      if (!ek.startsWith('Real Estate & Property::')) return;
+      const ev = reEditsMap[ek];
+      if (!ev || typeof ev !== 'object' || ev.voided || ev.voided_at || ev._scheduleVoided) return;
+      const snapTbl = ev.void_snapshot && ev.void_snapshot.domainTblKey ? String(ev.void_snapshot.domainTblKey).trim() : '';
+      const tblTitleLow = String(ev.tableTitle || ek.split('::')[1] || '').toLowerCase();
+      if (snapTbl ? snapTbl !== 're_units' : !/building unit|rentable space/.test(tblTitleLow)) return;
+      const pidUp = String(ev.primaryId || ek.split('::').slice(2).join('::') || '').trim().toUpperCase();
+      if (pidUp) reUnitCellEditsById.set(pidUp, ev);
+    });
     units.forEach((u, i) => {
       if (!u) return;
       const uCode = u.unit_code || u.code || u.id || '-';
       const uName = u.unit_name || u.name || uCode;
       const uStatus = u.status || u.occupancy || 'Occupied';
-      units[i] = Object.assign({}, u, { unit_code: uCode, name: uName, unit_name: uName, status: uStatus, occupancy: u.occupancy || uStatus });
+      let merged = Object.assign({}, u, { unit_code: uCode, name: uName, unit_name: uName, status: uStatus, occupancy: u.occupancy || uStatus });
+      const ev = reUnitCellEditsById.get(String(uCode).toUpperCase()) || (u.id ? reUnitCellEditsById.get(String(u.id).toUpperCase()) : null);
+      if (ev && Array.isArray(ev.headers) && Array.isArray(ev.cells)) {
+        for (let ci = 0; ci < ev.headers.length; ci++) {
+          const hdr = String(ev.headers[ci] || '').trim().toLowerCase();
+          const cell = ev.cells[ci] == null ? '' : String(ev.cells[ci]).trim();
+          if (!hdr) continue;
+          if (hdr.includes('entity')) { if (cell) merged.company = cell; }
+          else if (hdr.includes('property')) { if (cell) merged.property = cell; }
+          else if (hdr.includes('unit / block') || hdr === 'unit name') { if (cell) { merged.unit_name = cell; merged.name = cell; } }
+          else if (hdr.includes('floor')) { if (cell) merged.floor = cell; }
+          else if (hdr.includes('usage') || hdr.includes('type')) { if (cell) merged.type = cell; }
+          else if (hdr.includes('area')) { if (!/restricted/i.test(cell)) { const n = Number(String(cell).replace(/[^0-9.\-]/g, '')); if (Number.isFinite(n)) merged.area_sqm = Math.max(0, n); } }
+          else if (hdr.includes('tenant')) { if (cell) merged.tenant = cell; }
+          else if (hdr.includes('annual rent')) { if (!/restricted/i.test(cell)) { const n = Number(String(cell).replace(/[^0-9.\-]/g, '')); if (Number.isFinite(n)) merged.annual_rent_usd = Math.max(0, round2(n)); } }
+          else if (hdr.includes('occupancy')) { if (cell) { merged.occupancy = cell; merged.status = cell; } }
+        }
+      }
+      units[i] = merged;
     });
     leases.forEach((l, i) => {
       if (!l) return;
@@ -75539,12 +75729,23 @@
       return true;
     });
     const filteredLeases = sortRows(reLChipRows.filter(r => matchIndDrawerFilters(r, 're_leases', reExtractors)), 're_leases');
-    const reInvF = (!canReLBooks && ['open_ar', 'collected'].includes(STATE.chipFilter)) ? 'all' : (STATE.chipFilter || 'all');
+    const isDemoReInv = isDemoScopeActive();
+    const mofStatusForInv = r => {
+      if (isDemoReInv || !canReLTax || !(Number(r.vat_usd || 0) > 0.005)) return null;
+      return resolvePartyTaxProfile(r.tenant, 'customer');
+    };
+    const missingMofInvCount = (!isDemoReInv && canReLTax)
+      ? data.invoices.filter(r => { const st = mofStatusForInv(r); return Boolean(st && (st.missingMof || st.dupHolder)); }).length
+      : 0;
+    const reInvF = (!canReLBooks && ['open_ar', 'collected'].includes(STATE.chipFilter)) || (!canReLTax && STATE.chipFilter === 'missing_mof')
+      ? 'all'
+      : (STATE.chipFilter || 'all');
     if (STATE.chipFilter !== reInvF && reInvF === 'all') STATE.chipFilter = 'all';
     const reInvChip = (key, label) => `<button type="button" class="filter-chip ${reInvF === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const filteredInv = sortRows(data.invoices.filter(matchQ).filter(r => {
       if (reInvF === 'open_ar') return Number(r.open_ar_usd || 0) > 0.005;
       if (reInvF === 'collected') return Number(r.collected_usd || 0) > 0.005;
+      if (reInvF === 'missing_mof') { const st = mofStatusForInv(r); return Boolean(st && (st.missingMof || st.dupHolder)); }
       return true;
     }), 're_invoicing');
     const filteredRct = sortRows(data.receipts.filter(matchQ), 're_receipts');
@@ -75667,6 +75868,7 @@
               ${reInvChip('all', `All (${fmtNum(data.invoices.length)})`)}
               ${canReLBooks ? reInvChip('open_ar', 'Open Rent AR') : ''}
               ${canReLBooks ? reInvChip('collected', 'Collected') : ''}
+              ${missingMofInvCount > 0 ? reInvChip('missing_mof', `Missing Tenant VAT # (${fmtNum(missingMofInvCount)})`) : ''}
             </div>
           </div>
           <div class="table-wrap">
@@ -75688,13 +75890,22 @@
                 </tr>
               </thead>
               <tbody>
-                ${filteredInv.length ? sliceRows('re_invoicing', filteredInv).map(r => `
+                ${filteredInv.length ? sliceRows('re_invoicing', filteredInv).map(r => {
+                  const canPrint20 = canAccessRdlReport('20');
+                  const mofSt = mofStatusForInv(r);
+                  const invPrintBtn = canPrint20
+                    ? `<button type="button" class="raw-leg-act-btn no-print" data-open-official-inv="${esc(r.id)}" data-inv-cust="${esc(r.tenant)}" data-stmt-panel="reInvoicingPanel" data-ui-tip="Print / View Official MoF Invoice (Statement 20)" aria-label="Print Official MoF Invoice">${ic('print') || ic('statements')}</button>`
+                    : '';
+                  const mofPillHtml = (mofSt && (mofSt.missingMof || mofSt.dupHolder))
+                    ? `<div><button type="button" class="badge badge-warn re-mof-missing-pill no-print" data-fix-party-mof="${esc(r.tenant)}" data-party-role="customer">${mofSt.dupHolder ? 'Duplicate MoF VAT #' : 'MoF VAT # Needed'}</button></div>`
+                    : '';
+                  return `
                   <tr class="rrow" data-ind-row-tbl="re_invoicing" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
-                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('re_invoicing', r.id)}</td>
+                    <td class="mono"><strong>${esc(r.id)}</strong>${invPrintBtn}${renderDomainRowAttBadgeHtml('re_invoicing', r.id)}</td>
                     <td class="mono">${esc(r.date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.tax_seq)}</td>
-                    <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.tenant), r.tenant)}${renderCustStmtActionsHtml(r.tenant, 'reInvoicingPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
+                    <td class="td-raw-leg-party">${wrapMonogramNameHtml(esc(r.tenant), r.tenant)}${renderCustStmtActionsHtml(r.tenant, 'reInvoicingPanel', canReLBooks)}${mofPillHtml}<div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
                     <td>${esc(r.period)}</td>
                     <td class="r mono">${canReLTax ? fmtUSD(r.net_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono">${canReLTax ? fmtUSD(r.vat_usd, 2) : '<span class="muted">Restricted</span>'}</td>
@@ -75702,8 +75913,8 @@
                     <td class="r mono">${canReLBooks ? fmtUSD(r.collected_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono ${canReLBooks && r.open_ar_usd > 0 ? 'crit' : ''}">${canReLBooks ? `<strong>${fmtUSD(r.open_ar_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                     <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : ((r.status === 'Partial' || r.status === 'Open') ? 'badge-warn' : 'badge-crit')}">${esc(r.status)}</span></td>
-                  </tr>
-                `).join('') : emptyRow(hideCo ? 11 : 12, 'No period rent invoices match current filter')}
+                  </tr>`;
+                }).join('') : emptyRow(hideCo ? 11 : 12, 'No period rent invoices match current filter')}
                 ${showMoreRow('re_invoicing', filteredInv.length, hideCo ? 11 : 12)}
               </tbody>
               <tfoot>
@@ -76226,18 +76437,388 @@
       </div>
     `;
 
+    const parseReFloorInfo = rawFloor => {
+      const s = String(rawFloor || '').trim();
+      const low = s.toLowerCase();
+      if (!s) return { key: 'unspecified', label: 'Unspecified Floor', order: -99, isIntFloor: false, intNum: null };
+      if (/ground|^gf$|^rdc$/i.test(low)) return { key: 'floor:0', label: 'Ground Floor', order: 0, isIntFloor: false, intNum: 0 };
+      if (/mezz/i.test(low)) return { key: 'floor:0.5', label: 'Mezzanine', order: 0.5, isIntFloor: false, intNum: null };
+      const bm = low.match(/basement\s*(\d*)|^b(\d+)$|sub[\s-]*(\d*)/i);
+      if (bm) {
+        const bn = Number(bm[1] || bm[2] || bm[3] || 1) || 1;
+        return { key: `floor:-${bn}`, label: bn === 1 ? 'Basement' : `Basement ${bn}`, order: -bn, isIntFloor: false, intNum: -bn };
+      }
+      if (/roof|penthouse/i.test(low)) return { key: 'floor:999', label: s, order: 999, isIntFloor: false, intNum: null };
+      const fm = low.match(/(?:floor|fl\.?|etage|level)\s*#?\s*(\d+)|^(\d+)(?:st|nd|rd|th)?(?:\s*floor)?$/i);
+      if (fm) {
+        const fn = Number(fm[1] || fm[2] || 0);
+        if (Number.isFinite(fn) && fn >= 1) {
+          return { key: `floor:${fn}`, label: `Floor ${fn}`, order: fn, isIntFloor: true, intNum: fn };
+        }
+      }
+      return { key: `floor:${low}`, label: s, order: 50, isIntFloor: false, intNum: null };
+    };
+
+    const buildRealEstateStackingModel = (reData, visibleProps, allUnitsPool, activeSelProp) => {
+      const propsList = (reData && Array.isArray(reData.properties) && reData.properties.length) ? reData.properties : (visibleProps || []);
+      if (!propsList.length) return null;
+      const unitsAll = Array.isArray(allUnitsPool) ? allUnitsPool : [];
+      const unitCountByProp = new Map();
+      unitsAll.forEach(u => {
+        const pk = norm(u && u.property);
+        if (pk) unitCountByProp.set(pk, (unitCountByProp.get(pk) || 0) + 1);
+      });
+      let activeProp = null;
+      if (activeSelProp && activeSelProp !== 'ALL') {
+        activeProp = propsList.find(p => p && norm(p.name) === norm(activeSelProp)) || null;
+      }
+      if (!activeProp && STATE.reStackProp) {
+        activeProp = propsList.find(p => p && norm(p.name) === norm(STATE.reStackProp)) || null;
+      }
+      if (!activeProp) {
+        activeProp = propsList.find(p => p && /4235/i.test(String(p.name || p.company || '')))
+          || propsList.find(p => p && (unitCountByProp.get(norm(p.name)) || 0) > 0)
+          || propsList[0];
+      }
+      if (!activeProp) return null;
+      const activePropNorm = norm(activeProp.name);
+      const isMsaytbeh4235Prop = /4235/i.test(String(activeProp.name || ''))
+        && (/msaytbeh/i.test(String(activeProp.name || '')) || /P-RE-4235/i.test(String(activeProp.id || activeProp.code || '')) || propsList.filter(p => p && /4235/i.test(String(p.company || ''))).length <= 1);
+      const propUnits = unitsAll.filter(u => {
+        if (!u) return false;
+        const upn = norm(u.property);
+        if (upn) return upn === activePropNorm;
+        return Boolean(isMsaytbeh4235Prop && /4235/i.test(String(u.company || '')));
+      });
+      const leaseByUnitCode = new Map();
+      const leaseByTenantProp = new Map();
+      (reData.leases || []).forEach(l => {
+        if (!l || l.status === 'Closed Window' || l.voided) return;
+        const lPropNorm = norm(l.property);
+        if (lPropNorm ? lPropNorm !== activePropNorm : !(isMsaytbeh4235Prop && /4235/i.test(String(l.company || '')))) return;
+        const lTen = norm(l.tenant);
+        if (lTen && !leaseByTenantProp.has(lTen)) leaseByTenantProp.set(lTen, l);
+        const uStr = String(l.unit || '').trim();
+        propUnits.forEach(u => {
+          const uc = String(u.code || '').trim();
+          const un = String(u.unit_name || '').trim();
+          if ((uc && uStr.toLowerCase().includes(uc.toLowerCase())) || (un && uStr.toLowerCase().includes(un.toLowerCase())) || (u.tenant && norm(u.tenant) === lTen)) {
+            if (!leaseByUnitCode.has(uc || u.id)) leaseByUnitCode.set(uc || u.id, l);
+          }
+        });
+      });
+
+      const floorsMap = new Map();
+      const intFloorSet = new Set();
+      let maxIntFloor = 0;
+      let occCount = 0;
+      let vacCount = 0;
+      let fitCount = 0;
+      let missingAreaCount = 0;
+      const missingMofMap = new Map();
+      const isDemoStack = isDemoScopeActive();
+
+      const enrichedUnits = propUnits.map(u => {
+        const fi = parseReFloorInfo(u.floor);
+        if (fi.isIntFloor && fi.intNum >= 1) {
+          intFloorSet.add(fi.intNum);
+          if (fi.intNum > maxIntFloor) maxIntFloor = fi.intNum;
+        }
+        const occStr = String(u.occupancy || u.status || '').trim();
+        const isOcc = /occup|leased/i.test(occStr);
+        const isFit = /fit|renovat|maint/i.test(occStr);
+        if (isOcc) occCount += 1;
+        else if (isFit) fitCount += 1;
+        else vacCount += 1;
+        const areaNum = Number(u.area_sqm || 0);
+        const missingArea = !(areaNum > 0);
+        if (missingArea) missingAreaCount += 1;
+        const uCodeKey = String(u.code || u.id || '');
+        const lm = leaseByUnitCode.get(uCodeKey) || (u.tenant ? leaseByTenantProp.get(norm(u.tenant)) : null) || null;
+        const tenName = String(u.tenant || '').trim();
+        const hasNamedTenant = Boolean(tenName && !/^vacant/i.test(tenName));
+        const isTaxableLease = Boolean(lm && Number(lm.vat_rate || 0) > 0);
+        const mofProf = (!isDemoStack && hasNamedTenant && isTaxableLease) ? resolvePartyTaxProfile(tenName, 'customer') : null;
+        const missingMof = Boolean(mofProf && (mofProf.missingMof || mofProf.dupHolder));
+        if (missingMof && !missingMofMap.has(norm(tenName))) {
+          missingMofMap.set(norm(tenName), {
+            tenant: tenName,
+            officialName: mofProf.officialName || tenName,
+            dupHolder: mofProf.dupHolder || ''
+          });
+        }
+        const eu = Object.assign({}, u, {
+          _floorInfo: fi,
+          _missingArea: missingArea,
+          _missingMof: missingMof,
+          _mofDupHolder: mofProf ? mofProf.dupHolder : '',
+          _lease: lm,
+          _isOccupied: isOcc,
+          _isFitOut: isFit
+        });
+        if (!floorsMap.has(fi.key)) {
+          floorsMap.set(fi.key, { key: fi.key, label: fi.label, order: fi.order, kind: 'entered', units: [] });
+        }
+        floorsMap.get(fi.key).units.push(eu);
+        return eu;
+      });
+
+      const gapFloors = [];
+      for (let fl = 1; fl < maxIntFloor; fl++) {
+        if (!intFloorSet.has(fl)) {
+          const flKey = `floor:${fl}`;
+          const rowObj = { key: flKey, label: `Floor ${fl}`, order: fl, kind: 'gap', units: [] };
+          floorsMap.set(flKey, rowObj);
+          gapFloors.push(rowObj);
+        }
+      }
+      const expectedTop = Number(activeProp.expected_top_floor || (isMsaytbeh4235Prop && !isDemoStack ? 10 : 0)) || 0;
+      const upperPendingFloors = [];
+      if (expectedTop > maxIntFloor) {
+        const startUp = Math.max(1, maxIntFloor + 1);
+        for (let fl = startUp; fl <= expectedTop; fl++) {
+          upperPendingFloors.push({ key: `floor:${fl}`, label: `Floor ${fl}`, order: fl, kind: 'pending_upper', units: [] });
+        }
+      }
+      const floorRowsDesc = Array.from(floorsMap.values()).sort((a, b) => b.order - a.order);
+      const docsPool = ((STATE.customRecords && STATE.customRecords.documents) || []).concat((SEED.records && SEED.records.documents) || []);
+      const removedIds = new Set([].concat(getDomainRemovedDocIds(activeProp.id), getDomainRemovedDocIds(activeProp.code)));
+      const propKeysNorm = new Set([norm(activeProp.id), norm(activeProp.code), norm(activeProp.name)].filter(Boolean));
+      const floorPlanAtts = docsPool.filter(d => {
+        if (!d || d.voided || removedIds.has(String(d.id || ''))) return false;
+        const pt = norm(d.parent_table);
+        if (pt && pt !== 're_properties' && pt !== 're_units') return false;
+        return propKeysNorm.has(norm(d.parent_id)) || propKeysNorm.has(norm(d.parent_label));
+      });
+      // Also catch any taxable invoice tenant on the active property entity whose MoF VAT # is missing
+      if (!isDemoStack) {
+        (reData.invoices || []).forEach(iv => {
+          if (!iv || !(Number(iv.vat_usd || 0) > 0.005)) return;
+          if (norm(iv.company) !== norm(activeProp.company) && norm(iv.property) !== activePropNorm) return;
+          const tn = String(iv.tenant || '').trim();
+          if (!tn || missingMofMap.has(norm(tn))) return;
+          const st = resolvePartyTaxProfile(tn, 'customer');
+          if (st && (st.missingMof || st.dupHolder)) {
+            missingMofMap.set(norm(tn), { tenant: tn, officialName: st.officialName || tn, dupHolder: st.dupHolder || '' });
+          }
+        });
+      }
+      const unmappedProps = propsList.filter(p => p && (unitCountByProp.get(norm(p.name)) || 0) === 0);
+      return {
+        propsList,
+        unitCountByProp,
+        activeProp,
+        enrichedUnits,
+        floorRowsDesc,
+        gapFloors,
+        upperPendingFloors,
+        occCount,
+        vacCount,
+        fitCount,
+        missingAreaCount,
+        missingMofTenants: Array.from(missingMofMap.values()),
+        floorPlanAttCount: floorPlanAtts.length,
+        unmappedPropsCount: unmappedProps.length
+      };
+    };
+
+    const reStackModel = submode === 'units'
+      ? buildRealEstateStackingModel(data, filteredProps, data.units, selProp)
+      : null;
+    const reUnitChip = STATE.reUnitsChip || 'all';
+    const visibleUnits = (submode === 'units' ? filteredUnits : []).filter(r => {
+      if (reUnitChip === 'occupied') return /occup|leased/i.test(r.occupancy || '');
+      if (reUnitChip === 'vacant') return !/occup|leased/i.test(r.occupancy || '');
+      if (reUnitChip === 'missing_area') return !(Number(r.area_sqm || 0) > 0);
+      if (String(reUnitChip).startsWith('floor:')) {
+        return parseReFloorInfo(r.floor).key === String(reUnitChip);
+      }
+      return true;
+    });
+
     if (submode === 'units') {
-      const sumArea = filteredUnits.reduce((a, r) => a + r.area_sqm, 0);
-      const sumRent = filteredUnits.reduce((a, r) => a + r.annual_rent_usd, 0);
+      const sumArea = visibleUnits.reduce((a, r) => a + Number(r.area_sqm || 0), 0);
+      const sumRent = visibleUnits.reduce((a, r) => a + Number(r.annual_rent_usd || 0), 0);
+      const missingAreaTotal = filteredUnits.filter(r => !(Number(r.area_sqm || 0) > 0)).length;
+      const occupiedTotal = filteredUnits.filter(r => /occup|leased/i.test(r.occupancy || '')).length;
+      const vacantTotal = filteredUnits.length - occupiedTotal;
+
+      const renderStackingPanelHtml = m => {
+        if (!m || !m.activeProp) return '';
+        const p = m.activeProp;
+        const propSumRent = m.enrichedUnits.reduce((a, r) => a + Number(r.annual_rent_usd || 0), 0);
+        const totalMissingFloors = m.gapFloors.length + m.upperPendingFloors.length;
+        const upLo = m.upperPendingFloors.length ? m.upperPendingFloors[0].order : 0;
+        const upHi = m.upperPendingFloors.length ? m.upperPendingFloors[m.upperPendingFloors.length - 1].order : 0;
+        const upperExpanded = Boolean(STATE.reStackExpandUpper);
+
+        const propBarHtml = `
+          <div class="re-stack-prop-bar" id="reStackingPropBar">
+            ${m.propsList.map(pr => {
+              const cnt = m.unitCountByProp.get(norm(pr.name)) || 0;
+              const isAct = norm(pr.name) === norm(p.name);
+              return `<button type="button" class="re-stack-prop-pill${isAct ? ' active' : ''}" data-re-stack-prop="${esc(pr.name)}">
+                <span class="re-stack-prop-name">${esc(pr.name)}</span>
+                <span class="badge ${cnt > 0 ? 'badge-info' : 'badge-warn'}">${cnt > 0 ? `${fmtNum(cnt)} units` : '0 Units'}</span>
+              </button>`;
+            }).join('')}
+          </div>`;
+
+        const notifPills = [];
+        if (m.gapFloors.length) {
+          const gLbls = m.gapFloors.map(g => g.label).join(', ');
+          notifPills.push(`<button type="button" class="re-missing-notif is-warn" data-re-add-unit-floor="${esc(m.gapFloors[0].label)}" data-re-add-unit-prop="${esc(p.name)}" data-re-add-unit-co="${esc(p.company)}">${ic('warn')} <span>Gap: ${esc(gLbls)} Not Entered Yet</span> <span class="re-notif-act">+ Add Unit</span></button>`);
+        }
+        if (m.upperPendingFloors.length) {
+          notifPills.push(`<button type="button" class="re-missing-notif is-info" data-re-stack-toggle-upper="1">${ic('layers')} <span>Floors ${fmtNum(upLo)}-${fmtNum(upHi)} · ${fmtNum(m.upperPendingFloors.length)} Floors Not Entered Yet</span> <span class="re-notif-act">${upperExpanded ? 'Hide Floors' : 'Expand'}</span></button>`);
+        }
+        if (m.missingAreaCount > 0) {
+          notifPills.push(`<button type="button" class="re-missing-notif is-warn" data-re-unit-chip="missing_area">${ic('warn')} <span>${fmtNum(m.missingAreaCount)} Units Missing Area (m²)</span> <span class="re-notif-act">Review Units</span></button>`);
+        }
+        if (m.missingMofTenants.length > 0) {
+          const firstTen = m.missingMofTenants[0];
+          notifPills.push(`<button type="button" class="re-missing-notif is-crit" data-fix-party-mof="${esc(firstTen.tenant)}" data-party-role="customer">${ic('warn')} <span>${fmtNum(m.missingMofTenants.length)} ${m.missingMofTenants.length === 1 ? 'VAT Tenant' : 'VAT Tenants'} Missing MoF Tax # (${esc(firstTen.officialName)})</span> <span class="re-notif-act">Set MoF VAT #</span></button>`);
+        }
+        if (m.floorPlanAttCount === 0) {
+          notifPills.push(`<button type="button" class="re-missing-notif is-muted" data-re-attach-plan="${esc(p.id)}" data-re-attach-code="${esc(p.code || p.id)}" data-re-attach-name="${esc(p.name)}" data-re-attach-co="${esc(p.company)}">${ic('upload')} <span>Floor Plans Not Attached</span> <span class="re-notif-act">+ Attach Plan</span></button>`);
+        }
+        if (m.propsList.length > 1 && m.unmappedPropsCount > 0) {
+          notifPills.push(`<span class="re-missing-notif is-neutral">${ic('info')} <span>${fmtNum(m.unmappedPropsCount)} Portfolio Properties Pending Unit Breakdown</span></span>`);
+        }
+
+        const upperHtml = m.upperPendingFloors.length
+          ? (upperExpanded
+              ? m.upperPendingFloors.slice().reverse().map(uf => `
+                  <div class="re-stack-floor-row is-pending-floor">
+                    <div class="re-stack-floor-label">
+                      <strong>${esc(uf.label)}</strong>
+                      <span class="badge badge-warn">Not Entered</span>
+                    </div>
+                    <div class="re-stack-floor-units">
+                      <div class="re-stack-gap-card">
+                        <span>No suites recorded yet on ${esc(uf.label)} for ${esc(p.name)}.</span>
+                        ${canEnterAny() ? `<button type="button" class="btn btn-sm btn-ghost-bar" data-re-add-unit-floor="${esc(uf.label)}" data-re-add-unit-prop="${esc(p.name)}" data-re-add-unit-co="${esc(p.company)}">+ Add ${esc(uf.label)} Unit</button>` : ''}
+                      </div>
+                    </div>
+                  </div>`).join('')
+              : `<div class="re-stack-floor-row is-collapsed-upper">
+                  <div class="re-stack-floor-label">
+                    <strong>Floors ${fmtNum(upLo)}-${fmtNum(upHi)}</strong>
+                    <span class="badge badge-warn">${fmtNum(m.upperPendingFloors.length)} Pending</span>
+                  </div>
+                  <div class="re-stack-floor-units">
+                    <div class="re-stack-gap-card">
+                      <span>${fmtNum(m.upperPendingFloors.length)} upper floors (Floors ${fmtNum(upLo)}-${fmtNum(upHi)}) are still unentered in the unit roll.</span>
+                      <button type="button" class="btn btn-sm btn-ghost-bar" data-re-stack-toggle-upper="1">Expand Floors ${fmtNum(upLo)}-${fmtNum(upHi)}</button>
+                    </div>
+                  </div>
+                </div>`)
+          : '';
+
+        const enteredAndGapHtml = m.floorRowsDesc.length
+          ? m.floorRowsDesc.map(fl => {
+              if (fl.kind === 'gap') {
+                return `
+                  <div class="re-stack-floor-row is-gap-floor" data-stack-floor="${esc(fl.key)}">
+                    <div class="re-stack-floor-label">
+                      <strong>${esc(fl.label)}</strong>
+                      <span class="badge badge-warn">Units Not Entered Yet</span>
+                    </div>
+                    <div class="re-stack-floor-units">
+                      <div class="re-stack-gap-card">
+                        <span>Sequence gap detected between adjacent floors (${esc(fl.label)} missing).</span>
+                        ${canEnterAny() ? `<button type="button" class="btn btn-sm btn-primary" data-re-add-unit-floor="${esc(fl.label)}" data-re-add-unit-prop="${esc(p.name)}" data-re-add-unit-co="${esc(p.company)}">+ Add ${esc(fl.label)} Unit</button>` : ''}
+                      </div>
+                    </div>
+                  </div>`;
+              }
+              return `
+                <div class="re-stack-floor-row" data-stack-floor="${esc(fl.key)}">
+                  <div class="re-stack-floor-label">
+                    <strong>${esc(fl.label)}</strong>
+                    <span class="muted" style="font-size:11px">${fmtNum(fl.units.length)} ${fl.units.length === 1 ? 'unit' : 'units'}</span>
+                  </div>
+                  <div class="re-stack-floor-units">
+                    ${fl.units.map(u => {
+                      const stCls = u._isOccupied ? 'is-occupied' : (u._isFitOut ? 'is-fitout' : 'is-vacant');
+                      const rentDisplay = (canRePProfit || canRePBooks) ? `${fmtUSD(u.annual_rent_usd, 0)}/yr` : 'Restricted';
+                      const nextPay = u._lease && u._lease.next_payment_date ? `<span class="re-unit-meta-chip">Next Pay: ${esc(u._lease.next_payment_date)}</span>` : '';
+                      const nextStep = u._lease && u._lease.next_step_date ? `<span class="re-unit-meta-chip">Next Step: ${esc(u._lease.next_step_date)}</span>` : '';
+                      const leaseAct = (!u._isOccupied && canEnterAny())
+                        ? `<button type="button" class="badge badge-info re-unit-lease-btn" data-re-lease-unit="${esc(u.unit_name || u.code)}" data-re-lease-prop="${esc(p.name)}" data-re-lease-co="${esc(p.company)}">+ Lease</button>`
+                        : '';
+                      const areaBadge = u._missingArea
+                        ? `<span class="badge badge-warn re-area-missing-badge">Area Needed</span>`
+                        : `<span class="re-unit-meta-chip mono" data-no-i18n="1">${fmtNum(u.area_sqm)} m²</span>`;
+                      const mofBadge = u._missingMof
+                        ? `<button type="button" class="badge badge-crit re-mof-missing-pill" data-fix-party-mof="${esc(u.tenant)}" data-party-role="customer">${u._mofDupHolder ? 'Duplicate MoF #' : 'MoF VAT # Needed'}</button>`
+                        : '';
+                      const isTenLiteral = Boolean(u.tenant && !/^(?:vacant|available)/i.test(String(u.tenant || '').trim()));
+                      return `
+                        <div class="re-stack-unit-card ${stCls}" data-re-inspect-unit="${esc(u.code)}" role="button" tabindex="0">
+                          <div class="re-stack-unit-top">
+                            <span class="mono re-stack-unit-code" data-no-i18n="1">${esc(u.code)}</span>
+                            <span class="badge ${u._isOccupied ? 'badge-good' : (u._isFitOut ? 'badge-info' : 'badge-warn')}">${esc(u.occupancy)}</span>
+                          </div>
+                          <div class="re-stack-unit-name" data-no-i18n="1">${esc(u.unit_name)}</div>
+                          <div class="re-stack-unit-tenant"${isTenLiteral ? ' data-no-i18n="1"' : ''}>${esc(u.tenant || 'Vacant - Available')}</div>
+                          <div class="re-stack-unit-fin mono">${esc(rentDisplay)}</div>
+                          <div class="re-stack-unit-tags">
+                            ${areaBadge}
+                            ${mofBadge}
+                            ${nextPay}
+                            ${nextStep}
+                            ${leaseAct}
+                          </div>
+                        </div>`;
+                    }).join('')}
+                  </div>
+                </div>`;
+            }).join('')
+          : `<div class="re-stack-empty-prop">
+              <span class="re-stack-empty-msg">0 units mapped in Building Stacking Plan for ${esc(p.name)} (${fmtNum(p.area_sqm)} m² plot area)</span>
+              ${canEnterAny() ? `<button type="button" class="btn btn-sm btn-primary" data-re-add-unit-floor="Ground Floor" data-re-add-unit-prop="${esc(p.name)}" data-re-add-unit-co="${esc(p.company)}">+ Add First Unit</button>` : ''}
+            </div>`;
+
+        return `
+          <div class="panel re-stack-panel" id="reBuildingStackingPanel">
+            <div class="panel-head">
+              <div>
+                <h3>Building Stacking Plan &amp; Missing-Data Completeness · ${esc(p.name)}</h3>
+                <p>${fmtNum(m.enrichedUnits.length)} recorded units (${fmtNum(m.occCount)} occupied, ${fmtNum(m.vacCount)} vacant${m.fitCount ? `, ${fmtNum(m.fitCount)} fit-out` : ''}) · Pro-rata Rent Roll ${(canRePProfit || canRePBooks) ? fmtUSD(propSumRent, 0) + '/yr' : 'Restricted'}${totalMissingFloors ? ` · ${fmtNum(totalMissingFloors)} floors pending entry` : ''}</p>
+              </div>
+              <div class="panel-actions">
+                ${canEnterAny() ? `<button type="button" class="btn btn-sm btn-primary" data-re-add-unit-floor="Ground Floor" data-re-add-unit-prop="${esc(p.name)}" data-re-add-unit-co="${esc(p.company)}">+ Building Unit</button>` : ''}
+              </div>
+            </div>
+            ${propBarHtml}
+            ${notifPills.length ? `<div class="re-stack-notif-bar" id="reStackingCompletenessBar">${notifPills.join('')}</div>` : '<div class="re-stack-notif-bar is-complete" id="reStackingCompletenessBar"><span class="badge badge-good">Building Stacking &amp; Tax Profile Complete</span></div>'}
+            <div class="re-stack-matrix" id="reStackingMatrix">
+              ${upperHtml}
+              ${enteredAndGapHtml}
+            </div>
+          </div>`;
+      };
+
       return `
         ${bannerHtml}
+        ${renderStackingPanelHtml(reStackModel)}
         <div class="panel" id="reUnitsPanel">
           <div class="panel-head">
             <div>
-              <h3>Building Units &amp; Rentable Space Inventory ${shownCount('re_units', filteredUnits.length, data.units.length)}</h3>
-              <p>Sub-property blocks across 4235 Msaytbeh (Blocks 0A, 0B, Main GF, 1A, 1B, 1C, 2A, 2E) and regional commercial assets</p>
+              <h3>Building Units &amp; Rentable Space Inventory ${shownCount('re_units', visibleUnits.length, data.units.length)}</h3>
+              <p>Sub-property blocks across 4235 Msaytbeh (Ground, Mezzanine, Floor 1, Floor 3, Floor 4) and regional commercial assets</p>
             </div>
-            <div class="panel-actions">${searchBox('Search unit code, property, tenant, occupancy...')} ${exportBtn('reUnitsPanel', 'Re_Building_Units')}</div>
+            <div class="panel-actions">${canEnterAny() ? `<button type="button" class="btn btn-sm btn-primary" data-ind-open-new="re_units">+ Building Unit</button>` : ''} ${searchBox('Search unit code, property, tenant, occupancy...')} ${exportBtn('reUnitsPanel', 'Re_Building_Units')}</div>
+          </div>
+          <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+            <div class="chip-bar">
+              <button type="button" class="filter-chip ${reUnitChip === 'all' ? 'active' : ''}" data-re-unit-chip="all">All (${fmtNum(filteredUnits.length)})</button>
+              <button type="button" class="filter-chip ${reUnitChip === 'occupied' ? 'active' : ''}" data-re-unit-chip="occupied">Occupied (${fmtNum(occupiedTotal)})</button>
+              <button type="button" class="filter-chip ${reUnitChip === 'vacant' ? 'active' : ''}" data-re-unit-chip="vacant">Vacant (${fmtNum(vacantTotal)})</button>
+              ${missingAreaTotal > 0 ? `<button type="button" class="filter-chip ${reUnitChip === 'missing_area' ? 'active' : ''}" data-re-unit-chip="missing_area">Missing Area (${fmtNum(missingAreaTotal)})</button>` : ''}
+              ${String(reUnitChip).startsWith('floor:') ? `<button type="button" class="filter-chip active" data-re-unit-chip="all">Floor Filter · Clear ×</button>` : ''}
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
@@ -76256,28 +76837,30 @@
                 </tr>
               </thead>
               <tbody>
-                ${filteredUnits.length ? sliceRows('re_units', filteredUnits).map(r => `
-                  <tr class="rrow">
+                ${visibleUnits.length ? sliceRows('re_units', visibleUnits).map(r => {
+                  const hasArea = Number(r.area_sqm || 0) > 0;
+                  return `
+                  <tr class="rrow" data-re-unit-code="${esc(r.code)}">
                     <td class="mono"><strong>${esc(r.code)}</strong></td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td>${esc(r.property)}</td>
                     <td><strong>${esc(r.unit_name)}</strong></td>
                     <td>${esc(r.floor)}</td>
                     <td>${esc(r.type)}</td>
-                    <td class="r mono">${fmtNum(r.area_sqm)}</td>
+                    <td class="r mono">${hasArea ? fmtNum(r.area_sqm) : '<span>0</span> <span class="badge badge-warn re-area-missing-badge">Area Needed</span>'}</td>
                     <td>${esc(r.tenant)}</td>
-                    <td class="r mono"><strong>${fmtUSD(r.annual_rent_usd, 0)}</strong></td>
+                    <td class="r mono">${(canRePProfit || canRePBooks) ? `<strong>${fmtUSD(r.annual_rent_usd, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                     <td><span class="badge ${r.occupancy === 'Occupied' ? 'badge-good' : 'badge-warn'}">${esc(r.occupancy)}</span></td>
-                  </tr>
-                `).join('') : emptyRow(hideCo ? 9 : 10, 'No building units match current filter')}
-                ${showMoreRow('re_units', filteredUnits.length, hideCo ? 9 : 10)}
+                  </tr>`;
+                }).join('') : emptyRow(hideCo ? 9 : 10, 'No building units match current filter')}
+                ${showMoreRow('re_units', visibleUnits.length, hideCo ? 9 : 10)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL BUILDING UNITS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
-                  <td class="r mono"><strong>${fmtNum(sumArea)} m²</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL BUILDING UNITS (${fmtNum(visibleUnits.length)} UNITS)</strong></td>
+                  <td class="r mono">${sumArea > 0 ? `<span data-no-i18n="1"><strong>${fmtNum(sumArea)} m²</strong></span>` : '<strong>Pending m²</strong>'}</td>
                   <td></td>
-                  <td class="r mono"><strong>${fmtUSD(sumRent, 0)}</strong></td>
+                  <td class="r mono">${(canRePProfit || canRePBooks) ? `<strong>${fmtUSD(sumRent, 0)}</strong>` : '<span class="muted">Restricted</span>'}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -88890,10 +89473,11 @@
       { key: 'trd_stock', label: 'Spare Part SKU', title: 'New Multi-Warehouse Spare Part SKU', matchViews: ['trd_stock', 'trd_movements', 'trd_recon'] }
     ],
     'Real Estate & Property': [
-      { key: 're_leases', label: 'Lease Contract', title: 'New Commercial / Residential Lease Contract', matchViews: ['re_leases', 're_properties', 're_units', 're_valuations', 're_ownership'] },
+      { key: 're_leases', label: 'Lease Contract', title: 'New Commercial / Residential Lease Contract', matchViews: ['re_leases', 're_properties', 're_valuations', 're_ownership'] },
       { key: 're_invoicing', label: 'Rent Invoice', title: 'New Period Lease Rent Invoice', matchViews: ['re_invoicing'] },
       { key: 're_receipts', label: 'Tenant Receipt', title: 'New Tenant Rent & Deposit Receipt', matchViews: ['re_receipts'] },
       { key: 're_sales', label: 'Property Deed Sale', title: 'New Property Sale & Buyer Instalment Contract', matchViews: ['re_sales', 're_instalments'] },
+      { key: 're_units', label: 'Building Unit', title: 'New Building Unit & Floor Space', matchViews: ['re_units'] },
       { key: 're_workorders', label: 'Fit-Out Work Order', title: 'New Property Fit-Out & Maintenance Work Order', matchViews: ['re_workorders', 're_recharges'] }
     ],
     'Insurance & Brokerage': [
@@ -88920,7 +89504,7 @@
     ],
     'Real Estate & Property': [
       { id: 'dom_commercial', icon: 're_leases', label: 'Leases, Rent & Sales', formKeys: ['re_leases', 're_invoicing', 're_receipts', 're_sales'] },
-      { id: 'dom_ops', icon: 're_workorders', label: 'Portfolio & Work Orders', formKeys: ['re_workorders'] }
+      { id: 'dom_ops', icon: 're_workorders', label: 'Portfolio & Work Orders', formKeys: ['re_units', 're_workorders'] }
     ],
     'Insurance & Brokerage': [
       { id: 'dom_commercial', icon: 'ins_policies', label: 'Policies & Billing', formKeys: ['ins_policies', 'ins_billing', 'ins_remittances'] },
@@ -89919,6 +90503,32 @@
         ${fldWrap('Approved Budget ($) *', `<input type="number" id="ide_budget" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.budget_usd != null ? prefill.budget_usd : '12000')}">`)}
         ${fldWrap('Actual Spend ($)', `<input type="number" id="ide_actual" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.actual_usd != null ? prefill.actual_usd : '11500')}">`)}
         ${fldWrap('Tenant Rechargeable?', `<select id="ide_rechargeable" data-plain-options="1" style="${inpStyle}"><option value="no" ${!isRech ? 'selected' : ''}>Landlord Expense / CAPEX</option><option value="yes" ${isRech ? 'selected' : ''}>Yes (Rechargeable to Tenant)</option></select>`)}
+      `;
+    } else if (spec.key === 're_units') {
+      const reOpsU = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { properties: [], units: [] };
+      const rePropNames = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center'].concat((reOpsU.properties || []).map(x => x && x.name).filter(Boolean)));
+      const defUProp = prefill.property || rePropNames[0] || '4235 Msaytbeh Commercial Center';
+      const reFloorOpts = ['Ground Floor', 'Mezzanine', 'Floor 1', 'Floor 2', 'Floor 3', 'Floor 4', 'Floor 5', 'Floor 6', 'Floor 7', 'Floor 8', 'Floor 9', 'Floor 10', 'Basement'];
+      const defUFloor = prefill.floor || 'Floor 2';
+      const defUType = prefill.type || 'Commercial Office';
+      const defUOcc = prefill.occupancy || prefill.status || 'Vacant';
+      const flShort = String(defUFloor).replace(/Floor\s*/i, 'F').replace(/Ground.*/i, 'GF').replace(/Mezz.*/i, 'MZ').replace(/\s+/g, '');
+      const defUCode = prefill.code || prefill.unit_code || prefill.id || `UNIT-4235-${flShort}-${String(Math.floor(10 + Math.random() * 89))}`;
+      datalistsHtml = `
+        <datalist id="dl_ide_re_unit_props">${rePropNames.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <datalist id="dl_ide_re_unit_floors">${reFloorOpts.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      `;
+      fieldsHtml = `
+        ${fldWrap('Legal Entity *', coSelectHtml)}
+        ${fldWrap('Unit Code *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(defUCode)}">`)}
+        ${fldWrap('Property *', `<input type="text" id="ide_property" list="dl_ide_re_unit_props" style="${inpStyle}" value="${esc(defUProp)}" placeholder="Select or type property...">`)}
+        ${fldWrap('Floor / Level *', `<input type="text" id="ide_floor" list="dl_ide_re_unit_floors" style="${inpStyle}" value="${esc(defUFloor)}" placeholder="e.g. Ground Floor, Mezzanine, Floor 2...">`)}
+        ${fldWrap('Unit / Block Name *', `<input type="text" id="ide_unit_name" style="${inpStyle}" value="${esc(prefill.unit_name || prefill.name || '')}" placeholder="e.g. Block 2A East Suite">`)}
+        ${fldWrap('Usage Type *', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Commercial Retail" ${defUType === 'Commercial Retail' ? 'selected' : ''}>Commercial Retail</option><option value="Commercial Office" ${defUType === 'Commercial Office' ? 'selected' : ''}>Commercial Office</option><option value="Medical / Clinic" ${defUType === 'Medical / Clinic' ? 'selected' : ''}>Medical / Clinic</option><option value="Showroom" ${defUType === 'Showroom' ? 'selected' : ''}>Showroom</option><option value="Residential" ${defUType === 'Residential' ? 'selected' : ''}>Residential</option><option value="Storage" ${defUType === 'Storage' ? 'selected' : ''}>Storage</option></select>`)}
+        ${fldWrap('Area (m²)', `<input type="number" id="ide_area" class="mono" step="0.1" min="0" style="${inpStyle}" value="${esc(prefill.area_sqm != null ? prefill.area_sqm : '')}" placeholder="0 (Pending measurement)">`, 'Leave 0 if area (m²) is not yet surveyed')}
+        ${fldWrap('Occupancy Status *', `<select id="ide_occupancy" data-plain-options="1" style="${inpStyle}"><option value="Vacant" ${/vacant/i.test(defUOcc) ? 'selected' : ''}>Vacant</option><option value="Occupied" ${/occup|leased/i.test(defUOcc) ? 'selected' : ''}>Occupied</option><option value="Under Fit-Out" ${/fit/i.test(defUOcc) ? 'selected' : ''}>Under Fit-Out</option></select>`)}
+        ${fldWrap('Current Tenant', `<input type="text" id="ide_tenant" style="${inpStyle}" value="${esc(prefill.tenant || '')}" placeholder="Optional when Vacant">`)}
+        ${fldWrap('Annual Rent ($)', `<input type="number" id="ide_rent" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.annual_rent_usd != null ? prefill.annual_rent_usd : '0')}">`)}
       `;
     } else if (spec.key === 'trd_targets') {
       const sups = freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'Shandong Heavy Tyre & Radial Works', 'EuroDiesel Filters & Brake Components GmbH']);
@@ -92023,6 +92633,49 @@
           status: (isEditMode && prefill && prefill.status) ? prefill.status : 'In Progress',
           ...domNearCopyLink
         });
+      } else if (spec.key === 're_units') {
+        const uProp = strVal('ide_property');
+        const uFloor = strVal('ide_floor');
+        const uName = strVal('ide_unit_name');
+        if (!uProp) { showMsg('Property is required.', true); return; }
+        if (!uFloor) { showMsg('Floor / Level is required.', true); return; }
+        if (!uName) { showMsg('Unit / Block Name is required.', true); return; }
+        const reOpsNow = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { units: [] };
+        if (!isEditMode && (reOpsNow.units || []).some(u => u && String(u.id || u.code || '').trim().toLowerCase() === recId.toLowerCase())) {
+          showMsg(`Unit Code "${recId}" already exists. Enter a unique Unit Code.`, true);
+          return;
+        }
+        const uOcc = strVal('ide_occupancy') || 'Vacant';
+        const rawUTenant = strVal('ide_tenant');
+        if (/occup|leased/i.test(uOcc) && !rawUTenant) {
+          showMsg('Current Tenant is required when Occupancy Status is Occupied.', true);
+          return;
+        }
+        const uTenant = rawUTenant || (/vacant/i.test(uOcc) ? 'Vacant - Available' : '');
+        const uArea = Math.max(0, round2(numVal('ide_area')));
+        const uRent = Math.max(0, round2(numVal('ide_rent')));
+        addIndustryCustomRow('re_units', {
+          id: recId,
+          code: recId,
+          unit_code: recId,
+          company: co,
+          property: uProp,
+          unit_name: uName,
+          name: uName,
+          floor: uFloor,
+          type: strVal('ide_type') || 'Commercial Office',
+          area_sqm: uArea,
+          tenant: uTenant,
+          annual_rent_usd: uRent,
+          occupancy: uOcc,
+          status: uOcc
+        });
+        const unitEditKey = `Real Estate & Property::Building Units & Rentable Space Inventory::${recId}`;
+        const uEditStore = getIndustryRowEditStore();
+        if (uEditStore && uEditStore[unitEditKey]) {
+          delete uEditStore[unitEditKey];
+          saveIndustryRowEditStore(uEditStore, { skipServerPost: true });
+        }
       } else if (spec.key === 'trd_targets') {
         const cat = normTradingTariffCat(strVal('ide_category') || 'Heavy Truck Sale');
         const sup = strVal('ide_supplier') || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.';
@@ -93337,6 +93990,8 @@
         if (sal) return { formKey: 're_sales', prefill: Object.assign({}, sal, basePrefill, { id: sal.id }) };
         const wo = (re.workorders || []).find(w => String(w.id || '').toUpperCase() === pidUp);
         if (wo) return { formKey: 're_workorders', prefill: Object.assign({}, wo, basePrefill, { id: wo.id }) };
+        const unRe = (re.units || []).find(u => String(u.code || u.id || '').toUpperCase() === pidUp);
+        if (unRe) return { formKey: 're_units', prefill: Object.assign({}, unRe, basePrefill, { id: unRe.code || unRe.id, code: unRe.code || unRe.id }) };
       }
     } else if (ind === 'Automotive & Heavy Trading') {
       const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
@@ -125909,6 +126564,7 @@
       if (STATE.modalForm === 'customer') {
         setFieldVisible('wrap_cust_mof', true);
         syncUniversalMainDupHint('f_customer', 'customers', 'Customer');
+        syncUniversalMofDupHint('customer');
         return {};
       }
       if (STATE.modalForm === 'product') {
@@ -126521,6 +127177,7 @@
         }
         renderSupplierDriversPanel();
         syncUniversalMainDupHint('f_supplier', 'suppliers', 'Supplier');
+        syncUniversalMofDupHint('supplier');
         return {};
       }
       if (STATE.modalForm === 'equipment' || STATE.modalForm === 'companyequipment') {
@@ -133307,6 +133964,75 @@
     return dup;
   }
 
+  function findDuplicateMofCounterparty(crKey, rawMof, excludeId, targetIndOverride, excludeName) {
+    const qMof = normMofTaxId(rawMof);
+    if (!qMof) return null;
+    const exId = excludeId != null ? String(excludeId).trim() : '';
+    const exNameNorm = excludeName ? norm(excludeName) : '';
+    const targetInd = normGeoIndustryName(targetIndOverride || getActiveIndustry() || 'Manufacturing');
+    const isTargetMfg = !targetInd || targetInd === 'Manufacturing';
+    const pool = [].concat(
+      (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [],
+      (STATE.customRecords && Array.isArray(STATE.customRecords[crKey])) ? STATE.customRecords[crKey] : []
+    );
+    for (const r of pool) {
+      if (!r || r.voided) continue;
+      if (exId && r.id != null && String(r.id).trim() === exId) continue;
+      if (isSelfEditingRow(r, crKey)) continue;
+      const rInd = inferUnivRowIndustry(r);
+      const inPart = isTargetMfg ? (!r._multiIndustrySeed && rInd === 'Manufacturing') : rInd === targetInd;
+      if (!inPart) continue;
+      const rMof = normMofTaxId(r.mof_no || r.financial_no || '');
+      if (rMof && rMof === qMof) return r;
+    }
+    if (crKey === 'customers' && targetInd === 'Real Estate & Property' && !isDemoScopeActive() && typeof window !== 'undefined' && window.MFG_NAMEBOOK && typeof window.MFG_NAMEBOOK.map === 'function') {
+      const nb = window.MFG_NAMEBOOK.map('party_tax_profiles') || {};
+      for (const [k, prof] of Object.entries(nb)) {
+        if (!prof || typeof prof !== 'object') continue;
+        if (exNameNorm && (norm(k) === exNameNorm || norm(prof.legal_name || '') === exNameNorm)) continue;
+        if (normMofTaxId(prof.mof_no) === qMof) {
+          return { id: `NB::${k}`, name: k, official_name: prof.legal_name || k, mof_no: prof.mof_no };
+        }
+      }
+    }
+    return null;
+  }
+
+  function syncUniversalMofDupHint(formType) {
+    const mofEl = $('f_mof');
+    const hintId = formType === 'supplier' ? 'hint_sup_mof' : 'hint_cust_mof';
+    const hintEl = $(hintId);
+    const sharedWrap = $('wrap_f_mof_shared');
+    const sharedCb = $('f_mof_shared_ok');
+    if (!mofEl) return null;
+    const candMof = normMofTaxId(val('f_mof'));
+    const crKey = formType === 'supplier' ? 'suppliers' : 'customers';
+    const edRec = (STATE.editingRecord && STATE.editingRecord.crKey === crKey && STATE.editingRecord.orig) ? STATE.editingRecord.orig : null;
+    const edId = (STATE.editingRecord && STATE.editingRecord.id) || (edRec && edRec.id) || '';
+    const edName = val(formType === 'supplier' ? 'f_supplier' : 'f_customer') || (edRec && (edRec.name || edRec.customer || edRec.supplier)) || '';
+    const targetInd = edRec ? inferUnivRowIndustry(edRec) : getActiveIndustry();
+    const prevMof = edRec ? normMofTaxId(edRec.mof_no || edRec.financial_no || '') : '';
+    const prevVoided = Boolean(edRec && edRec.voided);
+    const prevSharedOk = Boolean(edRec && (edRec.shared_mof_ok === true || edRec.shared_mof_ok === 1 || edRec.shared_mof_ok === '1'));
+    const dup = candMof ? findDuplicateMofCounterparty(crKey, candMof, edId, targetInd, edName) : null;
+    const hasNewCollision = Boolean(dup && (!edRec || candMof !== prevMof || prevVoided || prevSharedOk));
+    const sharedOk = Boolean(sharedCb && sharedCb.checked);
+    if (sharedWrap) sharedWrap.hidden = !hasNewCollision && !sharedOk;
+    if (hintEl) {
+      if (hasNewCollision) {
+        const holder = String(dup.official_name || dup.name || dup.id || '').trim();
+        hintEl.hidden = false;
+        hintEl.innerHTML = sharedOk
+          ? `${ic('info')} Shared MoF Tax # <strong>${esc(candMof)}</strong> authorized as a branch alongside <strong>${esc(holder)}</strong>.`
+          : `${ic('warn')} MoF Tax # <strong>${esc(candMof)}</strong> is already registered to <strong>${esc(holder)}</strong>. Blocked unless authorized below.`;
+      } else {
+        hintEl.hidden = true;
+        hintEl.innerHTML = '';
+      }
+    }
+    return dup;
+  }
+
   // ---- misspelled party/site/staff name check (1 letter off existing or confirmed Data Hygiene alias) ----
   const ENTRY_PARTY_FIELD_KINDS = {
     f_customer: 'customer',
@@ -135404,14 +136130,46 @@
         const dup = findUniversalDuplicate('customers', nm);
         if (dup) addErr('f_customer', `Customer "${universalMainValue('customers', dup) || nm}" already exists in the Universal Customer Registry. Duplicate names are not allowed.`);
       }
+      const mofVal = val('f_mof');
+      const candMof = normMofTaxId(mofVal);
+      const sharedMofOk = !!($('f_mof_shared_ok') && $('f_mof_shared_ok').checked);
+      const edCust = (STATE.editingRecord && STATE.editingRecord.crKey === 'customers' && STATE.editingRecord.orig) ? STATE.editingRecord.orig : null;
+      const edCustId = (STATE.editingRecord && STATE.editingRecord.id) || (edCust && edCust.id) || '';
+      const prevCustMof = edCust ? normMofTaxId(edCust.mof_no || edCust.financial_no || '') : '';
+      const prevCustVoided = Boolean(edCust && edCust.voided);
+      const prevCustSharedOk = Boolean(edCust && (edCust.shared_mof_ok === true || edCust.shared_mof_ok === 1 || edCust.shared_mof_ok === '1'));
+      if (candMof && !sharedMofOk && (!edCust || candMof !== prevCustMof || prevCustVoided || prevCustSharedOk)) {
+        const mofDup = findDuplicateMofCounterparty('customers', candMof, edCustId, edCust ? inferUnivRowIndustry(edCust) : getActiveIndustry(), nm);
+        if (mofDup) {
+          const hNm = String(mofDup.official_name || mofDup.name || mofDup.id || '').trim();
+          addErr('f_mof', `MoF Tax Number "${candMof}" is already registered to "${hNm}". Tick "Authorized branch / shared legal taxpayer registration" only for verified legal branches.`);
+          syncUniversalMofDupHint('customer');
+        }
+      }
       const regVal = val('f_region');
-      record = { ...base, name: nm, official_name: val('f_official_name') || nm, method: val('f_method') || 'Credit', vat_registered: val('f_vatreg') === 'Yes', mof_no: val('f_mof'), phone: val('f_phone'), region: regVal, address: regVal, customer_declared_qty: !!($('f_declqty') && $('f_declqty').checked), external_invoice: !!($('f_extinv') && $('f_extinv').checked) };
+      record = { ...base, name: nm, official_name: val('f_official_name') || nm, method: val('f_method') || 'Credit', vat_registered: val('f_vatreg') === 'Yes', mof_no: mofVal, financial_no: mofVal, shared_mof_ok: sharedMofOk, _mofCleared: Boolean(edCust && prevCustMof && !candMof), phone: val('f_phone'), region: regVal, address: regVal, customer_declared_qty: !!($('f_declqty') && $('f_declqty').checked), external_invoice: !!($('f_extinv') && $('f_extinv').checked) };
     } else if (f === 'supplier') {
       const nm = val('f_supplier');
       if (!nm) addErr('f_supplier', 'Supplier Name is required.');
       else {
         const dup = findUniversalDuplicate('suppliers', nm);
         if (dup) addErr('f_supplier', `Supplier "${universalMainValue('suppliers', dup) || nm}" already exists in the Universal Supplier Registry. Duplicate names are not allowed.`);
+      }
+      const mofValSup = val('f_mof');
+      const candMofSup = normMofTaxId(mofValSup);
+      const sharedMofOkSup = !!($('f_mof_shared_ok') && $('f_mof_shared_ok').checked);
+      const edSup = (STATE.editingRecord && STATE.editingRecord.crKey === 'suppliers' && STATE.editingRecord.orig) ? STATE.editingRecord.orig : null;
+      const edSupId = (STATE.editingRecord && STATE.editingRecord.id) || (edSup && edSup.id) || '';
+      const prevSupMof = edSup ? normMofTaxId(edSup.mof_no || edSup.financial_no || '') : '';
+      const prevSupVoided = Boolean(edSup && edSup.voided);
+      const prevSupSharedOk = Boolean(edSup && (edSup.shared_mof_ok === true || edSup.shared_mof_ok === 1 || edSup.shared_mof_ok === '1'));
+      if (candMofSup && !sharedMofOkSup && (!edSup || candMofSup !== prevSupMof || prevSupVoided || prevSupSharedOk)) {
+        const mofDupSup = findDuplicateMofCounterparty('suppliers', candMofSup, edSupId, edSup ? inferUnivRowIndustry(edSup) : getActiveIndustry(), nm);
+        if (mofDupSup) {
+          const hNmSup = String(mofDupSup.official_name || mofDupSup.name || mofDupSup.id || '').trim();
+          addErr('f_mof', `MoF Tax Number "${candMofSup}" is already registered to "${hNmSup}". Tick "Authorized branch / shared legal taxpayer registration" only for verified legal branches.`);
+          syncUniversalMofDupHint('supplier');
+        }
       }
       // Automatically capture any driver name typed in the inline input even if the user clicked Save directly
       if (val('f_sup_drv_name')) {
@@ -135448,6 +136206,8 @@
         location: supReg,
         mof_no: val('f_mof'),
         financial_no: val('f_mof'),
+        shared_mof_ok: !!($('f_mof_shared_ok') && $('f_mof_shared_ok').checked),
+        _mofCleared: Boolean(edSup && prevSupMof && !candMofSup),
         is_truck_owner: isTo,
         iva: !!($('f_iva') && $('f_iva').checked),
         vat_registered: !!($('f_iva') && $('f_iva').checked),
@@ -144949,6 +145709,15 @@
         $('f_customer').value = String(prefill.customer || prefill.cust);
         FORM_UI.lastCustomer = '';
       }
+      if (prefill.official_name && $('f_official_name')) {
+        $('f_official_name').value = String(prefill.official_name);
+      }
+      if (prefill.mof_no != null && $('f_mof')) {
+        $('f_mof').value = String(prefill.mof_no);
+      }
+      if ($('f_mof_shared_ok')) {
+        $('f_mof_shared_ok').checked = Boolean(prefill.shared_mof_ok);
+      }
       if ((prefill.ruleType || prefill.ruletype) && $('f_ruletype')) {
         $('f_ruletype').value = String(prefill.ruleType || prefill.ruletype);
       } else if (prefill.site && form === 'pricerule' && $('f_ruletype')) {
@@ -146495,7 +147264,8 @@
       setModalControlVal('f_official_name', row.official_name || row.name || '');
       setModalControlVal('f_method', row.method || 'Credit');
       setModalControlVal('f_vatreg', (row.vat_registered === true || row.vat_registered === 'Yes') ? 'Yes' : 'No');
-      setModalControlVal('f_mof', row.mof_no || '');
+      setModalControlVal('f_mof', row.mof_no || row.financial_no || '');
+      if ($('f_mof_shared_ok')) $('f_mof_shared_ok').checked = Boolean(row.shared_mof_ok);
       setModalControlVal('f_phone', row.phone || '');
       setModalControlVal('f_region', row.region || row.address || '');
       if ($('f_declqty')) $('f_declqty').checked = Boolean(row.customer_declared_qty);
@@ -146510,6 +147280,7 @@
       setModalControlVal('f_phone', row.phone || row.contact || '');
       setModalControlVal('f_region', row.region || row.location || '');
       setModalControlVal('f_mof', row.mof_no || row.financial_no || '');
+      if ($('f_mof_shared_ok')) $('f_mof_shared_ok').checked = Boolean(row.shared_mof_ok);
       if ($('f_iva')) $('f_iva').checked = Boolean(row.iva || row.vat_registered);
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'product') {
@@ -151404,6 +152175,7 @@
         { key: 'longitude', label: 'Longitude (GPS)', type: 'number', step: '0.00001', min: '35.0', max: '36.8', sec: 1, placeholder: '35.xxxxx (optional)', getVal: r => { if (r._pinCleared) return ''; if (r.longitude != null && r.longitude !== '') return r.longitude; const ci = customerInfo(r.name || r.Customer); return (ci && !ci._pinCleared && ci.longitude != null && ci.longitude !== '') ? ci.longitude : ''; } },
         { key: 'vat_registered', label: 'VAT 11% Registered', type: 'bool', sec: 1, getVal: r => Boolean(r.vat_registered || (customerInfo(r.name || r.Customer) || {})['VAT Registered'] === 'Yes') },
         { key: 'mof_no', label: 'MOF Tax Number', type: 'text', sec: 1, placeholder: 'Ministry of Finance #...', getVal: r => r.mof_no || r.financial_no || (customerInfo(r.name || r.Customer) || {}).mof_no || '' },
+        { key: 'shared_mof_ok', label: 'Authorized Shared MoF Branch', type: 'bool', sec: 1, getVal: r => Boolean(r.shared_mof_ok) },
         { key: 'credit_days', label: 'Credit Terms (Days)', type: 'number', step: '1', min: '0', sec: 3, placeholder: 'e.g. 30', getVal: r => { if (r.credit_days != null && r.credit_days !== '') return r.credit_days; const ct = creditTermsForCustomer(r.name || r.Customer); return ct && ct.credit_days != null ? ct.credit_days : ''; } },
         { key: 'credit_limit', label: 'Credit Limit ($)', type: 'number', step: '100', min: '0', sec: 3, placeholder: 'e.g. 25000', getVal: r => { if (r.credit_limit != null && r.credit_limit !== '') return r.credit_limit; const ct = creditTermsForCustomer(r.name || r.Customer); return ct && ct.credit_limit != null ? ct.credit_limit : ''; } },
         { key: 'customer_declared_qty', label: 'Customer-Declared Qty on Tickets', type: 'bool', sec: 2, getVal: r => Boolean(r.customer_declared_qty || (customerInfo(r.name || r.Customer) || {}).customer_declared_qty) },
@@ -151423,6 +152195,7 @@
         { key: 'longitude', label: 'Longitude (GPS)', type: 'number', step: '0.00001', min: '35.0', max: '36.8', sec: 1, placeholder: '35.xxxxx (optional)', getVal: r => { if (r._pinCleared) return ''; if (r.longitude != null && r.longitude !== '') return r.longitude; const si = supplierInfo(r.name || r.Supplier); return (si && !si._pinCleared && si.longitude != null && si.longitude !== '') ? si.longitude : ''; } },
         { key: 'iva', label: 'VAT / IVA Registered', type: 'bool', sec: 1, getVal: r => Boolean(r.iva || (supplierInfo(r.name || r.Supplier) || {}).iva) },
         { key: 'mof_no', label: 'MOF / Financial Number', type: 'text', sec: 1, placeholder: 'Ministry of Finance #...', getVal: r => r.mof_no || r.financial_no || (supplierInfo(r.name || r.Supplier) || {}).mof_no || '' },
+        { key: 'shared_mof_ok', label: 'Authorized Shared MoF Branch', type: 'bool', sec: 1, getVal: r => Boolean(r.shared_mof_ok) },
         { key: 'is_truck_owner', label: 'Registered Hauler / Truck Owner', type: 'bool', sec: 2, getVal: r => Boolean(r.is_truck_owner || (supplierInfo(r.name || r.Supplier) || {}).is_truck_owner) },
         { key: 'notes', label: 'Notes & Payment Terms', type: 'text', sec: 3, span: true, placeholder: 'Bank IBAN, material supplier terms, or hauler instructions...' }
       ],
@@ -157458,6 +158231,28 @@
               return;
             }
           } else if (key === 'customers' || key === 'suppliers') {
+            if ('mof_no' in pendingUpdates) {
+              pendingUpdates.financial_no = pendingUpdates.mof_no;
+              candidate.financial_no = candidate.mof_no;
+            }
+            const candMof = normMofTaxId(candidate.mof_no || candidate.financial_no || '');
+            const prevMof = normMofTaxId(row.mof_no || row.financial_no || '');
+            if ('mof_no' in pendingUpdates) {
+              const clearedNow = Boolean(prevMof && !candMof);
+              pendingUpdates._mofCleared = clearedNow;
+              candidate._mofCleared = clearedNow;
+            }
+            const candSharedOk = Boolean(candidate.shared_mof_ok === true || candidate.shared_mof_ok === 1 || candidate.shared_mof_ok === '1');
+            const prevSharedOk = Boolean(row.shared_mof_ok === true || row.shared_mof_ok === 1 || row.shared_mof_ok === '1');
+            const prevVoided = Boolean(row.voided);
+            if (candMof && !candSharedOk && !candidate.voided && (candMof !== prevMof || prevVoided || prevSharedOk)) {
+              const dupMof = findDuplicateMofCounterparty(key, candMof, row.id || '', inferUnivRowIndustry(candidate), candidate.name || row.name || '');
+              if (dupMof) {
+                const holder = String(dupMof.official_name || dupMof.name || dupMof.id || '').trim();
+                toast(`MoF Tax Number "${candMof}" is already registered to "${holder}". Enable "Authorized Shared MoF Branch" only for verified legal branches.`, 'err');
+                return;
+              }
+            }
             const rawCandLat = candidate.latitude;
             const rawCandLng = candidate.longitude;
             const hasCandLat = rawCandLat !== null && rawCandLat !== undefined && String(rawCandLat).trim() !== '';
@@ -161412,6 +162207,24 @@
     return changed;
   }
 
+  // Resolves precedence when a voided record and a sort-only reorder meet during sync or state reads.
+  function _wsSortReorderDecision(curRec, incRec) {
+    if (!curRec || !incRec) return null;
+    const curTs = String(curRec.updated_at || '');
+    const incTs = String(incRec.updated_at || '');
+    if (curRec.voided && incRec._sortOnlyReorder) {
+      const incContentTs = String(incRec.content_updated_at || '');
+      if (incContentTs && (!curTs || incContentTs > curTs)) return 'accept';
+      return 'skip';
+    }
+    if (!curRec.voided && curRec._sortOnlyReorder && incRec.voided) {
+      const curContentTs = String(curRec.content_updated_at || '');
+      if (!curContentTs || (incTs && incTs >= curContentTs)) return 'accept';
+      return 'skip';
+    }
+    return null;
+  }
+
   function mergeWorkSchedules(remoteSched) {
     if (!remoteSched || typeof remoteSched !== 'object') return false;
     const ws = ensureWorkSchedulesState();
@@ -161424,6 +162237,13 @@
         const cur = byKey.get(mKey);
         const inTs = String(inc.updated_at || '');
         const curTs = cur ? String(cur.updated_at || '') : '';
+        const srDec = _wsSortReorderDecision(cur, inc);
+        if (srDec === 'skip') return;
+        if (srDec === 'accept') {
+          Object.assign(cur, inc);
+          changed = true;
+          return;
+        }
         if (!cur) {
           const copy = Object.assign({}, inc);
           ws.shiftTypes.push(copy);
@@ -161443,6 +162263,13 @@
         const cur = pgById.get(gid);
         const inTs = String(inc.updated_at || '');
         const curTs = cur ? String(cur.updated_at || '') : '';
+        const srDec = _wsSortReorderDecision(cur, inc);
+        if (srDec === 'skip') return;
+        if (srDec === 'accept') {
+          Object.assign(cur, inc);
+          changed = true;
+          return;
+        }
         if (!cur) {
           const copy = Object.assign({}, inc);
           ws.policyGroups.push(copy);
@@ -167306,6 +168133,12 @@
               if (removed && casAttempt < 2) {
                 continue;
               }
+              setPendingCloudPush(false);
+              break;
+            }
+            if (putRes.status === 409 && putErr && putErr.code === 'duplicate_mof_no') {
+              toast(putErr.error || 'Duplicate MoF Tax Number blocked by server.', 'err');
+              STATE.cloudStatus = '● Duplicate MoF # blocked sync';
               setPendingCloudPush(false);
               break;
             }
@@ -174049,7 +174882,11 @@
     STATE.hubInspectorReturn = null;
     STATE.stmt14ReturnCtx = null;
     STATE.stmt16ReturnCtx = null;
+    STATE.stmt20ReturnCtx = null;
     STATE.ovkMoversReturn = null;
+    STATE.reStackProp = '';
+    STATE.reStackExpandUpper = false;
+    STATE.reUnitsChip = 'all';
     if (STATE.rdl && STATE.rdl.params) STATE.rdl.params.hrBatchTargets = null;
     if (STATE.authed) STATE.authed = false;
     purgeOverlaysOnSessionOrKioskLock();
@@ -181229,9 +182066,69 @@
       summaryText,
       tone: ['emerald', 'amber', 'sapphire', 'indigo', 'rose'].includes(base.tone) ? base.tone : 'emerald',
       isBuiltin,
+      _sortOnlyReorder: Boolean(base._sortOnlyReorder),
+      sort_order: (base.sort_order != null && base.sort_order !== '' && Number.isFinite(Number(base.sort_order))) ? Number(base.sort_order) : null,
+      sort_order_updated_at: String(base.sort_order_updated_at || ''),
+      content_updated_at: String(base.content_updated_at || ''),
       voided: Boolean(base.voided),
       updated_at: String(base.updated_at || '')
     };
+  }
+
+  function _resolveLatestPolicyGroupEntries() {
+    const ws = ensureWorkSchedulesState();
+    const bestById = new Map();
+    (ws.policyGroups || []).forEach(g => {
+      if (!g || !g.id || LEGACY_POLICY_GROUP_ALIASES[String(g.id)]) return;
+      const gid = String(g.id);
+      const cur = bestById.get(gid);
+      if (!cur) {
+        bestById.set(gid, g);
+        return;
+      }
+      const srDec = _wsSortReorderDecision(cur, g);
+      if (srDec === 'skip') return;
+      if (srDec === 'accept' || String(g.updated_at || '') >= String(cur.updated_at || '')) {
+        bestById.set(gid, g);
+      }
+    });
+    return bestById;
+  }
+
+  function _getVoidedPolicyGroupIds() {
+    const out = new Set();
+    _resolveLatestPolicyGroupEntries().forEach((g, gid) => {
+      if (g && g.voided) out.add(gid);
+    });
+    return out;
+  }
+
+  function _pickActiveFallbackPolicyGroupId(excludeId = '', companyRaw = '') {
+    const ws = ensureWorkSchedulesState();
+    const voidedIds = _getVoidedPolicyGroupIds();
+    const exId = normalizePolicyGroupIdAlias(excludeId);
+    const coKey = norm(companyRaw || '');
+    const pref = DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
+    const altPref = pref === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d';
+    const cands = [pref, altPref, ...DEFAULT_POLICY_GROUPS.map(d => d.id)];
+    for (let i = 0; i < cands.length; i++) {
+      const cid = cands[i];
+      if (!cid || cid === exId || voidedIds.has(cid)) continue;
+      const ov = (ws.policyGroups || []).find(g => g && String(g.id) === cid);
+      if (ov && ov.voided) continue;
+      if (ov && ov.company) {
+        const gCoN = norm(ov.company || 'All Companies');
+        if (coKey && gCoN && gCoN !== norm('All Companies') && gCoN !== norm('All BUs') && gCoN !== coKey) continue;
+      }
+      return cid;
+    }
+    const customHit = (ws.policyGroups || []).find(g => {
+      if (!g || !g.id || g.voided || LEGACY_POLICY_GROUP_ALIASES[String(g.id)]) return false;
+      if (String(g.id) === exId) return false;
+      const gCoN = norm(g.company || 'All Companies');
+      return !coKey || !gCoN || gCoN === norm('All Companies') || gCoN === norm('All BUs') || gCoN === coKey;
+    });
+    return customHit ? String(customHit.id) : (pref || 'pkg_15_open_15d');
   }
 
   let _WS_POLICY_MEMO = null;
@@ -181242,9 +182139,14 @@
     let pgStamp = '';
     for (let i = 0; i < pgArr.length; i++) {
       const g = pgArr[i];
-      if (g) pgStamp += `${g.id || ''}:${g.updated_at || ''}:${g.voided ? 1 : 0}:${Array.isArray(g.versions) ? g.versions.length : 0}:${g.grace_min ?? ''}:${g.early_leave_grace_min ?? ''}:${g.late_penalty_mode || ''}:${serializeLateBrackets(g.late_brackets)}:${g.late_below_bracket_mode || ''}:${g.late_multiplier ?? ''}:${g.ot_mode || ''}:${g.ot_multiplier ?? ''}:${g.ot_max_hours ?? ''}:${g.ot_snap_mode || ''}:${g.ot_block_min ?? ''}:${g.ot_snap_at_min ?? ''}:${g.company || ''}:${g.name || ''}:${Array.isArray(g.perks) ? g.perks.join(',') : ''};`;
+      if (g) pgStamp += `${g.id || ''}:${g.sort_order ?? ''}:${g.updated_at || ''}:${g.voided ? 1 : 0}:${Array.isArray(g.versions) ? g.versions.length : 0}:${g.grace_min ?? ''}:${g.early_leave_grace_min ?? ''}:${g.late_penalty_mode || ''}:${serializeLateBrackets(g.late_brackets)}:${g.late_below_bracket_mode || ''}:${g.late_multiplier ?? ''}:${g.ot_mode || ''}:${g.ot_multiplier ?? ''}:${g.ot_max_hours ?? ''}:${g.ot_snap_mode || ''}:${g.ot_block_min ?? ''}:${g.ot_snap_at_min ?? ''}:${g.company || ''}:${g.name || ''}:${Array.isArray(g.perks) ? g.perks.join(',') : ''};`;
     }
-    const rev = `${_TIME24_WS_REV}|${(SEED && SEED._customRev) || 0}|${_GLOBAL_RATES_REV}|${STATE.enterpriseScalePreview ? 1 : 0}|${todayISO()}|${stArr.length}|${pgStamp}`;
+    let stStamp = '';
+    for (let i = 0; i < stArr.length; i++) {
+      const s = stArr[i];
+      if (s) stStamp += `${s.id || ''}:${s.company || ''}:${s.sort_order ?? ''}:${s.voided ? 1 : 0}:${s.updated_at || ''};`;
+    }
+    const rev = `${_TIME24_WS_REV}|${(SEED && SEED._customRev) || 0}|${_GLOBAL_RATES_REV}|${STATE.enterpriseScalePreview ? 1 : 0}|${todayISO()}|${stArr.length}|${stStamp}|${pgStamp}`;
     if (
       !_WS_POLICY_MEMO
       || _WS_POLICY_MEMO.rev !== rev
@@ -181384,9 +182286,10 @@
     const ws = ensureWorkSchedulesState();
     const co = String(companyRaw || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC').trim();
     const coKey = norm(co);
+    const voidedIds = _getVoidedPolicyGroupIds();
     const saved = ws.companyPolicyDefaults && ws.companyPolicyDefaults[coKey];
     const savedId = normalizePolicyGroupIdAlias(typeof saved === 'object' && saved ? saved.group_id : saved);
-    if (savedId) {
+    if (savedId && !voidedIds.has(savedId)) {
       const customGrp = (ws.policyGroups || []).find(g => g && !g.voided && String(g.id) === savedId);
       const customVisible = Boolean(customGrp && (() => {
         const gCoN = norm(customGrp.company || 'All Companies');
@@ -181395,7 +182298,8 @@
       const existsBuiltin = DEFAULT_POLICY_GROUPS.some(d => d.id === savedId);
       if (customVisible || existsBuiltin) return savedId;
     }
-    return DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
+    const baseDef = DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
+    return voidedIds.has(baseDef) ? _pickActiveFallbackPolicyGroupId('', co) : baseDef;
   }
 
   function _rawStaffRuleHasLegacyMathFields(raw) {
@@ -181559,12 +182463,12 @@
     if (reqId && !visibleGroups.some(g => g.id === reqId)) {
       return { ok: false, error: 'Policy group is not available for this company' };
     }
-    const nextId = reqId || DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
+    const nextId = reqId || _pickActiveFallbackPolicyGroupId('', co);
     const prevDefId = getCompanyDefaultPolicyGroupId(co);
     const nowIso = new Date().toISOString();
     const prevCoDef = ws.companyPolicyDefaults[coKey];
     const prevObj = (prevCoDef && typeof prevCoDef === 'object') ? Object.assign({}, prevCoDef) : (prevCoDef ? { group_id: String(prevCoDef) } : {});
-    const grpObj = visibleGroups.find(g => g.id === nextId) || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]);
+    const grpObj = visibleGroups.find(g => g.id === nextId) || visibleGroups[0] || normalizePolicyGroupObj(DEFAULT_POLICY_GROUPS[0]);
     const today = todayISO();
     const effFrom = opts.effective_from && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.effective_from).slice(0, 10))
       ? String(opts.effective_from).slice(0, 10)
@@ -181796,17 +182700,33 @@
     const coNorm = norm(targetCo);
     const coDefId = getCompanyDefaultPolicyGroupId(targetCo);
     const isGroupReq = !companyOpt || /^(manufacturing-group|democompany|demo_company|all|all\s*companies|all\s*bus)$/i.test(companyOpt) || /^industry:/i.test(companyOpt);
+    const voidedPgIds = new Set();
     const customById = new Map();
+    const bestPgById = new Map();
     (ws.policyGroups || []).forEach(g => {
-      if (g && g.id && !g.voided && !LEGACY_POLICY_GROUP_ALIASES[String(g.id)]) {
-        customById.set(String(g.id), g);
+      if (!g || !g.id || LEGACY_POLICY_GROUP_ALIASES[String(g.id)]) return;
+      const gid = String(g.id);
+      const cur = bestPgById.get(gid);
+      if (!cur) {
+        bestPgById.set(gid, g);
+        return;
       }
+      const srDec = _wsSortReorderDecision(cur, g);
+      if (srDec === 'skip') return;
+      if (srDec === 'accept' || String(g.updated_at || '') >= String(cur.updated_at || '')) {
+        bestPgById.set(gid, g);
+      }
+    });
+    bestPgById.forEach((g, gid) => {
+      if (g.voided) voidedPgIds.add(gid);
+      else customById.set(gid, g);
     });
     const out = [];
     DEFAULT_POLICY_GROUPS.forEach(def => {
       const ov = customById.get(def.id);
-      out.push(normalizePolicyGroupObj(ov || def, def));
       customById.delete(def.id);
+      if (voidedPgIds.has(def.id) && !ov) return;
+      out.push(normalizePolicyGroupObj(ov || def, def));
     });
     customById.forEach(custom => {
       if (custom && !custom.voided) {
@@ -181816,45 +182736,57 @@
         }
       }
     });
-    out.sort((a, b) => {
-      const aDef = a.id === coDefId ? 1 : 0;
-      const bDef = b.id === coDefId ? 1 : 0;
-      return bDef - aDef;
+    const indexed = out.map((item, idx) => ({ item, idx }));
+    const hasExplicitOrder = out.some(g => g.sort_order != null && Number.isFinite(Number(g.sort_order)));
+    indexed.sort((a, b) => {
+      if (hasExplicitOrder) {
+        const ao = (a.item.sort_order != null && Number.isFinite(Number(a.item.sort_order))) ? Number(a.item.sort_order) : (10000 + a.idx);
+        const bo = (b.item.sort_order != null && Number.isFinite(Number(b.item.sort_order))) ? Number(b.item.sort_order) : (10000 + b.idx);
+        if (ao !== bo) return ao - bo;
+      }
+      const aDef = a.item.id === coDefId ? 1 : 0;
+      const bDef = b.item.id === coDefId ? 1 : 0;
+      if (bDef !== aDef) return bDef - aDef;
+      return a.idx - b.idx;
     });
+    const sortedOut = indexed.map(x => x.item);
     if (memo.policyGroups.size > 512) memo.policyGroups.clear();
-    memo.policyGroups.set(cacheKey, out);
-    return out.slice();
+    memo.policyGroups.set(cacheKey, sortedOut);
+    return sortedOut.slice();
   }
 
   function inferDefaultPolicyGroupId(staffName, company, rawRule = null, profOpt = null) {
+    const voidedPgIds = _getVoidedPolicyGroupIds();
     if (rawRule && !rawRule.reset_default && rawRule.policy_group_id) {
-      return normalizePolicyGroupIdAlias(rawRule.policy_group_id);
+      const rPgId = normalizePolicyGroupIdAlias(rawRule.policy_group_id);
+      if (rPgId && !voidedPgIds.has(rPgId)) return rPgId;
     }
     const effCo = company || (rawRule && rawRule.company) || defaultEntryCompany() || 'WTC';
     const coDefPkgId = getCompanyDefaultPolicyGroupId(effCo);
+    const pickPg = id => (id && !voidedPgIds.has(id) ? id : coDefPkgId);
     const prof = profOpt || getStaffContractProfile(staffName, effCo);
     const roleStr = String((prof && prof.role) || '').toLowerCase();
     const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director|broker|underwriter|executive)\b/i.test(roleStr)
       || window.MFG_NAMEBOOK.isSeniorPerson(staffName);
     if (rawRule && !rawRule.reset_default) {
-      if (rawRule.late_penalty_mode === 'none') return 'pkg_exec_21d';
-      if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
-      if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'date_range') return 'pkg_15_pass_15d';
-      if (rawRule.late_penalty_mode === 'multiplier') return 'pkg_15_open_15d';
-      if (rawRule.ot_mode === 'always' && isSeniorRole) return 'pkg_exec_21d';
-      if (rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
-      if (rawRule.ot_mode === 'date_range') return 'pkg_15_pass_15d';
+      if (rawRule.late_penalty_mode === 'none') return pickPg('pkg_exec_21d');
+      if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'always') return pickPg('pkg_15_open_15d');
+      if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'date_range') return pickPg('pkg_15_pass_15d');
+      if (rawRule.late_penalty_mode === 'multiplier') return pickPg('pkg_15_open_15d');
+      if (rawRule.ot_mode === 'always' && isSeniorRole) return pickPg('pkg_exec_21d');
+      if (rawRule.ot_mode === 'always') return pickPg('pkg_15_open_15d');
+      if (rawRule.ot_mode === 'date_range') return pickPg('pkg_15_pass_15d');
     }
     if (prof.hasContract) {
-      if (Number(prof.vacationDays || 0) >= 21) return 'pkg_exec_21d';
+      if (Number(prof.vacationDays || 0) >= 21) return pickPg('pkg_exec_21d');
       if (Number(prof.workingDays) === 26 || (prof.vacationDays != null && Number(prof.vacationDays) > 0 && Number(prof.vacationDays) <= 7)) {
-        return 'pkg_daily_26d';
+        return pickPg('pkg_daily_26d');
       }
       if (Number(prof.otMultiplier || 1) >= 1.5) {
-        return coDefPkgId === 'pkg_15_pass_15d' ? 'pkg_15_pass_15d' : 'pkg_15_open_15d';
+        return coDefPkgId === 'pkg_15_pass_15d' ? pickPg('pkg_15_pass_15d') : pickPg('pkg_15_open_15d');
       }
     }
-    if (isSeniorRole && coDefPkgId === 'pkg_10_fixed_15d') return 'pkg_exec_21d';
+    if (isSeniorRole && coDefPkgId === 'pkg_10_fixed_15d') return pickPg('pkg_exec_21d');
     return coDefPkgId;
   }
 
@@ -181908,8 +182840,7 @@
       const hasTimelineHit = curTimeline.some(w => w && normalizePolicyGroupIdAlias(w.policy_group_id) === targetGrpId);
       if (curDefId !== targetGrpId && !hasTimelineHit) return;
       revertedCos.add(coKey);
-      const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[coKey] || 'pkg_15_open_15d';
-      const fallbackId = fbBase === targetGrpId ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
+      const fallbackId = _pickActiveFallbackPolicyGroupId(targetGrpId, curDef && curDef.company ? curDef.company : coKey);
       const coDisplay = String((curDef && curDef.company) || COMPANY_BU_MATCH[coKey] || coKey).trim();
       const fbGrp = resolvePolicyGroupAtDate(fallbackId, coDisplay, refDate);
       const nextEntry = Object.assign(
@@ -181956,12 +182887,12 @@
     }
     _TIME24_WS_REV++;
     const ws = ensureWorkSchedulesState();
-    const nowIso = new Date().toISOString();
-    const today = todayISO();
     const grpId = String(spec.id || uid('pkg'));
     const existingBuiltin = DEFAULT_POLICY_GROUPS.find(d => d.id === grpId) || null;
     const existingIdx = ws.policyGroups.findIndex(g => g && String(g.id) === grpId);
     const prevRaw = existingIdx >= 0 ? ws.policyGroups[existingIdx] : existingBuiltin;
+    const nowIso = _nextWsUpdatedIso(existingIdx >= 0 && ws.policyGroups[existingIdx] ? ws.policyGroups[existingIdx].updated_at : '');
+    const today = todayISO();
     const reqCoNormEarly = norm(String(spec.company || '').trim());
     const isSingleScopedEarly = Boolean(reqCoNormEarly && reqCoNormEarly !== norm('All Companies') && reqCoNormEarly !== norm('All BUs'));
     const forkedFromId = (existingIdx < 0 && !existingBuiltin && isSingleScopedEarly && spec.forked_from_group_id)
@@ -182102,20 +183033,42 @@
         })
       : Object.assign({}, prev || {}, spec, { versions: nextVersions });
 
+    const existingPgList = getPolicyGroups('');
+    const hasOrderedPgs = existingPgList.some(g => g.sort_order != null);
+    let nextPgSort = (spec.sort_order != null && spec.sort_order !== '')
+      ? Number(spec.sort_order)
+      : (prevRaw && !prevRaw.voided && prevRaw.sort_order != null ? prevRaw.sort_order : null);
+    if (nextPgSort == null && hasOrderedPgs && (existingIdx < 0 || (prevRaw && prevRaw.voided))) {
+      nextPgSort = existingPgList.reduce((mx, g) => Math.max(mx, g.sort_order != null ? Number(g.sort_order) : -1), -1) + 1;
+    }
     const normalized = normalizePolicyGroupObj(Object.assign({}, activeSpecForToday, {
       id: grpId,
       isBuiltin: Boolean(existingBuiltin),
+      _sortOnlyReorder: false,
+      sort_order: nextPgSort,
+      sort_order_updated_at: (spec.sort_order != null && spec.sort_order !== '')
+        ? nowIso
+        : ((prevRaw && !prevRaw.voided && prevRaw.sort_order_updated_at) || (nextPgSort != null ? nowIso : '')),
+      content_updated_at: nowIso,
       voided: false,
       updated_at: nowIso
     }), existingBuiltin);
     if (!normalized.name) {
       return { ok: false, error: 'Policy & Perks group name is required' };
     }
+    const newCoN = norm(normalized.company || 'All Companies');
+    const isSingleScoped = Boolean(newCoN && newCoN !== norm('All Companies') && newCoN !== norm('All BUs'));
+    if (isSingleScoped) {
+      const activeUnivOthers = _getAllActivePolicyGroupsUnfiltered().filter(g =>
+        g.id !== grpId && (!g.company || norm(g.company) === norm('All Companies') || norm(g.company) === norm('All BUs'))
+      );
+      if (activeUnivOthers.length < 1) {
+        return { ok: false, error: 'At least one company-wide Policy & Perks group must remain' };
+      }
+    }
     if (existingIdx >= 0) ws.policyGroups[existingIdx] = normalized;
     else ws.policyGroups.push(normalized);
 
-    const newCoN = norm(normalized.company || 'All Companies');
-    const isSingleScoped = Boolean(newCoN && newCoN !== norm('All Companies') && newCoN !== norm('All BUs'));
     const revertedDefaultCos = isSingleScoped ? _revertCompanyPolicyDefaultsForGroup(ws, grpId, nowIso, today, newCoN) : new Set();
 
     let backfilledStaff = 0;
@@ -182403,23 +183356,76 @@
     };
   }
 
+  function _trAttUi(s) {
+    return (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function')
+      ? (window.MFG_I18N.t(s) || s)
+      : s;
+  }
+
+  function _getAllActivePolicyGroupsUnfiltered() {
+    const voidedIds = new Set();
+    const customById = new Map();
+    _resolveLatestPolicyGroupEntries().forEach((g, gid) => {
+      if (g.voided) voidedIds.add(gid);
+      else customById.set(gid, g);
+    });
+    const out = [];
+    DEFAULT_POLICY_GROUPS.forEach(def => {
+      const ov = customById.get(def.id);
+      customById.delete(def.id);
+      if (voidedIds.has(def.id) && !ov) return;
+      out.push(normalizePolicyGroupObj(ov || def, def));
+    });
+    customById.forEach(custom => {
+      if (custom && !custom.voided) out.push(normalizePolicyGroupObj(custom));
+    });
+    return out;
+  }
+
   function deletePolicyGroup(groupId) {
     if (!canEditPolicyGroupsCatalog()) {
       return { ok: false, error: 'Full-group scheduling rights are required to delete Policy & Perks groups' };
     }
-    _TIME24_WS_REV++;
     const id = String(groupId || '');
-    if (!id || DEFAULT_POLICY_GROUPS.some(d => d.id === id)) {
-      return { ok: false, error: 'Built-in Policy & Perks groups cannot be deleted (you can edit their multipliers & perks)' };
-    }
+    if (!id) return { ok: false, error: 'Policy group not found' };
     const ws = ensureWorkSchedulesState();
-    const nowIso = new Date().toISOString();
+    const builtinDef = DEFAULT_POLICY_GROUPS.find(d => d.id === id) || null;
     const idx = ws.policyGroups.findIndex(g => g && String(g.id) === id);
-    if (idx < 0) return { ok: false, error: 'Policy group not found' };
-    ws.policyGroups[idx] = Object.assign({}, ws.policyGroups[idx], { voided: true, updated_at: nowIso });
+    const prevRec = idx >= 0 ? ws.policyGroups[idx] : null;
+    const activeAll = _getAllActivePolicyGroupsUnfiltered();
+    const targetEntry = activeAll.find(g => g.id === id);
+    if (!targetEntry || (prevRec && prevRec.voided)) {
+      return { ok: false, error: 'Policy group not found' };
+    }
+    const remaining = activeAll.filter(g => g.id !== id);
+    if (remaining.length < 1) {
+      return { ok: false, error: 'At least one active Policy & Perks group must remain' };
+    }
+    const isUniversalTarget = !targetEntry.company || norm(targetEntry.company) === norm('All Companies') || norm(targetEntry.company) === norm('All BUs');
+    const remUniversal = remaining.filter(g => !g.company || norm(g.company) === norm('All Companies') || norm(g.company) === norm('All BUs'));
+    if (isUniversalTarget && remUniversal.length < 1) {
+      return { ok: false, error: 'At least one company-wide Policy & Perks group must remain' };
+    }
+    _TIME24_WS_REV++;
+    const snapPg = JSON.parse(JSON.stringify(ws.policyGroups || []));
+    const snapCpd = JSON.parse(JSON.stringify(ws.companyPolicyDefaults || {}));
+    const snapSr = JSON.parse(JSON.stringify(ws.staffRules || {}));
+    const nowIso = _nextWsUpdatedIso(prevRec && prevRec.updated_at);
+    const tombBase = prevRec || builtinDef || targetEntry;
+    const tombEntry = Object.assign({}, tombBase, {
+      id,
+      _sortOnlyReorder: false,
+      content_updated_at: nowIso,
+      voided: true,
+      updated_at: nowIso
+    });
+    if (idx >= 0) ws.policyGroups[idx] = tombEntry;
+    else ws.policyGroups.push(tombEntry);
     const revertedOnDeleteCos = _revertCompanyPolicyDefaultsForGroup(ws, id, nowIso, todayISO(), '');
     const touchedKeys = new Set();
-    getKioskStaffDirectory({ includeEnded: true, lite: true }).forEach(s => {
+    getKioskStaffDirectory({ includeEnded: true, lite: true, allIndustries: true }).forEach(s => {
+      const rawEntry = getStaffRuleEntry(s.name, s.company).raw;
+      if (!rawEntry || rawEntry.reset_default) return;
       const curRule = getStaffWorkRule(s.name, s.company);
       if (curRule.policy_group_id === id) {
         touchedKeys.add(norm(staffRuleKey(s.name, s.company)));
@@ -182432,54 +183438,177 @@
     if (ws.staffRules && typeof ws.staffRules === 'object') {
       Object.keys(ws.staffRules).forEach(rk => {
         const r = ws.staffRules[rk];
-        if (!r || normalizePolicyGroupIdAlias(r.policy_group_id) !== id || touchedKeys.has(norm(rk))) return;
+        if (!r || typeof r !== 'object') return;
         const fallbackId = getCompanyDefaultPolicyGroupId(r.company || '');
-        const grp = getPolicyGroups(r.company || '').find(g => g.id === fallbackId) || DEFAULT_POLICY_GROUPS[0];
-        Object.assign(r, {
-          policy_group_id: grp.id,
-          late_penalty_mode: grp.late_penalty_mode,
-          late_brackets: normalizeLateBrackets(grp.late_brackets),
-          late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
-          late_half_day_after_min: grp.late_half_day_after_min,
-          late_multiplier: grp.late_multiplier,
-          ot_multiplier: grp.ot_multiplier,
-          ot_mode: grp.ot_mode,
-          ot_max_hours: grp.ot_max_hours,
-          vacation_days: grp.vacation_days,
-          sick_days: grp.sick_days,
-          working_days: grp.working_days,
-          grace_min: grp.grace_min,
-          early_leave_grace_min: grp.early_leave_grace_min,
-          no_clock_out_rule: grp.no_clock_out_rule,
-          math_mode: grp.math_mode,
-          ot_threshold_min: grp.ot_threshold_min,
-          ot_early_threshold_min: grp.ot_early_threshold_min,
-          ot_count_from: grp.ot_count_from,
-          ot_snap_mode: normalizeOtSnapMode(grp.ot_snap_mode),
-          ot_block_min: normalizeOtBlockMin(grp.ot_block_min),
-          ot_snap_at_min: clampOtSnapAtMin(grp.ot_snap_at_min, grp.ot_block_min),
-          perks: (grp.perks || []).slice(),
-          updated_at: nowIso
-        });
+        const coGroups = getPolicyGroups(r.company || '');
+        const grp = coGroups.find(g => g.id === fallbackId) || coGroups[0] || remaining[0];
+        if (!grp) return;
+        let timelineChanged = false;
+        if (Array.isArray(r.policy_timeline)) {
+          r.policy_timeline.forEach(te => {
+            if (te && normalizePolicyGroupIdAlias(te.policy_group_id || '') === id) {
+              Object.assign(te, {
+                policy_group_id: grp.id,
+                late_penalty_mode: grp.late_penalty_mode,
+                late_brackets: normalizeLateBrackets(grp.late_brackets),
+                late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
+                late_half_day_after_min: grp.late_half_day_after_min,
+                late_multiplier: grp.late_multiplier,
+                ot_multiplier: grp.ot_multiplier,
+                ot_mode: grp.ot_mode,
+                ot_max_hours: grp.ot_max_hours,
+                ot_threshold_min: grp.ot_threshold_min,
+                ot_early_threshold_min: grp.ot_early_threshold_min,
+                ot_count_from: grp.ot_count_from,
+                ot_snap_mode: normalizeOtSnapMode(grp.ot_snap_mode),
+                ot_block_min: normalizeOtBlockMin(grp.ot_block_min),
+                ot_snap_at_min: clampOtSnapAtMin(grp.ot_snap_at_min, grp.ot_block_min),
+                perks: (grp.perks || []).slice()
+              });
+              timelineChanged = true;
+            }
+          });
+        }
+        const matchPrimary = normalizePolicyGroupIdAlias(r.policy_group_id) === id && !touchedKeys.has(norm(rk));
+        if (!matchPrimary && !timelineChanged) return;
+        if (matchPrimary) {
+          Object.assign(r, {
+            policy_group_id: grp.id,
+            late_penalty_mode: grp.late_penalty_mode,
+            late_brackets: normalizeLateBrackets(grp.late_brackets),
+            late_below_bracket_mode: normalizeLateBelowBracketMode(grp.late_below_bracket_mode),
+            late_half_day_after_min: grp.late_half_day_after_min,
+            late_multiplier: grp.late_multiplier,
+            ot_multiplier: grp.ot_multiplier,
+            ot_mode: grp.ot_mode,
+            ot_max_hours: grp.ot_max_hours,
+            vacation_days: grp.vacation_days,
+            sick_days: grp.sick_days,
+            working_days: grp.working_days,
+            grace_min: grp.grace_min,
+            early_leave_grace_min: grp.early_leave_grace_min,
+            no_clock_out_rule: grp.no_clock_out_rule,
+            math_mode: grp.math_mode,
+            ot_threshold_min: grp.ot_threshold_min,
+            ot_early_threshold_min: grp.ot_early_threshold_min,
+            ot_count_from: grp.ot_count_from,
+            ot_snap_mode: normalizeOtSnapMode(grp.ot_snap_mode),
+            ot_block_min: normalizeOtBlockMin(grp.ot_block_min),
+            ot_snap_at_min: clampOtSnapAtMin(grp.ot_snap_at_min, grp.ot_block_min),
+            perks: (grp.perks || []).slice()
+          });
+        }
+        r.updated_at = _nextWsUpdatedIso(r.updated_at);
       });
     }
     saveLocalAuthAndRecords();
-    postWorkScheduleMutation({ op: 'delete_policy_group', id });
-    revertedOnDeleteCos.forEach(coKey => {
-      const revDef = ws.companyPolicyDefaults && ws.companyPolicyDefaults[coKey];
-      if (revDef && typeof revDef === 'object') {
-        postWorkScheduleMutation({
-          op: 'set_company_policy_default',
-          company: revDef.company || coKey,
-          group_id: revDef.group_id,
-          policy_timeline: Array.isArray(revDef.policy_timeline) ? revDef.policy_timeline : [],
-          policy_timeline_updated_at: revDef.policy_timeline_updated_at || nowIso,
-          updated_at: nowIso
-        });
-      }
+    const syncPromise = postWorkScheduleMutation({ op: 'delete_policy_group', id, item: tombEntry });
+    const dispatchSecondaryPolWrites = () => {
+      revertedOnDeleteCos.forEach(coKey => {
+        const revDef = ws.companyPolicyDefaults && ws.companyPolicyDefaults[coKey];
+        if (revDef && typeof revDef === 'object') {
+          postWorkScheduleMutation({
+            op: 'set_company_policy_default',
+            company: revDef.company || coKey,
+            group_id: revDef.group_id,
+            policy_timeline: Array.isArray(revDef.policy_timeline) ? revDef.policy_timeline : [],
+            policy_timeline_updated_at: revDef.policy_timeline_updated_at || nowIso,
+            updated_at: nowIso
+          });
+        }
+      });
+      syncWithCloud(true);
+    };
+    if (syncPromise && typeof syncPromise.then === 'function') {
+      syncPromise.then(srvRes => {
+        if (srvRes && srvRes.ok === false && !srvRes.local) {
+          ws.policyGroups = snapPg;
+          ws.companyPolicyDefaults = snapCpd;
+          ws.staffRules = snapSr;
+          _TIME24_WS_REV++;
+          if (SEED) SEED._customRev = (SEED._customRev || 0) + 1;
+          saveLocalAuthAndRecords();
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen) refreshPayrollPolicySectionInPlace();
+          else if (STATE.view === 'kiosks') renderApp();
+          return;
+        }
+        dispatchSecondaryPolWrites();
+      }).catch(() => {});
+    } else {
+      dispatchSecondaryPolWrites();
+    }
+    return { ok: true, touchedCount: touchedKeys.size, syncPromise };
+  }
+
+  function reorderPolicyGroups(orderedIds = [], companyOpt = '') {
+    if (!canEditPolicyGroupsCatalog()) {
+      return { ok: false, error: 'Full-group scheduling rights are required to reorder Policy & Perks groups' };
+    }
+    const reqOrder = (Array.isArray(orderedIds) ? orderedIds : []).map(x => String(x || '').trim()).filter(Boolean);
+    if (!reqOrder.length) return { ok: false, error: 'Order list is required' };
+    const ws = ensureWorkSchedulesState();
+    const prevPgSnap = JSON.parse(JSON.stringify(ws.policyGroups || []));
+    const current = getPolicyGroups(companyOpt || '');
+    if (!current.length) return { ok: false, error: 'No policy groups found' };
+    const allActiveGlobal = _getAllActivePolicyGroupsUnfiltered();
+    const rankMap = new Map();
+    reqOrder.forEach((gid, i) => {
+      if (!rankMap.has(gid)) rankMap.set(gid, i);
     });
+    const reorderedVisible = current.slice().sort((a, b) => {
+      const ra = rankMap.has(a.id) ? rankMap.get(a.id) : (10000 + current.indexOf(a));
+      const rb = rankMap.has(b.id) ? rankMap.get(b.id) : (10000 + current.indexOf(b));
+      return ra - rb;
+    });
+    const visIds = new Set(reorderedVisible.map(g => g.id));
+    const siblingCosGroups = allActiveGlobal
+      .filter(g => !visIds.has(g.id))
+      .sort((a, b) => {
+        const ao = a.sort_order != null ? Number(a.sort_order) : 10000;
+        const bo = b.sort_order != null ? Number(b.sort_order) : 10000;
+        return ao - bo;
+      });
+    const finalList = reorderedVisible.concat(siblingCosGroups);
+    _TIME24_WS_REV++;
+    finalList.forEach((grp, idx) => {
+      const builtinDef = DEFAULT_POLICY_GROUPS.find(d => d.id === grp.id) || null;
+      const existIdx = ws.policyGroups.findIndex(g => g && String(g.id) === grp.id);
+      const prevRaw = existIdx >= 0 ? ws.policyGroups[existIdx] : null;
+      if (prevRaw && !prevRaw.voided && prevRaw.sort_order === idx) return;
+      const nextTs = _nextWsUpdatedIso(prevRaw && prevRaw.updated_at);
+      const preservedContentTs = (prevRaw && !prevRaw.voided)
+        ? String(prevRaw.content_updated_at || (!prevRaw._sortOnlyReorder ? prevRaw.updated_at : '') || '')
+        : '';
+      const updatedObj = normalizePolicyGroupObj(Object.assign({}, grp, prevRaw && !prevRaw.voided ? prevRaw : {}, {
+        id: grp.id,
+        isBuiltin: Boolean(builtinDef),
+        _sortOnlyReorder: true,
+        sort_order: idx,
+        sort_order_updated_at: nextTs,
+        content_updated_at: preservedContentTs,
+        voided: false,
+        updated_at: nextTs
+      }), builtinDef);
+      if (existIdx >= 0) ws.policyGroups[existIdx] = updatedObj;
+      else ws.policyGroups.push(updatedObj);
+    });
+    if (SEED) SEED._customRev = (SEED._customRev || 0) + 1;
+    saveLocalAuthAndRecords();
+    const syncPromise = postWorkScheduleMutation({ op: 'reorder_policy_groups', company: String(companyOpt || '').trim(), order: reqOrder });
+    if (syncPromise && typeof syncPromise.then === 'function') {
+      syncPromise.then(srvRes => {
+        if (srvRes && srvRes.ok === false && !srvRes.local) {
+          ws.policyGroups = prevPgSnap;
+          _TIME24_WS_REV++;
+          if (SEED) SEED._customRev = (SEED._customRev || 0) + 1;
+          saveLocalAuthAndRecords();
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen) refreshPayrollPolicySectionInPlace();
+          else if (STATE.view === 'kiosks') renderApp();
+        }
+      }).catch(() => {});
+    }
     syncWithCloud(true);
-    return { ok: true, touchedCount: touchedKeys.size };
+    return { ok: true, count: finalList.length, order: reqOrder, syncPromise };
   }
 
   function resolveStaffPolicyForDate(staffName, company, dateStr) {
@@ -183404,8 +184533,7 @@
             });
           }
         } else if (spec.willRevertCoDef && targetDefCo) {
-          const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[norm(targetDefCo)] || 'pkg_15_open_15d';
-          const fbId = fbBase === simRes.policyGroup.id ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
+          const fbId = _pickActiveFallbackPolicyGroupId(simRes.policyGroup.id, targetDefCo);
           const revRes = setCompanyDefaultPolicyGroup(targetDefCo, fbId, {
             effective_from: pgPayload.effective_from || '',
             effective_to: pgPayload.effective_to || '',
@@ -185891,6 +187019,55 @@
     return new Date(fallbackMs);
   }
 
+  function _nextWsUpdatedIso(prevTs = '') {
+    let ms = Date.parse(nextMonotonicIso());
+    const pMs = prevTs ? Date.parse(String(prevTs)) : NaN;
+    if (Number.isFinite(pMs) && pMs >= ms) {
+      ms = pMs + 1;
+      if (ms > _lastMonotonicMs) _lastMonotonicMs = ms;
+    }
+    return new Date(ms).toISOString();
+  }
+
+  function _getCompanyVoidedShiftMap(coNorm = '') {
+    const ws = ensureWorkSchedulesState();
+    const out = new Map();
+    const bestByCode = new Map();
+    const allBUsN = norm('All BUs');
+    const allCosN = norm('All Companies');
+    (ws.shiftTypes || []).forEach(s => {
+      if (!s || !(s.id || s.shift_code)) return;
+      const sCoNorm = norm(s.company || '');
+      if (coNorm && sCoNorm && sCoNorm !== allBUsN && sCoNorm !== allCosN && sCoNorm !== coNorm) return;
+      const code = normalizeShiftCodeAlias(s.id || s.shift_code || '');
+      if (!code) return;
+      const isCoExact = Boolean(coNorm && sCoNorm === coNorm);
+      const sTs = String(s.updated_at || '');
+      const cur = bestByCode.get(code);
+      if (!cur) {
+        bestByCode.set(code, { rec: s, ts: sTs, isCoExact });
+        return;
+      }
+      const srDec = _wsSortReorderDecision(cur.rec, s);
+      if (srDec === 'skip') return;
+      if (srDec === 'accept') {
+        bestByCode.set(code, { rec: s, ts: sTs, isCoExact });
+        return;
+      }
+      if (sTs !== cur.ts) {
+        if (sTs > cur.ts) bestByCode.set(code, { rec: s, ts: sTs, isCoExact });
+      } else if (isCoExact && !cur.isCoExact) {
+        bestByCode.set(code, { rec: s, ts: sTs, isCoExact });
+      } else if (isCoExact === cur.isCoExact && s.voided && !cur.rec.voided) {
+        bestByCode.set(code, { rec: s, ts: sTs, isCoExact });
+      }
+    });
+    bestByCode.forEach((entry, code) => {
+      if (entry.rec && entry.rec.voided) out.set(code, entry.ts);
+    });
+    return out;
+  }
+
   function normalizeShiftTypeObj(raw, fallback = null) {
     const base = Object.assign({}, fallback || {}, raw || {});
     const normId = normalizeShiftCodeAlias(base.shift_code || base.shift_id || base.id || '') || uid('shf');
@@ -185959,6 +187136,11 @@
       end_date: String(base.end_date || '').slice(0, 10),
       tone: ['amber', 'indigo', 'sapphire', 'emerald'].includes(base.tone) ? base.tone : (overnight ? 'indigo' : 'amber'),
       isBuiltin: Boolean(base.isBuiltin || DEFAULT_SHIFT_TYPES.some(d => d.id === normId)),
+      _orderOnly: Boolean(base._orderOnly),
+      _sortOnlyReorder: Boolean(base._sortOnlyReorder),
+      sort_order: (base.sort_order != null && base.sort_order !== '' && Number.isFinite(Number(base.sort_order))) ? Number(base.sort_order) : null,
+      sort_order_updated_at: String(base.sort_order_updated_at || ''),
+      content_updated_at: String(base.content_updated_at || ''),
       voided: Boolean(base.voided),
       updated_at: String(base.updated_at || '')
     };
@@ -185972,13 +187154,46 @@
     const indBuNormSet = new Set(indBuList.map(c => norm(c)));
     const targetCo = COMPANY_BU_MATCH[rawScope] || (indBuNormSet.has(norm(rawScope)) ? rawScope : (indBuList[0] || defaultEntryCompany() || 'WTC'));
     const coNorm = norm(targetCo);
+    const voidedShiftCodes = new Set();
+    const voidedShiftTs = new Map();
     const customById = new Map();
+    const bestWsShiftByCode = new Map();
+    const allBUsN = norm('All BUs');
+    const allCosN = norm('All Companies');
     ws.shiftTypes.forEach(s => {
-      if (!s || !s.id || s.voided) return;
+      if (!s || !s.id) return;
       const sCoNorm = norm(s.company || '');
-      if (!sCoNorm || sCoNorm === norm('All BUs') || sCoNorm === norm('All Companies') || sCoNorm === coNorm) {
-        const code = normalizeShiftCodeAlias(s.id);
-        customById.set(code, Object.assign({}, customById.get(code) || {}, s, { id: code, shift_code: code, company: targetCo }));
+      if (sCoNorm && sCoNorm !== allBUsN && sCoNorm !== allCosN && sCoNorm !== coNorm) return;
+      const code = normalizeShiftCodeAlias(s.id);
+      if (!code) return;
+      const isCoExact = sCoNorm === coNorm;
+      const sTs = String(s.updated_at || '');
+      const cur = bestWsShiftByCode.get(code);
+      if (!cur) {
+        bestWsShiftByCode.set(code, { rec: s, ts: sTs, isCoExact });
+        return;
+      }
+      const srDec = _wsSortReorderDecision(cur.rec, s);
+      if (srDec === 'skip') return;
+      if (srDec === 'accept') {
+        bestWsShiftByCode.set(code, { rec: s, ts: sTs, isCoExact });
+        return;
+      }
+      if (sTs !== cur.ts) {
+        if (sTs > cur.ts) bestWsShiftByCode.set(code, { rec: s, ts: sTs, isCoExact });
+      } else if (isCoExact && !cur.isCoExact) {
+        bestWsShiftByCode.set(code, { rec: s, ts: sTs, isCoExact });
+      } else if (isCoExact === cur.isCoExact && s.voided && !cur.rec.voided) {
+        bestWsShiftByCode.set(code, { rec: s, ts: sTs, isCoExact });
+      }
+    });
+    bestWsShiftByCode.forEach((entry, code) => {
+      const s = entry.rec;
+      if (s.voided) {
+        voidedShiftCodes.add(code);
+        voidedShiftTs.set(code, entry.ts);
+      } else {
+        customById.set(code, Object.assign({}, s, { id: code, shift_code: code, company: targetCo }));
       }
     });
     // Overlay active work_shifts records strictly for targetCo (plus universal All Companies / All BUs rows)
@@ -185990,7 +187205,18 @@
       if (!code) return;
       const rCoNorm = norm(r.company || 'WTC');
       if (rCoNorm === coNorm || rCoNorm === norm('All BUs') || rCoNorm === norm('All Companies')) {
-        customById.set(code, Object.assign({}, customById.get(code) || {}, r, { id: code, shift_code: code, company: targetCo }));
+        if (voidedShiftCodes.has(code)) {
+          const rTs = String(r.modified_at || r.updated_at || '');
+          const vTs = voidedShiftTs.get(code) || '';
+          if (!rTs || !vTs || rTs <= vTs) return;
+          voidedShiftCodes.delete(code);
+        }
+        const prevEntry = customById.get(code) || {};
+        const mergedEntry = Object.assign({}, prevEntry, r, { id: code, shift_code: code, company: targetCo });
+        if ((mergedEntry.sort_order == null || mergedEntry.sort_order === '') && prevEntry.sort_order != null && prevEntry.sort_order !== '') {
+          mergedEntry.sort_order = prevEntry.sort_order;
+        }
+        customById.set(code, mergedEntry);
       }
     });
     const buDef = getBuDefaultShift(targetCo);
@@ -186002,6 +187228,7 @@
     DEFAULT_SHIFT_TYPES.forEach(def => {
       const ov = customById.get(def.id);
       customById.delete(def.id);
+      if (voidedShiftCodes.has(def.id) && !ov) return;
       if (retiredCodes.has(def.id)) return;
       out.push(normalizeShiftTypeObj(Object.assign({ company: targetCo }, ov || def), def));
     });
@@ -186015,12 +187242,20 @@
         }
       }
     });
-    out.sort((a, b) => {
-      const aDef = a.id === buDefCode ? 1 : 0;
-      const bDef = b.id === buDefCode ? 1 : 0;
-      return bDef - aDef;
+    const indexed = out.map((item, idx) => ({ item, idx }));
+    const hasExplicitOrder = out.some(s => s.sort_order != null && Number.isFinite(Number(s.sort_order)));
+    indexed.sort((a, b) => {
+      if (hasExplicitOrder) {
+        const ao = (a.item.sort_order != null && Number.isFinite(Number(a.item.sort_order))) ? Number(a.item.sort_order) : (10000 + a.idx);
+        const bo = (b.item.sort_order != null && Number.isFinite(Number(b.item.sort_order))) ? Number(b.item.sort_order) : (10000 + b.idx);
+        if (ao !== bo) return ao - bo;
+      }
+      const aDef = a.item.id === buDefCode ? 1 : 0;
+      const bDef = b.item.id === buDefCode ? 1 : 0;
+      if (bDef !== aDef) return bDef - aDef;
+      return a.idx - b.idx;
     });
-    return out;
+    return indexed.map(x => x.item);
   }
 
   // Frequency-first clock-window presets (hard rule 11). Every window a company actually uses is counted
@@ -186458,12 +187693,46 @@
     }
     ensureWorkShiftsSeeded();
     const ws = ensureWorkSchedulesState();
-    const nowIso = new Date().toISOString();
     const shiftCode = normalizeShiftCodeAlias(spec.shift_code || spec.id || '') || uid('shf');
     const existingBuiltin = DEFAULT_SHIFT_TYPES.find(d => d.id === shiftCode) || null;
     const existingCustomIdx = ws.shiftTypes.findIndex(s => s && normalizeShiftCodeAlias(s.id) === shiftCode && norm(s.company || 'WTC') === norm(co));
-    const prev = existingCustomIdx >= 0 ? ws.shiftTypes[existingCustomIdx] : existingBuiltin;
-    const normalized = normalizeShiftTypeObj(Object.assign({}, prev || {}, spec, { id: shiftCode, shift_code: shiftCode, company: co, voided: false, updated_at: nowIso }), existingBuiltin);
+    const prevCustom = existingCustomIdx >= 0 ? ws.shiftTypes[existingCustomIdx] : null;
+    const nowIso = _nextWsUpdatedIso(prevCustom && prevCustom.updated_at);
+    const prevBase = prevCustom
+      ? (prevCustom.voided && existingBuiltin ? Object.assign({}, existingBuiltin, prevCustom, { sort_order: prevCustom.sort_order }) : prevCustom)
+      : existingBuiltin;
+    const curVisibleShifts = (() => {
+      if (norm(co) === norm('All Companies') || norm(co) === norm('All BUs')) {
+        const unionMap = new Map();
+        (getAttendanceDefaultsCompanies(STATE.company) || [defaultEntryCompany() || 'WTC']).forEach(cn => {
+          getShiftTypes(cn).forEach(s => { if (s && !unionMap.has(s.id)) unionMap.set(s.id, s); });
+        });
+        return Array.from(unionMap.values());
+      }
+      return getShiftTypes(co);
+    })();
+    const hasOrdered = curVisibleShifts.some(s => s.sort_order != null);
+    let nextSortOrder = (spec.sort_order != null && spec.sort_order !== '')
+      ? Number(spec.sort_order)
+      : (prevCustom && !prevCustom.voided && prevCustom.sort_order != null ? prevCustom.sort_order : null);
+    if (nextSortOrder == null && hasOrdered && (!prevCustom || prevCustom.voided)) {
+      const maxOrd = curVisibleShifts.reduce((mx, s) => Math.max(mx, s.sort_order != null ? Number(s.sort_order) : -1), -1);
+      nextSortOrder = maxOrd + 1;
+    }
+    const normalized = normalizeShiftTypeObj(Object.assign({}, prevBase || {}, spec, {
+      id: shiftCode,
+      shift_code: shiftCode,
+      company: co,
+      _orderOnly: false,
+      _sortOnlyReorder: false,
+      sort_order: nextSortOrder,
+      sort_order_updated_at: (spec.sort_order != null && spec.sort_order !== '')
+        ? nowIso
+        : ((prevCustom && !prevCustom.voided && prevCustom.sort_order_updated_at) || (nextSortOrder != null ? nowIso : '')),
+      content_updated_at: nowIso,
+      voided: false,
+      updated_at: nowIso
+    }), existingBuiltin);
     if (!normalized.name || !normalized.start_time || !normalized.end_time) {
       return { ok: false, error: 'Shift name, start time, and end time are required' };
     }
@@ -186568,17 +187837,43 @@
   function deleteShiftType(shiftId, companyOpt = '') {
     const id = String(shiftId || '');
     const normCode = normalizeShiftCodeAlias(id);
-    if (!id || DEFAULT_SHIFT_TYPES.some(d => d.id === id || d.id === normCode)) {
-      return { ok: false, error: 'Built-in shift types cannot be deleted (you can edit their timing)' };
-    }
+    if (!id) return { ok: false, error: 'Shift type not found' };
     const ws = ensureWorkSchedulesState();
-    const nowIso = new Date().toISOString();
-    const coOptNorm = companyOpt ? norm(companyOpt) : '';
-    const explicitCo = String(companyOpt || '').trim();
-    if (explicitCo && !canEditShiftsAndRules(null, explicitCo)) {
+    const builtinDef = DEFAULT_SHIFT_TYPES.find(d => d.id === id || d.id === normCode) || null;
+    const customAllCoIdx = !builtinDef
+      ? ws.shiftTypes.findIndex(s =>
+          s && !s.voided
+          && (String(s.id) === id || normalizeShiftCodeAlias(s.id) === normCode)
+          && (!s.company || /^all(\s+(companies|bus))?$/i.test(String(s.company || '').trim()))
+        )
+      : -1;
+    const customAllCoRec = customAllCoIdx >= 0 ? ws.shiftTypes[customAllCoIdx] : null;
+    let explicitCo = String(companyOpt || '').trim();
+    const isReqAllCo = Boolean(explicitCo && /^all(\s+(companies|bus))?$/i.test(explicitCo));
+    if (isReqAllCo && !customAllCoRec) {
+      return { ok: false, error: 'Select a specific company before deleting this shift type' };
+    }
+    if (!explicitCo && builtinDef) {
+      const scopedSingleCo = COMPANY_BU_MATCH[STATE.company] || '';
+      const activeScopeCos = getAttendanceDefaultsCompanies(STATE.company) || [];
+      if (scopedSingleCo) {
+        explicitCo = scopedSingleCo;
+      } else if (activeScopeCos.length <= 1) {
+        explicitCo = activeScopeCos[0] || defaultEntryCompany() || 'WTC';
+      } else {
+        return { ok: false, error: 'Company is required when deleting a built-in shift from a multi-company view' };
+      }
+    }
+    const coOptNorm = (explicitCo && !isReqAllCo) ? norm(explicitCo) : '';
+    if (explicitCo && !isReqAllCo && !canEditShiftsAndRules(null, explicitCo)) {
       return { ok: false, error: 'You do not have rights to delete shifts for this company' };
     }
-    const idx = ws.shiftTypes.findIndex(s => s && !s.voided && (String(s.id) === id || normalizeShiftCodeAlias(s.id) === normCode) && (!coOptNorm || norm(s.company || 'WTC') === coOptNorm));
+    let idx = (isReqAllCo && customAllCoRec)
+      ? customAllCoIdx
+      : ws.shiftTypes.findIndex(s => s && !s.voided && (String(s.id) === id || normalizeShiftCodeAlias(s.id) === normCode) && (!coOptNorm || norm(s.company || 'WTC') === coOptNorm));
+    let tombAnyIdx = (isReqAllCo && customAllCoRec)
+      ? customAllCoIdx
+      : ws.shiftTypes.findIndex(s => s && (String(s.id) === id || normalizeShiftCodeAlias(s.id) === normCode) && (!coOptNorm || norm(s.company || 'WTC') === coOptNorm));
     if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
     const voidRows = [
       ...((SEED && SEED.records && SEED.records.work_shifts) || []),
@@ -186590,78 +187885,401 @@
       if (coOptNorm && norm(r.company || 'WTC') !== coOptNorm) return false;
       return true;
     });
-    if (idx < 0 && voidRows.length === 0) {
-      if (!canEditShiftsAndRules(null, explicitCo || defaultEntryCompany() || 'WTC')) {
+    const fallbackScopeCo = (explicitCo && !isReqAllCo) ? explicitCo : (COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC');
+    const isVoidedBuiltinInScope = Boolean(builtinDef && _getCompanyVoidedShiftMap(coOptNorm || norm(fallbackScopeCo)).has(builtinDef.id));
+    if (idx < 0 && voidRows.length === 0 && customAllCoRec && (!explicitCo || isReqAllCo)) {
+      if (!canEditPolicyGroupsCatalog()) {
+        return { ok: false, error: 'Full-group scheduling rights are required to delete company-wide shift types' };
+      }
+      idx = customAllCoIdx;
+      tombAnyIdx = customAllCoIdx;
+    } else if (idx < 0 && voidRows.length === 0 && customAllCoRec && explicitCo && !isReqAllCo) {
+      // Explicit single-company delete on a custom 'All Companies' shift creates a per-company void override without removing other companies
+      if (!canEditShiftsAndRules(null, explicitCo)) {
+        return { ok: false, error: 'You do not have rights to delete shifts for this company' };
+      }
+    } else if (idx < 0 && voidRows.length === 0 && (!builtinDef || isVoidedBuiltinInScope)) {
+      if (!canEditShiftsAndRules(null, fallbackScopeCo)) {
         return { ok: false, error: 'You do not have rights to delete shifts for this company' };
       }
       return { ok: false, error: 'Shift type not found' };
     }
-    let delCo = explicitCo;
+    const isDeletingUniversalCustom = Boolean(customAllCoRec && idx === customAllCoIdx && (!explicitCo || isReqAllCo));
+    let delCo = isDeletingUniversalCustom ? (String(customAllCoRec.company || 'All Companies').trim() || 'All Companies') : explicitCo;
     if (!delCo && idx >= 0) delCo = String(ws.shiftTypes[idx].company || '').trim();
     if (!delCo && voidRows.length > 0) delCo = String(voidRows[0].company || '').trim();
-    const targetCompanies = Array.from(new Set(
-      [delCo, ...(idx >= 0 ? [ws.shiftTypes[idx].company] : []), ...voidRows.map(r => r.company)]
-        .map(c => String(c || '').trim())
-        .filter(Boolean)
-    ));
+    if (!delCo && builtinDef) delCo = COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC';
+    const allCatCos = isDeletingUniversalCustom ? getCompanyCatalog().map(c => c.name).filter(Boolean) : [];
+    const targetCompanies = isDeletingUniversalCustom
+      ? (allCatCos.length ? allCatCos : [defaultEntryCompany() || 'WTC'])
+      : Array.from(new Set(
+          [delCo, ...(idx >= 0 ? [ws.shiftTypes[idx].company] : []), ...voidRows.map(r => r.company)]
+            .map(c => String(c || '').trim())
+            .filter(Boolean)
+        ));
     if (targetCompanies.length === 0) targetCompanies.push(defaultEntryCompany() || 'WTC');
+    if (isDeletingUniversalCustom && !canEditPolicyGroupsCatalog()) {
+      return { ok: false, error: 'Full-group scheduling rights are required to delete company-wide shift types' };
+    }
     if (targetCompanies.some(c => !canEditShiftsAndRules(null, c))) {
       return { ok: false, error: 'You do not have rights to delete shifts for this company' };
     }
+    for (let i = 0; i < targetCompanies.length; i++) {
+      const remForCo = getShiftTypes(targetCompanies[i]).filter(s => s.id !== normCode);
+      if (remForCo.length < 1) {
+        return { ok: false, error: 'At least one active work shift must remain for each company' };
+      }
+    }
     if (!delCo) delCo = targetCompanies[0] || '';
-    const delCoNorm = delCo ? norm(delCo) : '';
-    const tombShift = idx >= 0
-      ? Object.assign({}, ws.shiftTypes[idx], { voided: true, updated_at: nowIso })
-      : { id, company: delCo || '', voided: true, updated_at: nowIso };
+    const delCoNorm = (delCo && !isDeletingUniversalCustom) ? norm(delCo) : '';
+    const snapSt = JSON.parse(JSON.stringify(ws.shiftTypes || []));
+    const snapSr = JSON.parse(JSON.stringify(ws.staffRules || {}));
+    const snapSeedWs = SEED && SEED.records && Array.isArray(SEED.records.work_shifts) ? JSON.parse(JSON.stringify(SEED.records.work_shifts)) : null;
+    const snapCustWs = STATE && STATE.customRecords && Array.isArray(STATE.customRecords.work_shifts) ? JSON.parse(JSON.stringify(STATE.customRecords.work_shifts)) : null;
+    const prevCustom = idx >= 0 ? ws.shiftTypes[idx] : (tombAnyIdx >= 0 ? ws.shiftTypes[tombAnyIdx] : null);
+    const nowIso = _nextWsUpdatedIso(prevCustom && prevCustom.updated_at);
+    const modStamp = nextMonotonicIso();
+    const u = (typeof activeUser === 'function' && activeUser()) || {};
+    const tombBase = prevCustom || builtinDef || (customAllCoRec && explicitCo ? customAllCoRec : {});
+    const tombShift = Object.assign({}, tombBase, {
+      id: normCode || id,
+      shift_code: normCode || id,
+      company: delCo || '',
+      _sortOnlyReorder: false,
+      content_updated_at: nowIso,
+      voided: true,
+      updated_at: nowIso
+    });
+    const tombstoneWsEntries = [];
     if (idx >= 0) {
       ws.shiftTypes[idx] = tombShift;
+      tombstoneWsEntries.push(tombShift);
+    } else if (tombAnyIdx >= 0) {
+      ws.shiftTypes[tombAnyIdx] = tombShift;
+      tombstoneWsEntries.push(tombShift);
     } else {
       ws.shiftTypes.push(tombShift);
+      tombstoneWsEntries.push(tombShift);
     }
+    if (isDeletingUniversalCustom) {
+      ws.shiftTypes.forEach((entry, eIdx) => {
+        if (!entry || entry === tombShift) return;
+        const eCode = normalizeShiftCodeAlias(entry.shift_code || entry.id || '');
+        if (String(entry.id || '') !== id && eCode !== normCode) return;
+        const sibNow = _nextWsUpdatedIso(entry.updated_at || nowIso);
+        const sibTomb = Object.assign({}, entry, {
+          id: eCode || normCode || id,
+          shift_code: eCode || normCode || id,
+          _sortOnlyReorder: false,
+          content_updated_at: sibNow,
+          voided: true,
+          updated_at: sibNow
+        });
+        ws.shiftTypes[eIdx] = sibTomb;
+        tombstoneWsEntries.push(sibTomb);
+      });
+    }
+    const postPairs = [];
     let voidedWsCount = 0;
-    voidRows.forEach(r => {
+    const sawDefaultVoidedInCo = new Set();
+    const rowsToVoid = isDeletingUniversalCustom
+      ? [
+          ...((SEED && SEED.records && SEED.records.work_shifts) || []),
+          ...STATE.customRecords.work_shifts
+        ].filter(r => r && !r.voided && (normalizeShiftCodeAlias(r.shift_code || r.shift_id || r.id || '') === normCode || String(r.id || '') === id))
+      : voidRows;
+    rowsToVoid.forEach(r => {
       if (r.voided) return;
       if (delCoNorm && norm(r.company || 'WTC') !== delCoNorm) return;
+      const rCoN = norm(r.company || 'WTC');
+      if (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1) {
+        sawDefaultVoidedInCo.add(rCoN);
+      }
       r.voided = true;
-      r.voided_at = nowIso;
-      r.modified_at = nowIso;
+      r.voided_at = modStamp;
+      r.voided_by = u.full_name || u.email || 'admin';
+      r.voided_by_email = u.email || '';
+      r.void_reason = 'Removed shift type template';
+      stampWorkShiftRowModified(r, modStamp);
       if (r.id) {
         const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(r.id));
         if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], r);
         else STATE.customRecords.work_shifts.unshift(Object.assign({}, r));
-        postRecordToLocalApi('work_shifts', r);
+        postPairs.push(['work_shifts', Object.assign({}, r)]);
       }
       voidedWsCount++;
     });
+
+    // Ensure every affected company still has an active default shift and valid staffRules fallback.
+    const coFallbackShiftId = new Map();
+    targetCompanies.forEach(coName => {
+      const coN = norm(coName);
+      const remaining = getShiftTypes(coName).filter(s => s.id !== normCode);
+      const pool = (SEED && SEED.records && SEED.records.work_shifts) || [];
+      const stillHasDef = pool.some(r =>
+        r && !r.voided
+        && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO())
+        && norm(r.company || 'WTC') === coN
+        && (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1)
+      );
+      let nextDef = remaining.find(s => s.is_bu_default) || remaining[0] || null;
+      if (!stillHasDef && (sawDefaultVoidedInCo.has(coN) || remaining.length > 0) && nextDef) {
+        const existingPromo = pool.find(r =>
+          r && !r.voided
+          && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO())
+          && norm(r.company || 'WTC') === coN
+          && normalizeShiftCodeAlias(r.shift_code || r.shift_id || '') === nextDef.id
+        );
+        if (existingPromo) {
+          existingPromo.is_bu_default = true;
+          stampWorkShiftRowModified(existingPromo, modStamp);
+          hydrateWorkShiftRowComputed(existingPromo);
+          const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(existingPromo.id));
+          if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], existingPromo);
+          else STATE.customRecords.work_shifts.unshift(Object.assign({}, existingPromo));
+          postPairs.push(['work_shifts', Object.assign({}, existingPromo)]);
+        } else {
+          const effDt = String(nextDef.start_date || '2025-01-01').slice(0, 10);
+          const promoRow = hydrateWorkShiftRowComputed({
+            id: `ws_${coN.replace(/[^a-z0-9]+/g, '')}_${nextDef.id}_${effDt.replace(/-/g, '')}`,
+            company: coName,
+            shift_code: nextDef.id,
+            shift_id: nextDef.id,
+            name: nextDef.name,
+            short: nextDef.short,
+            is_bu_default: true,
+            split_enabled: Boolean(nextDef.split_enabled),
+            split_start_1: nextDef.split_start_1 || nextDef.start_time,
+            split_end_1: nextDef.split_end_1 || nextDef.end_time,
+            split_start_2: nextDef.split_start_2 || '19:00',
+            split_end_2: nextDef.split_end_2 || '23:00',
+            start_time: nextDef.start_time,
+            end_time: nextDef.end_time,
+            hours: nextDef.hours,
+            overnight: nextDef.overnight,
+            days: Array.isArray(nextDef.days) ? nextDef.days.slice() : [1, 2, 3, 4, 5, 6],
+            grace_min: nextDef.grace_min,
+            early_leave_grace_min: nextDef.early_leave_grace_min,
+            sat_diff_enabled: nextDef.sat_diff_enabled,
+            sat_start_time: nextDef.sat_start_time,
+            sat_end_time: nextDef.sat_end_time,
+            day_timings: nextDef.day_timings || {},
+            date_timings: nextDef.date_timings || [],
+            start_date: effDt,
+            end_date: nextDef.end_date || '',
+            date: effDt,
+            rep_date: effDt,
+            tone: nextDef.tone || 'amber',
+            source: 'app',
+            entered_by: u.full_name || u.email || 'admin',
+            entered_by_email: u.email || '',
+            entered_at: nowIso,
+            voided: false
+          });
+          stampWorkShiftRowModified(promoRow, modStamp, '');
+          if (SEED && SEED.records && Array.isArray(SEED.records.work_shifts)) {
+            SEED.records.work_shifts.unshift(promoRow);
+          }
+          STATE.customRecords.work_shifts.unshift(Object.assign({}, promoRow));
+          postPairs.push(['work_shifts', Object.assign({}, promoRow)]);
+        }
+      }
+      if (nextDef) coFallbackShiftId.set(coN, nextDef.id);
+    });
+    const globalFallbackShiftId = coFallbackShiftId.get(delCoNorm) || Array.from(coFallbackShiftId.values())[0] || 'day_8_4';
+
     Object.entries(ws.staffRules).forEach(([rk, r]) => {
       if (!r || !(r.shift_id === id || normalizeShiftCodeAlias(r.shift_id || '') === normCode)) return;
       const isBare = !String(rk).includes('|');
       if (isBare) {
         if (delCoNorm) {
           const coKey = `${delCoNorm}|${rk}`;
+          const fbId = coFallbackShiftId.get(delCoNorm) || globalFallbackShiftId;
           if (!ws.staffRules[coKey]) {
-            ws.staffRules[coKey] = Object.assign({}, r, { company: delCo, shift_id: 'day_8_4', updated_at: nowIso });
+            ws.staffRules[coKey] = Object.assign({}, r, { company: delCo, shift_id: fbId, updated_at: _nextWsUpdatedIso(r.updated_at) });
           }
           return;
         }
-        r.shift_id = 'day_8_4';
-        r.updated_at = nowIso;
+        r.shift_id = globalFallbackShiftId;
+        r.updated_at = _nextWsUpdatedIso(r.updated_at);
         return;
       }
-      if (delCoNorm && r.company && norm(r.company) !== delCoNorm) return;
-      r.shift_id = 'day_8_4';
-      r.updated_at = nowIso;
+      const rCoN = norm(r.company || String(rk).split('|')[0] || '');
+      if (delCoNorm && rCoN !== delCoNorm) return;
+      r.shift_id = coFallbackShiftId.get(rCoN) || globalFallbackShiftId;
+      r.updated_at = _nextWsUpdatedIso(r.updated_at);
     });
+    _TIME24_WS_REV++;
     if (SEED) {
       SEED._workShiftsSeededRev = '';
       SEED._customRev = (SEED._customRev || 0) + 1;
       if (SEED._tableRev) SEED._tableRev.work_shifts = (SEED._tableRev.work_shifts || 0) + 1;
     }
+    ensureWorkShiftsSeeded();
     saveLocalAuthAndRecords();
-    const syncItem = ws.shiftTypes.find(x => x && String(x.id || '') === String(id || '')) || { id, company: delCo || '', voided: true, updated_at: nowIso };
-    const syncPromise = postWorkScheduleMutation({ op: 'delete_shift', id, company: delCo, item: syncItem });
+    const syncItem = isDeletingUniversalCustom
+      ? tombShift
+      : (ws.shiftTypes.find(x => x && normalizeShiftCodeAlias(x.id || '') === (normCode || id) && (!delCoNorm || norm(x.company || '') === delCoNorm)) || tombShift);
+    const syncPromise = postWorkScheduleMutation({ op: 'delete_shift', id: syncItem.id, company: delCo, item: syncItem });
+    const dispatchSecondaryShiftWrites = () => {
+      if (postPairs.length) postRecordPairsChunked(postPairs);
+      syncWithCloud(true);
+    };
+    if (syncPromise && typeof syncPromise.then === 'function') {
+      syncPromise.then(srvRes => {
+        if (srvRes && srvRes.ok === false && !srvRes.local) {
+          ws.shiftTypes = snapSt;
+          ws.staffRules = snapSr;
+          if (snapSeedWs && SEED && SEED.records) SEED.records.work_shifts = snapSeedWs;
+          if (snapCustWs && STATE && STATE.customRecords) STATE.customRecords.work_shifts = snapCustWs;
+          _TIME24_WS_REV++;
+          if (SEED) {
+            SEED._workShiftsSeededRev = '';
+            SEED._customRev = (SEED._customRev || 0) + 1;
+            if (SEED._tableRev) SEED._tableRev.work_shifts = (SEED._tableRev.work_shifts || 0) + 1;
+          }
+          ensureWorkShiftsSeeded();
+          saveLocalAuthAndRecords();
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen) refreshPayrollPolicySectionInPlace();
+          else if (STATE.view === 'kiosks') renderApp();
+          return;
+        }
+        dispatchSecondaryShiftWrites();
+      }).catch(() => {});
+    } else {
+      dispatchSecondaryShiftWrites();
+    }
+    return { ok: true, voidedRows: voidedWsCount, fallbackShiftId: globalFallbackShiftId, syncPromise };
+  }
+
+  function reorderShiftTypes(orderedIds = [], companyOpt = '') {
+    const scopeRaw = String(companyOpt || COMPANY_BU_MATCH[STATE.company] || '').trim();
+    const buList = getAttendanceDefaultsCompanies(scopeRaw || STATE.company);
+    const targetCos = scopeRaw && !/^(manufacturing-group|all|all\s*companies|all\s*bus)$/i.test(scopeRaw) && !/^industry:/i.test(scopeRaw)
+      ? [COMPANY_BU_MATCH[scopeRaw] || scopeRaw]
+      : (buList.length ? buList : [defaultEntryCompany() || 'WTC']);
+    const writableCos = targetCos.filter(c => canEditShiftsAndRules(null, c));
+    if (!writableCos.length) {
+      return { ok: false, error: 'You do not have rights to reorder shifts for this company' };
+    }
+    const reqOrder = (Array.isArray(orderedIds) ? orderedIds : []).map(x => normalizeShiftCodeAlias(x)).filter(Boolean);
+    if (!reqOrder.length) return { ok: false, error: 'Order list is required' };
+    ensureWorkShiftsSeeded();
+    const ws = ensureWorkSchedulesState();
+    const prevStSnap = JSON.parse(JSON.stringify(ws.shiftTypes || []));
+    const written = [];
+    const touchedAllCoIds = new Set();
+    writableCos.forEach(co => {
+      const coN = norm(co);
+      const current = getShiftTypes(co);
+      if (!current.length) return;
+      const rankMap = new Map();
+      reqOrder.forEach((cid, i) => {
+        if (!rankMap.has(cid)) rankMap.set(cid, i);
+      });
+      const finalList = current.slice().sort((a, b) => {
+        const ra = rankMap.has(a.id) ? rankMap.get(a.id) : (10000 + current.indexOf(a));
+        const rb = rankMap.has(b.id) ? rankMap.get(b.id) : (10000 + current.indexOf(b));
+        return ra - rb;
+      });
+      finalList.forEach((st, idx) => {
+        const builtinDef = DEFAULT_SHIFT_TYPES.find(d => d.id === st.id) || null;
+        const existIdx = ws.shiftTypes.findIndex(x => x && normalizeShiftCodeAlias(x.id) === st.id && norm(x.company || 'WTC') === coN);
+        const allowSharedAllCoEdit = isFullGroupSeat();
+        const allCoIdx = (!builtinDef && existIdx < 0 && allowSharedAllCoEdit)
+          ? ws.shiftTypes.findIndex(x => x && !x.voided && normalizeShiftCodeAlias(x.id) === st.id && (!x.company || /^all(\s+(companies|bus))?$/i.test(String(x.company).trim())))
+          : -1;
+        if (allCoIdx >= 0 && touchedAllCoIds.has(st.id)) return;
+        const updateIdx = existIdx >= 0 ? existIdx : allCoIdx;
+        const prevRaw = updateIdx >= 0 ? ws.shiftTypes[updateIdx] : null;
+        if (allCoIdx >= 0) touchedAllCoIds.add(st.id);
+        const targetSortVal = writableCos.length > 1
+          ? (rankMap.has(st.id) ? rankMap.get(st.id) : (reqOrder.length + idx))
+          : idx;
+        if (prevRaw && !prevRaw.voided && prevRaw.sort_order === targetSortVal) return;
+        const hasActiveWsRowForCo = ((SEED && SEED.records && SEED.records.work_shifts) || []).some(r =>
+          r && !r.voided
+          && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO())
+          && norm(r.company || 'WTC') === coN
+          && normalizeShiftCodeAlias(r.shift_code || r.shift_id || r.id || '') === st.id
+        );
+        const isOrderOnly = prevRaw
+          ? Boolean(prevRaw._orderOnly)
+          : Boolean(builtinDef && !hasActiveWsRowForCo);
+        const nextTs = _nextWsUpdatedIso(prevRaw && prevRaw.updated_at);
+        const preservedContentTs = (prevRaw && !prevRaw.voided)
+          ? String(prevRaw.content_updated_at || (!prevRaw._sortOnlyReorder ? prevRaw.updated_at : '') || '')
+          : '';
+        const nextCoVal = (allCoIdx >= 0 && prevRaw) ? (prevRaw.company || 'All Companies') : co;
+        const updatedObj = normalizeShiftTypeObj(Object.assign({}, st, prevRaw && !prevRaw.voided ? prevRaw : {}, {
+          id: st.id,
+          shift_code: st.id,
+          company: nextCoVal,
+          _orderOnly: isOrderOnly,
+          _sortOnlyReorder: true,
+          sort_order: targetSortVal,
+          sort_order_updated_at: nextTs,
+          content_updated_at: preservedContentTs,
+          voided: false,
+          updated_at: nextTs
+        }), builtinDef);
+        if (updateIdx >= 0) ws.shiftTypes[updateIdx] = updatedObj;
+        else ws.shiftTypes.push(updatedObj);
+        written.push(updatedObj);
+      });
+    });
+    _TIME24_WS_REV++;
+    if (SEED) SEED._customRev = (SEED._customRev || 0) + 1;
+    saveLocalAuthAndRecords();
+    const syncPromise = postWorkScheduleMutation({ op: 'reorder_shifts', company: writableCos[0] || '', companies: writableCos, order: reqOrder });
+    if (syncPromise && typeof syncPromise.then === 'function') {
+      syncPromise.then(srvRes => {
+        if (srvRes && srvRes.ok === false && !srvRes.local) {
+          ws.shiftTypes = prevStSnap;
+          _TIME24_WS_REV++;
+          if (SEED) SEED._customRev = (SEED._customRev || 0) + 1;
+          saveLocalAuthAndRecords();
+          if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen) refreshPayrollPolicySectionInPlace();
+          else if (STATE.view === 'kiosks') renderApp();
+        }
+      }).catch(() => {});
+    }
     syncWithCloud(true);
-    return { ok: true, voidedRows: voidedWsCount, syncPromise };
+    return { ok: true, count: written.length, order: reqOrder, syncPromise };
+  }
+
+  // Merges shift catalogs across companies for group strips and coverage heatmaps while respecting newest sort_order.
+  function mergeShiftTypesUnion(coList = []) {
+    const unionById = new Map();
+    (coList || []).forEach(coName => {
+      getShiftTypes(coName).forEach(st => {
+        const nid = normalizeShiftCodeAlias(st && (st.id || st.shift_code));
+        if (!nid) return;
+        const entry = Object.assign({}, st, { id: nid, shift_code: nid, _unionCo: coName });
+        if (!unionById.has(nid)) {
+          unionById.set(nid, entry);
+          return;
+        }
+        const cur = unionById.get(nid);
+        const curTs = String(cur.sort_order_updated_at || '');
+        const nextTs = String(entry.sort_order_updated_at || '');
+        const takeSort = nextTs > curTs || (!curTs && !nextTs && cur.sort_order == null && entry.sort_order != null);
+        if (takeSort) {
+          cur.sort_order = entry.sort_order;
+          cur.sort_order_updated_at = entry.sort_order_updated_at;
+        }
+      });
+    });
+    const unionList = Array.from(unionById.values());
+    return unionList.slice().sort((a, b) => {
+      const oa = a.sort_order != null ? Number(a.sort_order) : (10000 + unionList.indexOf(a));
+      const ob = b.sort_order != null ? Number(b.sort_order) : (10000 + unionList.indexOf(b));
+      if (oa !== ob) return oa - ob;
+      const ta = String(a.sort_order_updated_at || '');
+      const tb = String(b.sort_order_updated_at || '');
+      if (ta !== tb) return tb > ta ? 1 : -1;
+      return unionList.indexOf(a) - unionList.indexOf(b);
+    });
   }
 
   // Staff rules are kept per company and staff member (owner 2026-11-13): key `<company>|<name>`, both
@@ -189282,7 +190900,7 @@
     const endedEmpsMap = new Map();
     allEmpRecords.forEach(emp => {
       if (!emp || emp.voided) return;
-      if (activeInd === 'Manufacturing' && !opts.companyOverride && emp._multiIndustrySeed) return;
+      if (activeInd === 'Manufacturing' && !opts.companyOverride && !opts.allIndustries && emp._multiIndustrySeed) return;
       const nm = String(emp.staff || emp.name || '').trim();
       const k = norm(nm);
       if (!k || nm === '(Unassigned)') return;
@@ -199235,6 +200853,10 @@
   }
 
   function openShiftTypeModal(shiftId = '', opts = {}) {
+    if (STATE.kioskLocked) {
+      toast('Unlock kiosk first to edit shifts', 'warn');
+      return null;
+    }
     ensureWorkShiftsSeeded();
     const activeBuList = getAttendanceDefaultsCompanies(STATE.company);
     const defCo = opts.company || COMPANY_BU_MATCH[STATE.company] || activeBuList[0] || defaultEntryCompany() || 'WTC';
@@ -199244,7 +200866,21 @@
     }
     const normShiftId = normalizeShiftCodeAlias(shiftId);
     const types = getShiftTypes(defCo);
-    const existing = normShiftId ? types.find(t => t.id === normShiftId) : null;
+    const wsForStm = ensureWorkSchedulesState();
+    const univCustomRec = (normShiftId && /^all(\s+(companies|bus))?$/i.test(String(defCo || '').trim()))
+      ? (wsForStm.shiftTypes || []).find(s =>
+          s && !s.voided && normalizeShiftCodeAlias(s.id) === normShiftId
+          && (!s.company || /^all(\s+(companies|bus))?$/i.test(String(s.company || '').trim()))
+        )
+      : null;
+    const existing = (normShiftId ? types.find(t => t.id === normShiftId) : null)
+      || (univCustomRec ? normalizeShiftTypeObj(univCustomRec) : null);
+    const hasActiveUniversalCustomShift = Boolean(
+      existing && !existing.isBuiltin && (wsForStm.shiftTypes || []).some(s =>
+        s && !s.voided && normalizeShiftCodeAlias(s.id) === existing.id
+        && (!s.company || /^all(\s+(companies|bus))?$/i.test(String(s.company || '').trim()))
+      )
+    );
     const cohortProp = (opts && opts.cohortProposal && typeof opts.cohortProposal === 'object') ? opts.cohortProposal : null;
     const draftPatch = (opts && opts.draftPatch && typeof opts.draftPatch === 'object') ? opts.draftPatch : null;
     let draftDays = existing ? existing.days.slice() : [1, 2, 3, 4, 5, 6];
@@ -199357,7 +200993,7 @@
     if (defCo && defCo !== 'All Companies' && (!viewerAllowed.length || viewerAllowed.some(v => norm(v) === norm(defCo))) && !stmCoOpts.includes(defCo)) {
       stmCoOpts.unshift(defCo);
     }
-    if ((!pinnedSingleCo && isFullGroupSeat()) || (existing && existing.company === 'All Companies') || defCo === 'All Companies') {
+    if ((!pinnedSingleCo && isFullGroupSeat()) || (existing && existing.company === 'All Companies') || hasActiveUniversalCustomShift || defCo === 'All Companies') {
       if (!stmCoOpts.includes('All Companies')) stmCoOpts.push('All Companies');
     }
     // Preset chips ranked by how many staff work each window (hard rule 11), re-ranked on Company Scope change.
@@ -199734,7 +201370,16 @@
         </div>
         <div class="modal-foot" style="justify-content:space-between">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${!cohortProp && existing && !existing.isBuiltin ? `<button type="button" class="btn btn-danger-outline" id="stmDeleteBtn">${ic('trash')}<span>Delete Shift Type</span></button>` : ''}
+            ${!cohortProp && existing ? (() => {
+              const isCustomAllCoShift = Boolean(hasActiveUniversalCustomShift && /^all(\s+(companies|bus))?$/i.test(String(defCo || '').trim()));
+              const initAllCo = /^all(\s+(companies|bus))?$/i.test(String(defCo || '')) && !isCustomAllCoShift;
+              const canDelInitScope = isCustomAllCoShift ? canEditPolicyGroupsCatalog() : canEditShiftsAndRules(null, defCo);
+              const allCatCanDelInit = !isCustomAllCoShift || getCompanyCatalog().every(c => getShiftTypes(c.name).filter(s => s.id !== existing.id).length >= 1);
+              const delDisAttr = (types.length <= 1 || !allCatCanDelInit)
+                ? ' disabled data-ui-tip="At least one active work shift must remain"'
+                : ((initAllCo || !canDelInitScope) ? ' disabled data-ui-tip="Select a specific company above to delete this shift type"' : '');
+              return `<button type="button" class="btn btn-danger-outline" id="stmDeleteBtn"${delDisAttr}>${ic('trash')}<span>Delete Shift Type</span></button>`;
+            })() : ''}
             ${!cohortProp ? `<button type="button" class="btn btn-ghost-bar" id="stmShareBtn">${ic('send_msg')} <span>Share Shift Hours</span></button>` : ''}
           </div>
           <div style="display:flex;gap:8px">
@@ -199759,12 +201404,29 @@
       if ($('stmStartLbl')) $('stmStartLbl').textContent = isSp ? 'Window 1 Start (24h)' : 'Regular Start (24h)';
       if ($('stmEndLbl')) $('stmEndLbl').textContent = isSp ? 'Window 1 End (24h)' : 'Regular End (24h)';
     });
+    const _trStm = s => (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') ? window.MFG_I18N.t(s) : s;
     $('stmCompany')?.addEventListener('change', e => {
       const co = String(e.target.value || defCo);
       const exBox = $('stmExcPresetChips');
       if (exBox) exBox.innerHTML = stmExcPresetChipsHtml(stmExcPresetList(co));
       const spBox = $('stmSplitPresetChips');
       if (spBox) spBox.innerHTML = stmSplitPresetChipsHtml(co);
+      const delBtn = $('stmDeleteBtn');
+      if (delBtn && existing) {
+        const isCustomAllCoShift = Boolean(hasActiveUniversalCustomShift && /^all(\s+(companies|bus))?$/i.test(co.trim()));
+        const isAllSel = /^all(\s+(companies|bus))?$/i.test(co.trim()) && !isCustomAllCoShift;
+        const canDelScope = isCustomAllCoShift ? canEditPolicyGroupsCatalog() : canEditShiftsAndRules(null, co);
+        const curCoTypes = isAllSel ? [] : getShiftTypes(isCustomAllCoShift ? '' : co);
+        const allCatCanDel = !isCustomAllCoShift || getCompanyCatalog().every(c => getShiftTypes(c.name).filter(s => s.id !== existing.id).length >= 1);
+        delBtn.disabled = !canDelScope || isAllSel || curCoTypes.length <= 1 || !allCatCanDel;
+        delBtn.dataset.armed = '';
+        delBtn.classList.remove('armed');
+        const sp = delBtn.querySelector('span');
+        if (sp) sp.textContent = _trStm('Delete Shift Type');
+        if (isAllSel || !canDelScope) delBtn.setAttribute('data-ui-tip', _trStm('Select a specific company above to delete this shift type'));
+        else if (curCoTypes.length <= 1 || !allCatCanDel) delBtn.setAttribute('data-ui-tip', _trStm('At least one active work shift must remain'));
+        else delBtn.removeAttribute('data-ui-tip');
+      }
     });
     $('stmSplitPresetChips')?.addEventListener('click', ev => {
       const btn = ev.target.closest('[data-stm-split-preset]');
@@ -200051,20 +201713,54 @@
         modal.querySelectorAll('[data-stm-tone]').forEach(b => b.classList.toggle('active', b === btn));
       });
     });
+    let stmArmTimer = null;
     $('stmDeleteBtn')?.addEventListener('click', () => {
-      if (!existing) return;
-      const delCo = String($('stmCompany')?.value || existing.company || defCo || '').trim();
+      if (STATE.kioskLocked || !existing) return;
+      const delBtn = $('stmDeleteBtn');
+      const selStmCo = String($('stmCompany')?.value || defCo || '').trim();
+      const isCustomAllCoShift = Boolean(hasActiveUniversalCustomShift && (!selStmCo || /^all(\s+(companies|bus))?$/i.test(selStmCo)));
+      const delCo = isCustomAllCoShift ? 'All Companies' : (selStmCo || existing.company || defCo || '');
+      const stmStaffCnt = getKioskStaffDirectory({ includeEnded: true, lite: true, allIndustries: isCustomAllCoShift }).filter(s =>
+        (isCustomAllCoShift || !delCo || norm(s.company) === norm(delCo))
+        && normalizeShiftCodeAlias(getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4') === existing.id
+      ).length;
+      const delCoDef = isCustomAllCoShift ? null : getBuDefaultShift(delCo);
+      const isDelCoDefault = isCustomAllCoShift
+        ? getCompanyCatalog().some(c => {
+            const cDef = getBuDefaultShift(c.name);
+            return Boolean(cDef && normalizeShiftCodeAlias(cDef.shift_code || cDef.shift_id) === existing.id);
+          })
+        : Boolean(delCoDef && normalizeShiftCodeAlias((delCoDef && (delCoDef.shift_code || delCoDef.shift_id)) || 'day_8_4') === existing.id);
+      if ((stmStaffCnt > 0 || isDelCoDefault) && delBtn && delBtn.dataset.armed !== '1') {
+        delBtn.dataset.armed = '1';
+        delBtn.classList.add('armed');
+        const lbl = delBtn.querySelector('span');
+        if (lbl) lbl.textContent = _trStm('Confirm Delete');
+        if (stmArmTimer) clearTimeout(stmArmTimer);
+        stmArmTimer = setTimeout(() => {
+          if (delBtn && document.body.contains(delBtn)) {
+            delBtn.dataset.armed = '';
+            delBtn.classList.remove('armed');
+            const s = delBtn.querySelector('span');
+            if (s) s.textContent = _trStm('Delete Shift Type');
+          }
+        }, 3500);
+        return;
+      }
+      if (stmArmTimer) clearTimeout(stmArmTimer);
       const r = deleteShiftType(existing.id, delCo);
       if (r.ok) {
-        toast(`Removed shift type ${existing.name}`);
+        toast(`${_trStm('Removed shift type')} ${existing.name}`);
         closeShiftTypeModal();
         if (typeof opts.onSaved === 'function') opts.onSaved(null);
+        else if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen) refreshPayrollPolicySectionInPlace();
         else renderApp();
       } else {
-        toast(r.error || 'Cannot delete', 'warn');
+        toast(_trStm(r.error || 'Cannot delete'), 'warn');
       }
     });
     $('stmSaveBtn')?.addEventListener('click', () => {
+      if (STATE.kioskLocked) return;
       const nm = String($('stmName')?.value || '').trim();
       const sh = String($('stmShort')?.value || '').trim();
       const co = String($('stmCompany')?.value || defCo || 'WTC').trim();
@@ -203363,17 +205059,7 @@
       excludeRowId: opts.excludeRowId
     });
 
-    const mergedShiftMap = new Map();
-    allowedCos.forEach(co => {
-      getShiftTypes(co).forEach(st => {
-        const nid = normalizeShiftCodeAlias(st.id || st.shift_code);
-        if (!nid) return;
-        if (!mergedShiftMap.has(nid)) {
-          mergedShiftMap.set(nid, Object.assign({}, st, { id: nid, shift_code: nid }));
-        }
-      });
-    });
-    const shiftTypes = Array.from(mergedShiftMap.values());
+    const shiftTypes = mergeShiftTypesUnion(allowedCos);
     const shiftMap = new Map();
     shiftTypes.forEach(st => shiftMap.set(st.id, st));
     const perCoStaffCounts = new Map();
@@ -206526,8 +208212,7 @@
               const wasCoDefNow = Boolean(existing && targetDefCoNow && getCompanyDefaultPolicyGroupId(targetDefCoNow) === existing.id);
               let revertHtml = '';
               if (wasCoDefNow && !draftSetCoDef) {
-                const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[norm(targetDefCoNow)] || 'pkg_15_open_15d';
-                const fbId = fbBase === existing.id ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
+                const fbId = _pickActiveFallbackPolicyGroupId(existing.id, targetDefCoNow);
                 const fbGrp = groups.find(g => g.id === fbId) || (DEFAULT_POLICY_GROUPS || []).find(g => g.id === fbId);
                 const fbName = fbGrp ? fbGrp.name : fbId;
                 revertHtml = `<div class="pgm-default-revert-note">${ic('info')} Unchecking restores ${esc(targetDefCoNow)} default back to <strong>${esc(fbName)}</strong>.</div>`;
@@ -206561,7 +208246,15 @@
           </div>
           <div class="modal-foot" style="justify-content:space-between">
             <div>
-              ${existing && !existing.isBuiltin && !isRo ? `<button type="button" class="btn btn-danger-outline" id="pgmDeleteBtn">${ic('trash')}<span>Delete Group</span></button>` : ''}
+              ${(() => {
+                if (!existing || isRo) return '';
+                const pgAllActive = getPolicyGroups('');
+                const pgRem = pgAllActive.filter(g => g.id !== existing.id);
+                const pgIsUniv = !existing.company || norm(existing.company) === norm('All Companies') || norm(existing.company) === norm('All BUs');
+                const pgRemUniv = pgRem.filter(g => !g.company || norm(g.company) === norm('All Companies') || norm(g.company) === norm('All BUs'));
+                const pgBlockedLast = pgRem.length < 1 || (pgIsUniv && pgRemUniv.length < 1);
+                return `<button type="button" class="btn btn-danger-outline" id="pgmDeleteBtn"${pgBlockedLast ? ' disabled data-ui-tip="At least one company-wide Policy &amp; Perks group must remain"' : ''}>${ic('trash')}<span>Delete Group</span></button>`;
+              })()}
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="btn" id="pgmCancelBtn">${isRo ? 'Close' : 'Cancel'}</button>
@@ -206793,8 +208486,30 @@
       $('pgmCustomPerkInp')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); addCustomPgmPerk(); }
       });
-      $('pgmDeleteBtn')?.addEventListener('click', () => {
-        if (isRo || !existing) return;
+      let pgmArmTimer = null;
+    const pgDelBtn = $('pgmDeleteBtn');
+    $('pgmDeleteBtn')?.addEventListener('click', () => {
+        if (isRo || STATE.kioskLocked || !existing) return;
+        const isUnivPgModal = !existing.company || norm(existing.company) === norm('All Companies') || norm(existing.company) === norm('All BUs');
+        const isAnyCoDef = (isUnivPgModal ? getCompanyCatalog().map(c => c.name) : industryAllowedCos).some(co => getCompanyDefaultPolicyGroupId(co) === existing.id);
+        const hasGlobalAssigned = isUnivPgModal && getKioskStaffDirectory({ includeEnded: true, lite: true, allIndustries: true }).some(s => (s.policyDesc || describeStaffPolicyGroup(s.name, s.company)).id === existing.id);
+        if ((assignedCnt > 0 || isAnyCoDef || hasGlobalAssigned) && pgDelBtn && pgDelBtn.dataset.armed !== '1') {
+          pgDelBtn.dataset.armed = '1';
+          pgDelBtn.classList.add('armed');
+          const lbl = pgDelBtn.querySelector('span');
+          if (lbl) lbl.textContent = _trAttUi('Confirm Delete');
+          if (pgmArmTimer) clearTimeout(pgmArmTimer);
+          pgmArmTimer = setTimeout(() => {
+            if (pgDelBtn && document.body.contains(pgDelBtn)) {
+              pgDelBtn.dataset.armed = '';
+              pgDelBtn.classList.remove('armed');
+              const s = pgDelBtn.querySelector('span');
+              if (s) s.textContent = _trAttUi('Delete Group');
+            }
+          }, 3500);
+          return;
+        }
+        if (pgmArmTimer) clearTimeout(pgmArmTimer);
         const r = deletePolicyGroup(existing.id);
         if (r.ok) {
           closePolicyGroupModal();
@@ -206804,9 +208519,9 @@
             renderApp();
           }
           if (typeof onSaved === 'function') onSaved(null);
-          toast(`Deleted policy group ${existing.name}`, 'ok');
+          toast(`${_trAttUi('Deleted policy group')} ${existing.name}`, 'ok');
         } else {
-          toast(r.error || 'Cannot delete group', 'warn');
+          toast(_trAttUi(r.error || 'Cannot delete group'), 'warn');
         }
       });
       $('pgmForkTargetCo')?.addEventListener('change', e => {
@@ -206959,8 +208674,7 @@
           if (willSetCoDef && targetDefCo) {
             defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, res.policyGroup.id, coDefOpts);
           } else if (willRevertCoDef && targetDefCo) {
-            const fbBase = DEFAULT_COMPANY_POLICY_GROUP_MAP[norm(targetDefCo)] || 'pkg_15_open_15d';
-            const fbId = fbBase === res.policyGroup.id ? (fbBase === 'pkg_15_open_15d' ? 'pkg_10_fixed_15d' : 'pkg_15_open_15d') : fbBase;
+            const fbId = _pickActiveFallbackPolicyGroupId(res.policyGroup.id, targetDefCo);
             defUpdateRes = setCompanyDefaultPolicyGroup(targetDefCo, fbId, coDefOpts);
           }
           if (willUpdateCoDefault && (!defUpdateRes || !defUpdateRes.ok)) {
@@ -207018,7 +208732,7 @@
       $('pgmSimulateDiffBtn')?.addEventListener('click', openPgmSim);
       modal.querySelectorAll('[data-pgm-open-sim]').forEach(b => b.addEventListener('click', openPgmSim));
       $('pgmSaveBtn')?.addEventListener('click', () => {
-        if (isRo) return;
+        if (isRo || STATE.kioskLocked) return;
         const ctx = buildPgmDraftSaveContext();
         if (ctx) commitPgmSaveContext(ctx);
       });
@@ -207650,7 +209364,16 @@
       return true;
     });
 
-    const shiftTypesCatalog = getShiftTypes(rawScopedCo || effectiveScopedCo || defCo);
+    const rawShiftCo = rawScopedCo || effectiveScopedCo;
+    const shiftCatalogCo = rawShiftCo || (canEditShiftsAndRules(null, defCo) ? defCo : (Array.from(indCoNames).find(c => canEditShiftsAndRules(null, c)) || defCo));
+    const groupShiftCos = getAttendanceDefaultsCompanies(STATE.company);
+    const shiftTypesCatalog = (() => {
+      if (groupShiftCos.length > 1 && !rawScopedCo) {
+        const orderedCos = [shiftCatalogCo, ...groupShiftCos.filter(c => norm(c) !== norm(shiftCatalogCo))];
+        return mergeShiftTypesUnion(orderedCos);
+      }
+      return getShiftTypes(shiftCatalogCo);
+    })();
     const weekDates = getScheduleWeekDates(STATE.kioskSchedWeekOffset || 0);
     const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
     const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
@@ -207783,11 +209506,20 @@
 
     const companyDefaultsTargets = getAttendanceDefaultsCompanies(STATE.company);
     const editCoAttr = rawScopedCo ? ` data-edit-co="${esc(rawScopedCo)}"` : '';
+    const shiftEditCoAttr = shiftCatalogCo ? ` data-edit-co="${esc(shiftCatalogCo)}"` : editCoAttr;
+    const isGroupShiftScope = companyDefaultsTargets.length > 1 && !rawScopedCo;
+    const shiftOrderCoAttr = isGroupShiftScope ? editCoAttr : shiftEditCoAttr;
+    const allCatalogCos = getCompanyCatalog().map(c => c.name);
+    const globalStaffForPolCheck = policyGroupsCatalog.some(g => !g.company || norm(g.company) === norm('All Companies') || norm(g.company) === norm('All BUs'))
+      ? getKioskStaffDirectory({ includeEnded: true, lite: true, allIndustries: true })
+      : staffDir;
 
-    const canWritePolCat = canEditPolicyGroupsCatalog();
-    const canWriteShiftCat = rawScopedCo
-      ? canEditShiftsAndRules(null, rawScopedCo)
-      : (indCoNames.size ? Array.from(indCoNames).some(c => canEditShiftsAndRules(null, c)) : canEditShiftsAndRules(null, defCo));
+    const canWritePolCat = !STATE.kioskLocked && canEditPolicyGroupsCatalog();
+    const canWriteShiftCat = !STATE.kioskLocked && (isGroupShiftScope
+      ? companyDefaultsTargets.some(c => canEditShiftsAndRules(null, c))
+      : canEditShiftsAndRules(null, shiftCatalogCo));
+    const isRtlCards = (typeof document !== 'undefined' && document.documentElement.getAttribute('dir') === 'rtl')
+      || (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() === 'ar');
 
     const companyDefaultsStripHtml = companyDefaultsTargets.length ? `
       <div class="att-co-defaults-bar" id="kioskCoDefaultsBar">
@@ -207804,43 +209536,62 @@
               <strong>Policy &amp; Perks Groups</strong>
               <span class="att-catalog-cnt">${fmtNum(policyGroupsCatalog.length)}</span>
             </div>
-            <span class="att-catalog-sub">${canWritePolCat ? 'Click any group to edit overtime, lateness, leave &amp; perks' : 'Click any group to inspect overtime, lateness, leave &amp; perks'}</span>
+            <span class="att-catalog-sub">${canWritePolCat ? 'Click any group to edit, reorder with arrows or drag, or delete' : 'Click any group to inspect overtime, lateness, leave &amp; perks'}</span>
           </div>
           <div class="att-catalog-actions">
-            <button type="button" class="btn btn-primary att-add-btn" data-new-policy-group="1"${editCoAttr}${canWritePolCat ? '' : ' disabled'}>${ic('plus')} New Policy &amp; Perks Group</button>
+            <button type="button" class="btn att-add-btn btn-primary" data-new-policy-group="1"${editCoAttr}${canWritePolCat ? '' : ' disabled'}>${ic('plus')} New Policy &amp; Perks Group</button>
           </div>
         </div>
         <div class="policy-groups-strip">
-          ${policyGroupsCatalog.map(grp => {
+          ${policyGroupsCatalog.map((grp, idx) => {
             const grpCnt = staffDir.filter(s => (s.policyDesc || describeStaffPolicyGroup(s.name, s.company)).id === grp.id).length;
             const defPolCos = companyDefaultsTargets.filter(co => getCompanyDefaultPolicyGroupId(co) === grp.id);
             const polDefBadge = formatCoDefaultBadgeMeta(defPolCos, companyDefaultsTargets.length);
             const perksShown = grp.perks.slice(0, 2);
             const perksExtra = Math.max(0, grp.perks.length - 2);
+            const isUnivGrp = !grp.company || norm(grp.company) === norm('All Companies') || norm(grp.company) === norm('All BUs');
+            const hasGlobalDefaultOrStaff = isUnivGrp && (
+              allCatalogCos.some(co => getCompanyDefaultPolicyGroupId(co) === grp.id)
+              || globalStaffForPolCheck.some(s => (s.policyDesc || describeStaffPolicyGroup(s.name, s.company)).id === grp.id)
+            );
+            const remUnivCnt = policyGroupsCatalog.filter(x => x.id !== grp.id && (!x.company || norm(x.company) === norm('All Companies') || norm(x.company) === norm('All BUs'))).length;
+            const pgDelBlocked = policyGroupsCatalog.length <= 1 || (isUnivGrp && remUnivCnt < 1);
             return `
-              <button type="button" class="policy-group-card ${polDefBadge ? 'is-co-default' : ''}" data-tone="${esc(grp.tone)}" data-edit-policy-group="${esc(grp.id)}"${editCoAttr}${STATE.kioskLocked ? ' disabled' : ''}>
-                <div class="pgc-head">
-                  <div class="att-card-title-grp">
-                    <strong>${esc(grp.name)}</strong>
-                    ${polDefBadge ? `<span class="att-def-badge" data-ui-tip="${esc(polDefBadge.tip)}">${esc(polDefBadge.label)}</span>` : ''}
+              <div class="att-template-cell" data-drag-kind="policy" data-drag-id="${esc(grp.id)}"${editCoAttr}${canWritePolCat && !STATE.kioskLocked ? ' draggable="true"' : ''}>
+                <button type="button" class="policy-group-card ${polDefBadge ? 'is-co-default' : ''}" data-tone="${esc(grp.tone)}" data-edit-policy-group="${esc(grp.id)}"${editCoAttr}${STATE.kioskLocked ? ' disabled' : ''}>
+                  <div class="pgc-head">
+                    <div class="att-card-title-grp">
+                      <strong>${esc(grp.name)}</strong>
+                      ${polDefBadge ? `<span class="att-def-badge" data-ui-tip="${esc(polDefBadge.tip)}">${esc(polDefBadge.label)}</span>` : ''}
+                    </div>
+                    <span class="pgc-cnt ${grpCnt > 0 ? 'is-populated' : 'is-zero'}">${fmtNum(grpCnt)} staff</span>
                   </div>
-                  <span class="pgc-cnt ${grpCnt > 0 ? 'is-populated' : 'is-zero'}">${fmtNum(grpCnt)} staff</span>
-                </div>
-                <div class="pgc-rules">
-                  <span class="pgc-rule-chip">${esc(formatPolicyLateChip(grp))}</span>
-                  <span class="pgc-rule-chip ${grp.ot_mode === 'none' ? 'is-muted' : 'is-ot'}">${esc(formatPolicyOtChip(grp))}</span>
-                  <span class="pgc-rule-chip">${fmtNum(grp.vacation_days, 0)}d Vac</span>
-                  <span class="pgc-rule-chip is-basis">${fmtNum(grp.working_days || 30, 0)}d Basis</span>
-                </div>
-                <div class="pgc-foot">
-                  <div class="pgc-perks-row">
-                    ${perksShown.length
-                      ? `${perksShown.map(pk => `<span class="pgc-perk-tag">${esc(pk)}</span>`).join('')}${perksExtra ? `<span class="pgc-perk-more">+${fmtNum(perksExtra)} more</span>` : ''}`
-                      : '<span class="pgc-perk-empty">No perks assigned</span>'}
+                  <div class="pgc-rules">
+                    <span class="pgc-rule-chip">${esc(formatPolicyLateChip(grp))}</span>
+                    <span class="pgc-rule-chip ${grp.ot_mode === 'none' ? 'is-muted' : 'is-ot'}">${esc(formatPolicyOtChip(grp))}</span>
+                    <span class="pgc-rule-chip">${fmtNum(grp.vacation_days, 0)}d Vac</span>
+                    <span class="pgc-rule-chip is-basis">${fmtNum(grp.working_days || 30, 0)}d Basis</span>
                   </div>
-                  <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
-                </div>
-              </button>
+                  <div class="pgc-foot">
+                    <div class="pgc-perks-row">
+                      ${perksShown.length
+                        ? `${perksShown.map(pk => `<span class="pgc-perk-tag">${esc(pk)}</span>`).join('')}${perksExtra ? `<span class="pgc-perk-more">+${fmtNum(perksExtra)} more</span>` : ''}`
+                        : '<span class="pgc-perk-empty">No perks assigned</span>'}
+                    </div>
+                    <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
+                  </div>
+                </button>
+                ${canWritePolCat && !STATE.kioskLocked ? `
+                  <div class="att-card-ctrl-bar no-print">
+                    <div class="att-card-ord-grp">
+                      <button type="button" class="att-card-ord-btn" data-move-policy="${esc(grp.id)}" data-move-dir="-1"${editCoAttr} data-ui-tip="Move Left" aria-label="Move Left"${(isRtlCards ? idx === policyGroupsCatalog.length - 1 : idx === 0) ? ' disabled' : ''}>${ic('chevron_left')}</button>
+                      <span class="att-card-drag-grip" aria-hidden="true">&#8942;&#8942;</span>
+                      <button type="button" class="att-card-ord-btn" data-move-policy="${esc(grp.id)}" data-move-dir="1"${editCoAttr} data-ui-tip="Move Right" aria-label="Move Right"${(isRtlCards ? idx === 0 : idx === policyGroupsCatalog.length - 1) ? ' disabled' : ''}>${ic('chevron_right')}</button>
+                    </div>
+                    <button type="button" class="att-card-del-btn" data-del-policy-card="${esc(grp.id)}" data-del-confirm="${(grpCnt > 0 || polDefBadge || hasGlobalDefaultOrStaff) ? '1' : '0'}"${editCoAttr}${pgDelBlocked ? ' disabled data-ui-tip="At least one company-wide Policy &amp; Perks group must remain"' : ' data-ui-tip="Delete Group"'} aria-label="Delete Group">${ic('trash')}<span class="att-card-del-lbl" aria-hidden="true">Confirm</span></button>
+                  </div>
+                ` : ''}
+              </div>
             `;
           }).join('')}
         </div>
@@ -208136,18 +209887,18 @@
                         <strong>Work Shifts</strong>
                         <span class="att-catalog-cnt">${fmtNum(shiftTypesCatalog.length)}</span>
                       </div>
-                      <span class="att-catalog-sub">${canWriteShiftCat ? 'Click any shift to edit hours, workdays, or dated exceptions' : 'View-only: contact an authorized manager to edit work shifts'}</span>
+                      <span class="att-catalog-sub">${canWriteShiftCat ? 'Click any shift to edit, reorder with arrows or drag, or delete' : 'View-only: contact an authorized manager to edit work shifts'}</span>
                     </div>
                     <div class="att-catalog-actions">
                       <button type="button" class="btn att-util-btn" id="kioskShiftCalPresetBtn">${ic('calendar')} Holidays &amp; Seasons</button>
                       <button type="button" class="btn att-util-btn" id="kioskPunchDriftBtn">${ic('overtime')} Punch Drift</button>
                       <button type="button" class="btn att-util-btn" id="kioskAiDriftRecBtn">${ic('sparkles')} <span>AI Drift Advisor</span></button>
                       <button type="button" class="btn att-util-btn" id="kioskOtClusterBriefBtn">${ic('brain_radar')} <span>Overtime Timing Check</span></button>
-                      <button type="button" class="btn btn-primary att-add-btn" id="kioskNewShiftTypeBtn"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>${ic('plus')} New Shift Type</button>
+                      <button type="button" class="btn btn-primary att-add-btn" id="kioskNewShiftTypeBtn"${shiftEditCoAttr}${canWriteShiftCat ? '' : ' disabled'}>${ic('plus')} New Shift Type</button>
                     </div>
                   </div>
                   <div class="shift-types-strip">
-                    ${shiftTypesCatalog.map(st => {
+                    ${shiftTypesCatalog.map((st, idx) => {
                       const assignedCnt = staffDir.filter(s => {
                         const rawId = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
                         return (rawId === 'custom' ? 'custom' : normalizeShiftCodeAlias(rawId)) === st.id;
@@ -208159,33 +209910,53 @@
                       const winTxt = st.split_enabled && st.split_window_label
                         ? st.split_window_label
                         : `${st.start_time} - ${st.end_time}${st.overnight ? ' (+1d)' : ''}`;
+                      const shiftDelBlocked = isGroupShiftScope
+                        ? companyDefaultsTargets.some(co => {
+                            const coList = getShiftTypes(co);
+                            return coList.some(x => x.id === st.id) && coList.filter(x => x.id !== st.id).length < 1;
+                          })
+                        : shiftTypesCatalog.length <= 1;
+                      const cardEditCo = (st && st._unionCo) || shiftCatalogCo;
+                      const cardShiftEditCoAttr = cardEditCo ? ` data-edit-co="${esc(cardEditCo)}"` : shiftEditCoAttr;
                       return `
-                        <div class="shift-type-card-slot" data-tone="${esc(st.tone)}">
-                          <button type="button" class="shift-type-card ${shiftDefBadge ? 'is-co-default' : ''}" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}"${editCoAttr}${canWriteShiftCat ? '' : ' disabled'}>
-                            <div class="stc-head">
-                              <div class="att-card-title-grp">
-                                <strong>${esc(st.name)}</strong>
-                                ${shiftDefBadge ? `<span class="att-def-badge" data-ui-tip="${esc(shiftDefBadge.tip)}">${esc(shiftDefBadge.label)}</span>` : ''}
+                        <div class="att-template-cell" data-drag-kind="shift" data-drag-id="${esc(st.id)}"${shiftOrderCoAttr}${(canWriteShiftCat && !STATE.kioskLocked) ? ' draggable="true"' : ''}>
+                          <div class="shift-type-card-slot" data-tone="${esc(st.tone)}">
+                            <button type="button" class="shift-type-card ${shiftDefBadge ? 'is-co-default' : ''}" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}"${cardShiftEditCoAttr}${(canWriteShiftCat && !STATE.kioskLocked) ? '' : ' disabled'}>
+                              <div class="stc-head">
+                                <div class="att-card-title-grp">
+                                  <strong>${esc(st.name)}</strong>
+                                  ${shiftDefBadge ? `<span class="att-def-badge" data-ui-tip="${esc(shiftDefBadge.tip)}">${esc(shiftDefBadge.label)}</span>` : ''}
+                                </div>
+                                <span class="stc-cnt ${assignedCnt > 0 ? 'is-populated' : 'is-zero'}">${fmtNum(assignedCnt)} staff</span>
                               </div>
-                              <span class="stc-cnt ${assignedCnt > 0 ? 'is-populated' : 'is-zero'}">${fmtNum(assignedCnt)} staff</span>
-                            </div>
-                            <div class="stc-time-row">
-                              <span class="stc-time mono">${esc(winTxt)}</span>
-                              <span class="stc-hrs-pill">${fmtNum(st.hours, 1)}h</span>
-                            </div>
-                            <div class="stc-foot">
-                              <div class="stc-chips">
-                                <span class="att-meta-pill">${esc(formatWorkdaysCompact(st.days))}</span>
-                                <span class="att-meta-pill">${esc(formatShiftGracePill(st.grace_min, st.early_leave_grace_min))}</span>
-                                ${hasExc ? `<span class="att-meta-pill is-exc">${esc(excSum)}</span>` : ''}
+                              <div class="stc-time-row">
+                                <span class="stc-time mono">${esc(winTxt)}</span>
+                                <span class="stc-hrs-pill">${fmtNum(st.hours, 1)}h</span>
                               </div>
-                              <span class="att-card-foot-end" aria-hidden="true">
-                                <span class="att-card-act-spacer"></span>
-                                <span class="att-card-chev">${ic('chevron_right')}</span>
-                              </span>
+                              <div class="stc-foot">
+                                <div class="stc-chips">
+                                  <span class="att-meta-pill">${esc(formatWorkdaysCompact(st.days))}</span>
+                                  <span class="att-meta-pill">${esc(formatShiftGracePill(st.grace_min, st.early_leave_grace_min))}</span>
+                                  ${hasExc ? `<span class="att-meta-pill is-exc">${esc(excSum)}</span>` : ''}
+                                </div>
+                                <span class="att-card-foot-end" aria-hidden="true">
+                                  <span class="att-card-act-spacer"></span>
+                                  <span class="att-card-chev">${ic('chevron_right')}</span>
+                                </span>
+                              </div>
+                            </button>
+                            <button type="button" class="stc-share-btn att-card-act-btn no-print" data-share-shift-type="${esc(st.id)}"${editCoAttr} data-ui-tip="Share Shift Hours" aria-label="Share Shift Hours">${ic('send_msg')}</button>
+                          </div>
+                          ${(canWriteShiftCat && !STATE.kioskLocked) ? `
+                            <div class="att-card-ctrl-bar no-print">
+                              <div class="att-card-ord-grp">
+                                <button type="button" class="att-card-ord-btn" data-move-shift="${esc(st.id)}" data-move-dir="-1"${shiftOrderCoAttr} data-ui-tip="Move Left" aria-label="Move Left"${(isRtlCards ? idx === shiftTypesCatalog.length - 1 : idx === 0) ? ' disabled' : ''}>${ic('chevron_left')}</button>
+                                <span class="att-card-drag-grip" aria-hidden="true">&#8942;&#8942;</span>
+                                <button type="button" class="att-card-ord-btn" data-move-shift="${esc(st.id)}" data-move-dir="1"${shiftOrderCoAttr} data-ui-tip="Move Right" aria-label="Move Right"${(isRtlCards ? idx === 0 : idx === shiftTypesCatalog.length - 1) ? ' disabled' : ''}>${ic('chevron_right')}</button>
+                              </div>
+                              <button type="button" class="att-card-del-btn" data-del-shift-card="${esc(st.id)}"${isGroupShiftScope ? ' data-del-scope-group="1"' : ''} data-del-confirm="${(assignedCnt > 0 || shiftDefBadge) ? '1' : '0'}"${cardShiftEditCoAttr}${shiftDelBlocked ? ' disabled data-ui-tip="At least one active work shift must remain"' : (isGroupShiftScope ? ' data-ui-tip="Pick company in modal to delete"' : ' data-ui-tip="Delete Shift Type"')} aria-label="Delete Shift Type">${ic('trash')}<span class="att-card-del-lbl" aria-hidden="true">Confirm</span></button>
                             </div>
-                          </button>
-                          <button type="button" class="stc-share-btn att-card-act-btn no-print" data-share-shift-type="${esc(st.id)}"${editCoAttr} data-ui-tip="Share Shift Hours" aria-label="Share Shift Hours">${ic('send_msg')}</button>
+                          ` : ''}
                         </div>
                       `;
                     }).join('')}
@@ -208282,6 +210053,10 @@
                       <select id="kioskBulkShiftAssign" class="kiosk-select" data-plain-options="1"${canWriteShiftCat ? '' : ' disabled'}>
                         <option value="keep" selected>Keep Current Shift</option>
                         ${(() => {
+                          const hasExplicitOrder = shiftTypesCatalog.some(s => s.sort_order != null);
+                          if (hasExplicitOrder) {
+                            return shiftTypesCatalog.map(st => `<option value="${esc(st.id)}">${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('');
+                          }
                           const shFreq = new Map();
                           fullStaffDir.filter(s => !s.isEndedContract).forEach(s => {
                             const rSid = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
@@ -209742,6 +211517,185 @@
         if (!canEditPolicyGroupsCatalog()) return;
         const editCo = btn.getAttribute('data-edit-co') || '';
         openPolicyGroupModal('', editCo ? { targetCompany: editCo } : null);
+      });
+    });
+
+    const refreshCatalogUi = () => {
+      if (STATE.view === 'payroll_attendance' && STATE.payrollPolicyOpen) refreshPayrollPolicySectionInPlace();
+      else renderApp();
+    };
+    const syncAttOrdBtnsForDir = root => {
+      if (!root) return;
+      const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+      root.querySelectorAll('.shift-types-strip, .policy-groups-strip').forEach(strip => {
+        const cells = Array.from(strip.querySelectorAll('.att-template-cell[data-drag-id]'));
+        cells.forEach((cell, i) => {
+          const leftBtn = cell.querySelector('.att-card-ord-btn[data-move-dir="-1"]');
+          const rightBtn = cell.querySelector('.att-card-ord-btn[data-move-dir="1"]');
+          if (leftBtn) leftBtn.disabled = isRtl ? (i === cells.length - 1) : (i === 0);
+          if (rightBtn) rightBtn.disabled = isRtl ? (i === 0) : (i === cells.length - 1);
+        });
+      });
+    };
+    syncAttOrdBtnsForDir(container);
+    if (typeof MutationObserver === 'function' && !window._attOrdDirObserver && document.documentElement) {
+      window._attOrdDirObserver = new MutationObserver(() => syncAttOrdBtnsForDir(document));
+      window._attOrdDirObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['dir'] });
+    }
+    const commitTemplateOrder = (kind, orderedIds, coOpt) => {
+      const res = kind === 'shift' ? reorderShiftTypes(orderedIds, coOpt) : reorderPolicyGroups(orderedIds, coOpt);
+      if (res && res.ok) {
+        toast(_trAttUi(kind === 'shift' ? 'Reordered work shifts' : 'Reordered policy groups'), 'ok');
+        refreshCatalogUi();
+      } else {
+        toast(_trAttUi((res && res.error) || 'Cannot reorder'), 'warn');
+      }
+    };
+    container.querySelectorAll('[data-move-shift], [data-move-policy]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (STATE.kioskLocked || btn.disabled) return;
+        const isShift = btn.hasAttribute('data-move-shift');
+        const id = btn.getAttribute(isShift ? 'data-move-shift' : 'data-move-policy') || '';
+        const dir = Number(btn.getAttribute('data-move-dir') || 0);
+        const coOpt = btn.getAttribute('data-edit-co') || '';
+        const strip = btn.closest('.shift-types-strip, .policy-groups-strip');
+        if (!strip || !id || !dir) return;
+        const ids = Array.from(strip.querySelectorAll('.att-template-cell[data-drag-id]')).map(c => c.getAttribute('data-drag-id')).filter(Boolean);
+        const curIdx = ids.indexOf(id);
+        const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+        const delta = isRtl ? -dir : dir;
+        const nextIdx = curIdx + delta;
+        if (curIdx < 0 || nextIdx < 0 || nextIdx >= ids.length) return;
+        const tmp = ids[curIdx];
+        ids[curIdx] = ids[nextIdx];
+        ids[nextIdx] = tmp;
+        commitTemplateOrder(isShift ? 'shift' : 'policy', ids, coOpt);
+      });
+    });
+    container.querySelectorAll('[data-del-shift-card], [data-del-policy-card]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (STATE.kioskLocked || btn.disabled) return;
+        const isShift = btn.hasAttribute('data-del-shift-card');
+        const id = btn.getAttribute(isShift ? 'data-del-shift-card' : 'data-del-policy-card') || '';
+        const coOpt = btn.getAttribute('data-edit-co') || '';
+        if (isShift && btn.getAttribute('data-del-scope-group') === '1') {
+          toast(_trAttUi('Select a single company or delete inside the shift modal'), 'info');
+          openShiftTypeModal(id, coOpt ? { company: coOpt } : {});
+          return;
+        }
+        const needConfirm = btn.getAttribute('data-del-confirm') === '1';
+        if (needConfirm && btn.dataset.armed !== '1') {
+          btn.dataset.armed = '1';
+          btn.classList.add('armed');
+          const lbl = btn.querySelector('.att-card-del-lbl');
+          if (lbl) lbl.textContent = _trAttUi('Confirm');
+          if (btn._armTimer) clearTimeout(btn._armTimer);
+          btn._armTimer = setTimeout(() => {
+            if (btn && document.body.contains(btn)) {
+              btn.dataset.armed = '';
+              btn.classList.remove('armed');
+            }
+          }, 3500);
+          return;
+        }
+        if (btn._armTimer) clearTimeout(btn._armTimer);
+        if (isShift) {
+          const delCo = coOpt || COMPANY_BU_MATCH[STATE.company] || (getAttendanceDefaultsCompanies(STATE.company)[0]) || defaultEntryCompany() || 'WTC';
+          const r = deleteShiftType(id, delCo);
+          if (r && r.ok) {
+            toast(_trAttUi('Removed shift type'), 'ok');
+            refreshCatalogUi();
+          } else {
+            toast(_trAttUi((r && r.error) || 'Cannot delete'), 'warn');
+          }
+        } else {
+          const r = deletePolicyGroup(id);
+          if (r && r.ok) {
+            toast(_trAttUi('Deleted policy group'), 'ok');
+            refreshCatalogUi();
+          } else {
+            toast(_trAttUi((r && r.error) || 'Cannot delete group'), 'warn');
+          }
+        }
+      });
+    });
+    let _attDragState = null;
+    const clearAttDragMarks = stripEl => {
+      if (!stripEl) return;
+      stripEl.querySelectorAll('.att-template-cell').forEach(c => {
+        c.classList.remove('is-dragging', 'is-drop-before', 'is-drop-after');
+      });
+    };
+    container.querySelectorAll('.att-template-cell[draggable="true"]').forEach(cell => {
+      cell.addEventListener('dragstart', e => {
+        if (STATE.kioskLocked) { e.preventDefault(); return; }
+        const kind = cell.getAttribute('data-drag-kind') || '';
+        const id = cell.getAttribute('data-drag-id') || '';
+        const co = cell.getAttribute('data-edit-co') || '';
+        if (!kind || !id) { e.preventDefault(); return; }
+        _attDragState = { kind, id, co, placeBefore: true };
+        cell.classList.add('is-dragging');
+        if (e.dataTransfer) {
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', `${kind}:${id}`); } catch (_) {}
+        }
+      });
+      cell.addEventListener('dragover', e => {
+        if (!_attDragState) return;
+        const kind = cell.getAttribute('data-drag-kind') || '';
+        const targetId = cell.getAttribute('data-drag-id') || '';
+        if (kind !== _attDragState.kind || !targetId || targetId === _attDragState.id) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        const rect = cell.getBoundingClientRect();
+        const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+        const beforeVisLeft = e.clientX < rect.left + rect.width / 2;
+        const placeBefore = isRtl ? !beforeVisLeft : beforeVisLeft;
+        _attDragState.placeBefore = placeBefore;
+        const strip = cell.closest('.shift-types-strip, .policy-groups-strip');
+        if (strip) {
+          strip.querySelectorAll('.att-template-cell').forEach(c => {
+            if (c !== cell) c.classList.remove('is-drop-before', 'is-drop-after');
+          });
+        }
+        cell.classList.toggle('is-drop-before', placeBefore);
+        cell.classList.toggle('is-drop-after', !placeBefore);
+      });
+      cell.addEventListener('dragleave', e => {
+        if (!cell.contains(e.relatedTarget)) {
+          cell.classList.remove('is-drop-before', 'is-drop-after');
+        }
+      });
+      cell.addEventListener('drop', e => {
+        if (!_attDragState) return;
+        const kind = cell.getAttribute('data-drag-kind') || '';
+        const targetId = cell.getAttribute('data-drag-id') || '';
+        if (kind !== _attDragState.kind || !targetId || targetId === _attDragState.id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const strip = cell.closest('.shift-types-strip, .policy-groups-strip');
+        const placeBefore = cell.classList.contains('is-drop-before')
+          ? true
+          : (cell.classList.contains('is-drop-after') ? false : Boolean(_attDragState.placeBefore));
+        const dragId = _attDragState.id;
+        const coOpt = cell.getAttribute('data-edit-co') || _attDragState.co || '';
+        clearAttDragMarks(strip);
+        _attDragState = null;
+        if (!strip) return;
+        const ids = Array.from(strip.querySelectorAll('.att-template-cell[data-drag-id]')).map(c => c.getAttribute('data-drag-id')).filter(Boolean);
+        const fromIdx = ids.indexOf(dragId);
+        if (fromIdx < 0) return;
+        ids.splice(fromIdx, 1);
+        const tgtIdx = ids.indexOf(targetId);
+        if (tgtIdx < 0) return;
+        ids.splice(placeBefore ? tgtIdx : tgtIdx + 1, 0, dragId);
+        commitTemplateOrder(kind, ids, coOpt);
+      });
+      cell.addEventListener('dragend', () => {
+        clearAttDragMarks(cell.closest('.shift-types-strip, .policy-groups-strip'));
+        _attDragState = null;
       });
     });
     const feedCard = $('kioskAttFeedCard');
@@ -213634,6 +215588,12 @@
       if (modSecEl && container.contains(modSecEl) && modSecEl.tagName !== 'BUTTON') {
         e.preventDefault();
         activateModSec(modSecEl);
+        return;
+      }
+      const reStackUnitEl = t.closest('[data-re-inspect-unit][role="button"]');
+      if (reStackUnitEl && container.contains(reStackUnitEl) && !t.closest('button, a')) {
+        e.preventDefault();
+        reStackUnitEl.click();
       }
     });
 
@@ -214733,6 +216693,147 @@
           panelId,
           returnLabel: custReturnLabelMap[panelId] || ''
         });
+        return;
+      }
+
+      const openInvBtn = t.closest('[data-open-official-inv]');
+      if (openInvBtn && container.contains(openInvBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const invId = openInvBtn.getAttribute('data-open-official-inv') || '';
+        const invCust = openInvBtn.getAttribute('data-inv-cust') || '';
+        const autoPrint = openInvBtn.getAttribute('data-inv-print') === '1';
+        const panelEl = openInvBtn.closest('.panel-card, .panel');
+        const panelId = openInvBtn.getAttribute('data-stmt-panel') || (panelEl && panelEl.id) || '';
+        openOfficialSalesInvoice({
+          invoiceNo: invId,
+          customer: invCust,
+          autoPrint,
+          panelId
+        });
+        return;
+      }
+
+      const fixMofBtn = t.closest('[data-fix-party-mof]');
+      if (fixMofBtn && container.contains(fixMofBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const pName = fixMofBtn.getAttribute('data-fix-party-mof') || '';
+        const pRole = fixMofBtn.getAttribute('data-party-role') || 'customer';
+        openTenantTaxProfileQuickFix(pName, pRole);
+        return;
+      }
+
+      const reStackPropBtn = t.closest('[data-re-stack-prop]');
+      if (reStackPropBtn && container.contains(reStackPropBtn)) {
+        e.preventDefault();
+        STATE.reStackProp = reStackPropBtn.getAttribute('data-re-stack-prop') || '';
+        STATE.reStackExpandUpper = false;
+        renderApp();
+        return;
+      }
+
+      const reStackToggleBtn = t.closest('[data-re-stack-toggle-upper]');
+      if (reStackToggleBtn && container.contains(reStackToggleBtn)) {
+        e.preventDefault();
+        STATE.reStackExpandUpper = !STATE.reStackExpandUpper;
+        renderApp();
+        return;
+      }
+
+      const reUnitChipBtn = t.closest('[data-re-unit-chip]');
+      if (reUnitChipBtn && container.contains(reUnitChipBtn)) {
+        e.preventDefault();
+        STATE.reUnitsChip = reUnitChipBtn.getAttribute('data-re-unit-chip') || 'all';
+        renderApp();
+        const upEl = $('reUnitsPanel');
+        if (upEl && typeof upEl.scrollIntoView === 'function') upEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      const reAddFloorBtn = t.closest('[data-re-add-unit-floor]');
+      if (reAddFloorBtn && container.contains(reAddFloorBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const fl = reAddFloorBtn.getAttribute('data-re-add-unit-floor') || 'Floor 2';
+        const pr = reAddFloorBtn.getAttribute('data-re-add-unit-prop') || '4235 Msaytbeh Commercial Center';
+        const co = reAddFloorBtn.getAttribute('data-re-add-unit-co') || '4235 Company S.A.L';
+        openIndustryDomainEntryModal('re_units', { property: pr, floor: fl, company: co, occupancy: 'Vacant' });
+        return;
+      }
+
+      const reLeaseUnitBtn = t.closest('[data-re-lease-unit]');
+      if (reLeaseUnitBtn && container.contains(reLeaseUnitBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const un = reLeaseUnitBtn.getAttribute('data-re-lease-unit') || '';
+        const pr = reLeaseUnitBtn.getAttribute('data-re-lease-prop') || '4235 Msaytbeh Commercial Center';
+        const co = reLeaseUnitBtn.getAttribute('data-re-lease-co') || '4235 Company S.A.L';
+        openIndustryDomainEntryModal('re_leases', { property: pr, unit: un, company: co });
+        return;
+      }
+
+      const reAttachPlanBtn = t.closest('[data-re-attach-plan]');
+      if (reAttachPlanBtn && container.contains(reAttachPlanBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const pid = reAttachPlanBtn.getAttribute('data-re-attach-code') || reAttachPlanBtn.getAttribute('data-re-attach-plan') || '';
+        const pname = reAttachPlanBtn.getAttribute('data-re-attach-name') || pid;
+        const pco = reAttachPlanBtn.getAttribute('data-re-attach-co') || '4235 Company S.A.L';
+        if (pid) {
+          openIndustryDomainInspector({
+            ind: 'Real Estate & Property',
+            tableTitle: 'Portfolio & Cadastral Plot Registry',
+            domainTblKey: 're_properties',
+            primaryId: pid,
+            headers: ['Plot Code', 'Entity', 'Property / Complex Name'],
+            cells: [pid, pco, pname],
+            rowCompany: pco
+          });
+        }
+        return;
+      }
+
+      const reInspectUnitCard = t.closest('[data-re-inspect-unit]');
+      if (reInspectUnitCard && container.contains(reInspectUnitCard) && !t.closest('button, a')) {
+        e.preventDefault();
+        const uCode = reInspectUnitCard.getAttribute('data-re-inspect-unit') || '';
+        const trEl = uCode ? container.querySelector(`#reUnitsPanel tbody tr[data-re-unit-code="${CSS.escape(uCode)}"]`) : null;
+        if (trEl) {
+          const domOpts = buildIndRowInspectOpts(trEl);
+          if (domOpts) openIndustryDomainInspector(domOpts);
+        } else if (uCode && typeof computeRealEstateOperations === 'function') {
+          const reOpsF = computeRealEstateOperations({ ignoreSearch: true });
+          const uObj = (reOpsF && Array.isArray(reOpsF.units) ? reOpsF.units : []).find(
+            x => x && (String(x.code || '') === uCode || String(x.id || '') === uCode)
+          );
+          if (uObj) {
+            const hideCoF = Boolean(STATE.company && STATE.company !== 'ALL');
+            const lensU = seatLens();
+            const canRentF = Boolean(lensU.profit || lensU.books);
+            const hasAreaF = Number(uObj.area_sqm || 0) > 0;
+            openIndustryDomainInspector({
+              ind: 'Real Estate & Property',
+              tableTitle: 'Building Units & Rentable Space Inventory',
+              domainTblKey: 're_units',
+              primaryId: String(uObj.code || uObj.id || uCode),
+              headers: ['Unit Code', ...(hideCoF ? [] : ['Entity']), 'Property', 'Unit / Block Name', 'Floor', 'Usage Type', 'Area (m²)', 'Current Tenant', 'Annual Rent ($)', 'Occupancy'],
+              cells: [
+                String(uObj.code || uObj.id || ''),
+                ...(hideCoF ? [] : [String(uObj.company || '')]),
+                String(uObj.property || ''),
+                String(uObj.unit_name || ''),
+                String(uObj.floor || ''),
+                String(uObj.type || ''),
+                hasAreaF ? fmtNum(uObj.area_sqm) : '0',
+                String(uObj.tenant || ''),
+                canRentF ? fmtUSD(uObj.annual_rent_usd || 0, 0) : 'Restricted',
+                String(uObj.occupancy || '')
+              ],
+              rowCompany: uObj.company || ''
+            });
+          }
+        }
         return;
       }
 
@@ -218020,6 +220121,9 @@
     if (!(opts && opts._keepStmt16Return) && view !== 'statements') {
       STATE.stmt16ReturnCtx = null;
     }
+    if (!(opts && opts._keepStmt20Return) && view !== 'statements') {
+      STATE.stmt20ReturnCtx = null;
+    }
     if (!(opts && opts._keepOvkReturn)) {
       STATE.ovkMoversReturn = null;
     }
@@ -221202,10 +223306,12 @@
       getShiftTypes: co => getShiftTypes(co),
       saveShiftType: (spec = {}) => saveShiftType(spec),
       deleteShiftType: (shiftId, co) => deleteShiftType(shiftId, co),
+      reorderShiftTypes: (orderedIds, co) => reorderShiftTypes(orderedIds, co),
       getPolicyGroups: co => getPolicyGroups(co),
       getCompanyDefaultPolicyGroupId: co => getCompanyDefaultPolicyGroupId(co),
       savePolicyGroup: (spec = {}) => savePolicyGroup(spec),
       deletePolicyGroup: groupId => deletePolicyGroup(groupId),
+      reorderPolicyGroups: (orderedIds, co) => reorderPolicyGroups(orderedIds, co),
       describeStaffPolicyGroup: (staff, co, dateStr) => describeStaffPolicyGroup(staff, co, dateStr),
       hasExplicitStaffWorkRule: (staff, co) => hasExplicitStaffWorkRule(staff, co),
       getStaffWorkRule: (staff, co) => getStaffWorkRule(staff, co),
@@ -221256,6 +223362,8 @@
       listShiftCalTargets: co => listShiftCalTargets(co),
       applyShiftCalendarPreset: spec => applyShiftCalendarPreset(spec),
       setBuDefaultShift: (co, code, opts = {}) => setBuDefaultShift(co, code, opts),
+      getBuDefaultShift: (co, d) => getBuDefaultShift(co, d),
+      resolveShiftAtDate: (code, co, d) => resolveShiftAtDate(code, co, d),
       getStoredShiftVersions: (co, code) => getStoredShiftVersions(co, code),
       openShiftCalPresetModal: (opts = {}) => openShiftCalPresetModal(opts),
       computePunchDriftDigest: (opts = {}) => computePunchDriftDigest(opts),

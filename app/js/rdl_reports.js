@@ -183,11 +183,11 @@
   const CO_4235 = {
     co: '4235 Company S.A.L',
     short: '4235 Company S.A.L',
-    legal: '4235 Company S.A.L · Official Property & Commercial Lessors',
+    legal: '4235 Company S.A.L · Property & Commercial Lessors',
     ar: 'شركة 4235 ش.م.ل · العقارات والتأجير التجاري',
     mof: 'Official MoF VAT Landlord · 11% VAT Schedule',
-    address: 'Riad El Solh, Beirut, Lebanon',
-    phone: 'Tel: 01/998550-1'
+    address: 'Msaytbeh, Beirut, Lebanon',
+    phone: 'Real Estate Operations'
   };
   const CO_RE_ALL = {
     co: 'Real Estate Group',
@@ -417,15 +417,28 @@
     return true;
   }
 
-  function companyBlockHtml(coKey) {
+  function companyBlockHtml(coKey, ctxOpt) {
     const L = CO_LEGAL[coKey] || CO_LEGAL.WTC;
+    const isDemo = ctxOpt ? stmtIsDemo(ctxOpt) : false;
+    const hk = stmtHooks();
+    const prof = (!isDemo && hk && typeof hk.coTaxProfile === 'function')
+      ? (hk.coTaxProfile(L.co || coKey) || hk.coTaxProfile(coKey))
+      : null;
+    const legalEn = (prof && prof.legal_en) || L.legal;
+    const legalAr = (prof && prof.legal_ar) || L.ar;
+    const mofLine = (prof && prof.mof_no) ? `MoF Tax / VAT Reg. No: ${prof.mof_no}` : L.mof;
+    const addrLine = (prof && (prof.address_en || prof.address)) || L.address;
+    const contactParts = [];
+    if (prof && prof.phone) contactParts.push(`Tel: ${prof.phone}`);
+    if (prof && prof.email) contactParts.push(`Email: ${prof.email}`);
+    const contactLine = contactParts.length ? contactParts.join(' · ') : L.phone;
     return `
       <div class="rdl-co-block">
-        <div class="rdl-co-legal">${esc(L.legal)}</div>
-        <div class="rdl-co-ar" dir="rtl">${esc(L.ar)}</div>
-        <div class="rdl-co-meta">${esc(L.mof)}</div>
-        <div class="rdl-co-meta">${esc(L.address)}</div>
-        ${L.phone ? `<div class="rdl-co-meta">${esc(L.phone)}</div>` : ''}
+        <div class="rdl-co-legal">${esc(legalEn)}</div>
+        <div class="rdl-co-ar" dir="rtl" data-no-i18n="1">${esc(legalAr)}</div>
+        <div class="rdl-co-meta">${esc(mofLine)}</div>
+        <div class="rdl-co-meta" data-no-i18n="1">${esc(addrLine)}</div>
+        ${contactLine ? `<div class="rdl-co-meta" data-no-i18n="1">${esc(contactLine)}</div>` : ''}
       </div>
     `;
   }
@@ -1227,17 +1240,34 @@
       });
     } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
       const re = E.computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true, company: effIndStateCo });
+      const leaseByCoTenant = new Map();
+      (re.leases || []).forEach(l => {
+        if (!l) return;
+        const lk = `${String(l.company || '').trim().toLowerCase()}|${String(l.tenant || '').trim().toLowerCase()}`;
+        if (!leaseByCoTenant.has(lk)) leaseByCoTenant.set(lk, l);
+      });
       (re.invoices || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const hasVat = Number(r.vat_usd || 0) > 0;
-        const taxSeq = (r.tax_seq && !/N\/A/i.test(r.tax_seq)) ? String(r.tax_seq) : String(r.id);
+        const taxSeq = (r.tax_seq && !/N\/A/i.test(r.tax_seq)) ? String(r.tax_seq).trim() : '';
+        const lk = `${String(r.company || '').trim().toLowerCase()}|${String(r.tenant || '').trim().toLowerCase()}`;
+        const leaseMatch = leaseByCoTenant.get(lk) || null;
+        const unitLbl = String(r.unit || (leaseMatch && leaseMatch.unit) || '').trim();
+        const vatRate = r.vat_rate != null ? Number(r.vat_rate) : (hasVat ? 11 : 0);
         pushSale({
-          id: r.id, date: r.date, co: r.company, ticket_no: r.id, invoice_no: taxSeq,
-          vat_inv: hasVat ? taxSeq : '',
+          id: r.id, date: r.date, co: r.company, ticket_no: r.id, invoice_no: r.id,
+          vat_inv: hasVat ? (taxSeq ? `${r.id} (${taxSeq})` : r.id) : '',
+          seq_no: taxSeq,
           customer: r.tenant, site: r.property || r.company,
-          product: `Lease Rent · ${r.period || 'Period'}`,
-          truck: r.tax_seq || '', driver: r.company,
+          product: unitLbl ? `Lease Rent · ${unitLbl}` : `Lease Rent · ${r.period || 'Period'}`,
+          unit_label: unitLbl || '-',
+          period_label: r.period || '',
+          frequency: (leaseMatch && leaseMatch.frequency) || '',
+          vat_rate: vatRate,
+          net_usd: Number(r.net_usd || 0),
+          audit_note: r.audit_note || '',
+          truck: taxSeq || '-', driver: r.company,
           qty: 1, vat_usd: r.vat_usd, total_usd: r.amount_ttc_usd,
-          is_credit: true, paid_usd: 0, pay_method: 'Lease Invoice'
+          is_credit: true, paid_usd: r.collected_usd || 0, pay_method: 'Lease Invoice'
         });
       });
       (re.sales || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
@@ -2292,14 +2322,15 @@
         });
       });
 
-      // Fallback if company has no vat_invoices rows (e.g. Lions Transport)
+      // Fallback if company has no vat_invoices rows (e.g. Lions Transport, Real Estate 4235)
       if (!invMap.size) {
-        salesAll.filter(r => !r.is_receipt_row).slice(0, 80).forEach(r => {
-          const key = String(r.vat_inv || r.ticket_no || r.id).trim();
+        salesAll.filter(r => !r.is_receipt_row).forEach(r => {
+          const key = String(ind === 'Real Estate & Property' ? (r.id || r.ticket_no || r.invoice_no) : (r.vat_inv || r.ticket_no || r.id)).trim();
           if (!key) return;
           if (!invMap.has(key)) {
             invMap.set(key, {
-              key, vat_inv: r.vat_inv || key, invoice_no: key,
+              key, vat_inv: r.vat_inv || key, invoice_no: r.invoice_no || key,
+              seq_no: r.seq_no || '',
               customer: r.customer, site: r.site, date: rowDate(r, basis), co: r.co,
               loads: 0, qty: 0, total: 0, vat: 0, rows: []
             });
@@ -2315,6 +2346,18 @@
         if (b.key === '2738') return 1;
         return _rdlCollator.compare(String(b.key), String(a.key));
       });
+      const _findInvoiceGroup = reqNo => {
+        const q = String(reqNo || '').trim();
+        if (!q) return null;
+        if (invMap.has(q)) return invMap.get(q);
+        const qLow = q.toLowerCase();
+        return invoiceList.find(g =>
+          String(g.key || '').toLowerCase() === qLow
+          || String(g.invoice_no || '').toLowerCase() === qLow
+          || String(g.vat_inv || '').toLowerCase() === qLow
+          || (g.seq_no && String(g.seq_no).toLowerCase() === qLow)
+        ) || null;
+      };
 
       const ticketCandidates = salesAll
         .filter(r => !r.is_receipt_row && r.ticket_no)
@@ -2493,7 +2536,16 @@
     }
 
     const d = _cachedCtxData;
-    if (!rdl.params.invoiceNo || !d.invMap.has(String(rdl.params.invoiceNo))) {
+    const hitInv = rdl.params.invoiceNo ? d.invoiceList.find(g => {
+      const q = String(rdl.params.invoiceNo).trim().toLowerCase();
+      return String(g.key || '').toLowerCase() === q
+        || String(g.invoice_no || '').toLowerCase() === q
+        || String(g.vat_inv || '').toLowerCase() === q
+        || (g.seq_no && String(g.seq_no).toLowerCase() === q);
+    }) : null;
+    if (hitInv) {
+      rdl.params.invoiceNo = hitInv.key;
+    } else if (!rdl.params.invoiceNo || !d.invMap.has(String(rdl.params.invoiceNo))) {
       const pref = d.invoiceList.find(x => x.key === '2738') || d.invoiceList[0];
       rdl.params.invoiceNo = pref ? pref.key : '';
     }
@@ -8564,11 +8616,174 @@
     `;
   }
 
+  function resolveStmtLbpRate(ctx, dateIso) {
+    const dt = String(dateIso || '').slice(0, 10);
+    const fxRows = (ctx && ctx.recs && Array.isArray(ctx.recs.fx_rates)) ? ctx.recs.fx_rates : [];
+    let bestDate = '';
+    let bestRate = 0;
+    for (let i = 0; i < fxRows.length; i++) {
+      const fx = fxRows[i];
+      if (!fx || fx.voided) continue;
+      const cur = String(fx.currency || fx.to_currency || 'LBP').toUpperCase();
+      if (cur !== 'LBP') continue;
+      const rVal = Number(fx.rate || fx.fx_rate || fx.lbp_rate || 0);
+      if (!(rVal > 1000)) continue;
+      const sd = String(fx.start_date || fx.date || '').slice(0, 10);
+      if (dt && sd && sd > dt) continue;
+      if (!bestRate || sd >= bestDate) {
+        bestDate = sd;
+        bestRate = rVal;
+      }
+    }
+    return bestRate || STMT_LBP_RATE;
+  }
+
+  function _numWordsEn(n) {
+    if (n === 0) return 'Zero';
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const under1000 = x => {
+      const parts = [];
+      const h = Math.floor(x / 100);
+      const rem = x % 100;
+      if (h > 0) parts.push(`${ones[h]} Hundred`);
+      if (rem >= 20) {
+        const t = Math.floor(rem / 10);
+        const o = rem % 10;
+        parts.push(o > 0 ? `${tens[t]}-${ones[o]}` : tens[t]);
+      } else if (rem > 0) {
+        parts.push(ones[rem]);
+      }
+      return parts.join(' ');
+    };
+    const scales = ['', 'Thousand', 'Million', 'Billion'];
+    const chunks = [];
+    let rem = Math.floor(n);
+    let idx = 0;
+    while (rem > 0) {
+      const chunk = rem % 1000;
+      if (chunk > 0) chunks.unshift(`${under1000(chunk)}${scales[idx] ? ' ' + scales[idx] : ''}`);
+      rem = Math.floor(rem / 1000);
+      idx += 1;
+    }
+    return chunks.join(' ').trim();
+  }
+
+  function _numWordsFr(n) {
+    if (n === 0) return 'zéro';
+    const u0 = ['', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf'];
+    const under100 = x => {
+      if (x < 20) return u0[x];
+      if (x < 70) {
+        const t = Math.floor(x / 10);
+        const o = x % 10;
+        const base = ['', '', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante'][t];
+        if (o === 0) return base;
+        return o === 1 ? `${base} et un` : `${base}-${u0[o]}`;
+      }
+      if (x < 80) {
+        const o = x - 60;
+        return o === 11 ? 'soixante et onze' : `soixante-${u0[o]}`;
+      }
+      const o = x - 80;
+      if (o === 0) return 'quatre-vingts';
+      return `quatre-vingt-${u0[o]}`;
+    };
+    const under1000 = (x, allowCentsS) => {
+      const h = Math.floor(x / 100);
+      const rem = x % 100;
+      const parts = [];
+      if (h === 1) parts.push('cent');
+      else if (h > 1) parts.push(`${u0[h]} cent${(rem === 0 && allowCentsS) ? 's' : ''}`);
+      if (rem > 0) parts.push(under100(rem));
+      return parts.join(' ');
+    };
+    const billions = Math.floor(n / 1000000000);
+    const millions = Math.floor((n % 1000000000) / 1000000);
+    const thousands = Math.floor((n % 1000000) / 1000);
+    const rest = n % 1000;
+    const parts = [];
+    if (billions > 0) parts.push(`${under1000(billions, false)} milliard${billions > 1 ? 's' : ''}`);
+    if (millions > 0) parts.push(`${under1000(millions, false)} million${millions > 1 ? 's' : ''}`);
+    if (thousands === 1) parts.push('mille');
+    else if (thousands > 1) parts.push(`${under1000(thousands, false)} mille`);
+    if (rest > 0) parts.push(under1000(rest, true));
+    const out = parts.join(' ').trim();
+    return out.charAt(0).toUpperCase() + out.slice(1);
+  }
+
+  function _numWordsAr(n) {
+    if (n === 0) return 'صفر';
+    const ones = ['', 'واحد', 'اثنان', 'ثلاثة', 'أربعة', 'خمسة', 'ستة', 'سبعة', 'ثمانية', 'تسعة', 'عشرة', 'أحد عشر', 'اثنا عشر', 'ثلاثة عشر', 'أربعة عشر', 'خمسة عشر', 'ستة عشر', 'سبعة عشر', 'ثمانية عشر', 'تسعة عشر'];
+    const tens = ['', '', 'عشرون', 'ثلاثون', 'أربعون', 'خمسون', 'ستون', 'سبعون', 'ثمانون', 'تسعون'];
+    const hundreds = ['', 'مئة', 'مئتان', 'ثلاثمئة', 'أربعمئة', 'خمسمئة', 'ستمئة', 'سبعمئة', 'ثمانمئة', 'تسعمئة'];
+    const under1000 = x => {
+      const h = Math.floor(x / 100);
+      const rem = x % 100;
+      const parts = [];
+      if (h > 0) parts.push(hundreds[h]);
+      if (rem >= 20) {
+        const o = rem % 10;
+        const t = Math.floor(rem / 10);
+        if (o > 0) parts.push(`${ones[o]} و${tens[t]}`);
+        else parts.push(tens[t]);
+      } else if (rem > 0) {
+        parts.push(ones[rem]);
+      }
+      return parts.join(' و');
+    };
+    const parts = [];
+    const mils = Math.floor(n / 1000000);
+    const ths = Math.floor((n % 1000000) / 1000);
+    const rest = n % 1000;
+    if (mils === 1) parts.push('مليون');
+    else if (mils === 2) parts.push('مليونان');
+    else if (mils >= 3 && mils <= 10) parts.push(`${under1000(mils)} ملايين`);
+    else if (mils > 10) parts.push(`${under1000(mils)} مليوناً`);
+    if (ths === 1) parts.push('ألف');
+    else if (ths === 2) parts.push('ألفان');
+    else if (ths >= 3 && ths <= 10) parts.push(`${under1000(ths)} آلاف`);
+    else if (ths > 10) parts.push(`${under1000(ths)} ألفاً`);
+    if (rest > 0) parts.push(under1000(rest));
+    return parts.join(' و');
+  }
+
+  function formatUsdAmountInWords(amountUsd, lang = 'en') {
+    const rawNum = Number(amountUsd || 0);
+    const isNeg = rawNum < -0.004;
+    const centsTotal = Math.round(Math.abs(rawNum) * 100);
+    const dollars = Math.floor(centsTotal / 100);
+    const cents = centsTotal % 100;
+    const lg = String(lang || 'en').slice(0, 2).toLowerCase();
+    if (lg === 'ar') {
+      const w = _numWordsAr(dollars);
+      const negPrefix = isNeg ? 'ناقص ' : '';
+      return cents > 0
+        ? `${negPrefix}${w} دولاراً أميركياً و${cents} سنتاً فقط لا غير`
+        : `${negPrefix}${w} دولاراً أميركياً فقط لا غير`;
+    }
+    if (lg === 'fr') {
+      const w = _numWordsFr(dollars);
+      const unit = dollars === 1 ? 'dollar américain' : 'dollars américains';
+      const negPrefix = isNeg ? 'Moins ' : '';
+      return cents > 0
+        ? `${negPrefix}${w} ${unit} et ${String(cents).padStart(2, '0')}/100 seulement`
+        : `${negPrefix}${w} ${unit} seulement`;
+    }
+    const w = _numWordsEn(dollars);
+    const unit = dollars === 1 ? 'US Dollar' : 'US Dollars';
+    const negPrefix = isNeg ? 'Negative ' : '';
+    return cents > 0
+      ? `${negPrefix}${w} ${unit} and ${String(cents).padStart(2, '0')}/100 Only`
+      : `${negPrefix}${w} ${unit} Only`;
+  }
+
   function render20SalesInvoice(meta, ctx) {
     const p = ctx.rdl.params;
     const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const isRe = ctx.ind === 'Real Estate & Property';
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
-    const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || {
+    const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList.find(g => String(g.seq_no || '').toLowerCase() === String(p.invoiceNo || '').toLowerCase()) || ctx.invoiceList[0] || {
       key: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', vat_inv: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', invoice_no: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '',
       customer: ctx.customers[0] || dt.custDefault,
       site: dt.siteDefault, date: p.to || '2026-10-21', co: ctx.co, loads: 0, qty: 0, total: 0, vat: 0, rows: []
@@ -8579,22 +8794,96 @@
     const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
     const totVat = rows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
-    const totSub = Math.max(0, totGross - totVat);
+    const totSub = isRe
+      ? rows.reduce((s, r) => s + (r.net_usd != null ? Number(r.net_usd || 0) : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0)
+      : (totGross - totVat);
     const dash = isMfg ? '—' : '-';
+    const isDemo = stmtIsDemo(ctx);
+    const hk = stmtHooks();
+    const partyProf = (!isDemo && hk && typeof hk.resolvePartyTaxProfile === 'function')
+      ? hk.resolvePartyTaxProfile(grp.customer, 'customer')
+      : { name: grp.customer, officialName: grp.customer, mofNo: '', missingMof: false, dupHolder: '' };
+    const billName = partyProf.officialName || grp.customer || dash;
+    const billSub = (partyProf.officialName && partyProf.officialName !== grp.customer)
+      ? `Tenant Account: ${grp.customer}${grp.site ? ` · Property: ${grp.site}` : ''}`
+      : (grp.site ? `${isMfg ? 'Site' : (isRe ? 'Property' : 'Location')}: ${grp.site}` : '');
+    const billMofLine = partyProf.mofNo
+      ? `MoF Tax / VAT Reg. No: ${partyProf.mofNo}`
+      : ((isRe && totVat > 0.005 && !isDemo) ? 'MoF Tax / VAT Reg. No: Pending Verification' : (isMfg ? 'Account 411 · Trade Customer' : dt.custSubTitle));
+    const lbpRate = resolveStmtLbpRate(ctx, grp.date);
+    const vatLbp = Math.round(totVat * lbpRate);
+    const invWordsEn = formatUsdAmountInWords(totGross, 'en');
+    const invWordsFr = formatUsdAmountInWords(totGross, 'fr');
+    const invWordsAr = formatUsdAmountInWords(totGross, 'ar');
 
-    return `
-      ${sheetHeaderHtml(meta, grp.co || ctx.co, `Invoice ${grp.vat_inv || grp.invoice_no || '-'} · Customer ${grp.customer || '-'} · Date ${grp.date}`)}
-      <div class="rdl-doc-top">
-        ${companyBlockHtml(grp.co || ctx.co)}
-        ${metaRowsHtml([
-          [canTax20 ? 'VAT Invoice No' : 'Invoice No', grp.vat_inv || grp.invoice_no],
-          ['Invoice Date', grp.date],
-          [isMfg ? 'Loads' : dt.txCol, `${rows.length} ${rows.length === 1 ? dt.txSingular : dt.txPlural}`],
-          [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`]
-        ])}
-      </div>
-      ${partyBlockHtml('Bill To / الفاتورة إلى', grp.customer, grp.site ? `${isMfg ? 'Site' : 'Location'}: ${grp.site}` : '', isMfg ? 'Account 411 · Trade Customer' : dt.custSubTitle, '')}
+    const stObj = (ctx && ctx.state) || (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || null;
+    const retCtx20 = stObj && stObj.stmt20ReturnCtx
+      && String(stObj.stmt20ReturnCtx.company || '') === String(stObj.company || '')
+      && (stObj.stmt20ReturnCtx.userIdx === undefined || stObj.stmt20ReturnCtx.userIdx === stObj.activeUserIdx)
+      ? stObj.stmt20ReturnCtx
+      : null;
+    const retBtn20Html = retCtx20
+      ? `<div class="rdl-stmt16-actions no-print" style="margin-bottom:10px"><div class="rdl-stmt16-btn-group"><button type="button" class="rdl-tb-btn" data-stmt20-return="1"><span>Back to</span> <span>${esc(retCtx20.label || 'Rent Invoices')}</span></button></div><div class="rdl-stmt16-btn-group"><button type="button" class="rdl-tb-btn" onclick="window.print()"><span>Print Official Invoice</span></button></div></div>`
+      : '';
 
+    const complianceAlertHtml = (!isDemo && canTax20 && totVat > 0.005 && (!partyProf.mofNo || partyProf.dupHolder))
+      ? `<div class="rdl-20-tax-alert no-print" id="rdl20TaxComplianceBar">
+          <div>
+            <strong>${partyProf.dupHolder ? 'Duplicate Tenant MoF VAT # Detected' : 'Tenant MoF VAT # Missing'}</strong>
+            <span>${partyProf.dupHolder
+              ? `MoF # ${esc(partyProf.mofNo)} collides with "${esc(partyProf.dupHolder)}". Assign the tenant's verified MoF registration before filing.`
+              : `Taxable 11% VAT invoice for "${esc(billName)}" is missing the tenant MoF VAT registration number.`}</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" data-fix-party-mof="${esc(grp.customer)}" data-party-role="customer">Set Official MoF VAT #</button>
+        </div>`
+      : '';
+
+    const tableHtml = isRe
+      ? `
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Invoice / Seq #</th>
+            <th>Date</th>
+            <th>Leased Unit / Property</th>
+            <th>Billing Period &amp; Schedule</th>
+            <th class="num">Net Rent ($)</th>
+            <th class="num">VAT %</th>
+            <th class="num">VAT ($)</th>
+            <th class="num">Total TTC ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => {
+            const tot = Number(r.total_usd || 0);
+            const vat = Number(r.vat_usd || 0);
+            const sub = r.net_usd != null ? Number(r.net_usd || 0) : (tot - vat);
+            const vRate = r.vat_rate != null ? Number(r.vat_rate) : (vat > 0.005 ? 11 : 0);
+            return `
+              <tr>
+                <td class="mono">${esc(r.id || r.invoice_no)}${r.seq_no ? `<div class="muted" style="font-size:10.5px">${esc(r.seq_no)}</div>` : ''}</td>
+                <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
+                <td><strong>${esc(r.unit_label || r.product || '-')}</strong>${r.site ? `<div class="muted" style="font-size:10.5px">${esc(r.site)}</div>` : ''}</td>
+                <td>${esc(r.period_label || r.product || '-')}${r.audit_note ? `<div class="muted" style="font-size:10.5px">${esc(r.audit_note)}</div>` : ''}</td>
+                <td class="num">${canTax20 ? fmtUsd(sub, 2) : 'Restricted'}</td>
+                <td class="num mono">${canTax20 ? `${fmtNum(vRate, 0)}%` : 'Restricted'}</td>
+                <td class="num">${canTax20 ? fmtUsd(vat, 2) : 'Restricted'}</td>
+                <td class="num bold">${fmtUsd(tot, 2)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="4">Grand Total</td>
+            <td class="num">${canTax20 ? fmtUsd(totSub, 2) : 'Restricted'}</td>
+            <td></td>
+            <td class="num">${canTax20 ? fmtUsd(totVat, 2) : 'Restricted'}</td>
+            <td class="num">${fmtUsd(totGross, 2)}</td>
+          </tr>
+        </tfoot>
+      </table>`
+      : `
       <table class="rdl-table">
         <thead>
           <tr>
@@ -8615,7 +8904,7 @@
           ${rows.map(r => {
             const tot = Number(r.total_usd || 0);
             const vat = Number(r.vat_usd || 0);
-            const sub = Math.max(0, tot - vat);
+            const sub = tot - vat;
             return `
               <tr>
                 <td class="mono">${esc(r.ticket_no || r.invoice_no || dash)}</td>
@@ -8643,8 +8932,61 @@
             <td class="num">${fmtUsd(totGross, 2)}</td>
           </tr>
         </tfoot>
-      </table>
-      ${signatureRowHtml('Prepared by / إعداد', 'Customer Signature / توقيع الزبون')}
+      </table>`;
+
+    const summaryTotalsHtml = `
+      <div class="rdl-20-bottom-grid" id="rdl20TotalsSummary">
+        <div class="rdl-20-words-box" id="rdl20AmountInWords">
+          <div class="rdl-20-words-lbl">Total Amount in Words</div>
+          <div class="rdl-20-words-val rdl-word-en" data-no-i18n="1">${esc(invWordsEn)}</div>
+          <div class="rdl-20-words-val rdl-word-fr" data-no-i18n="1">${esc(invWordsFr)}</div>
+          <div class="rdl-20-words-val rdl-word-ar" dir="rtl" data-no-i18n="1">${esc(invWordsAr)}</div>
+          ${totVat > 0.005 ? `<div class="rdl-20-words-ar rdl-word-sub-ar" dir="rtl" data-no-i18n="1">${esc(invWordsAr)}</div>` : ''}
+        </div>
+        <table class="rdl-meta-box rdl-20-totals-box">
+          <tbody>
+            <tr>
+              <td class="rdl-meta-lbl">Subtotal Excl. VAT</td>
+              <td class="rdl-meta-val mono">${canTax20 ? fmtUsd(totSub, 2) : 'Restricted'}</td>
+            </tr>
+            <tr>
+              <td class="rdl-meta-lbl">VAT 11% (USD)</td>
+              <td class="rdl-meta-val mono">${canTax20 ? fmtUsd(totVat, 2) : 'Restricted'}</td>
+            </tr>
+            ${(canTax20 && totVat > 0.005) ? `
+            <tr class="rdl-20-vat-lbp-row">
+              <td class="rdl-meta-lbl">VAT 11% in LBP (@ ${fmtNum(lbpRate, 0)} LL/$)</td>
+              <td class="rdl-meta-val mono bold" id="rdl20VatLbpVal">${fmtNum(vatLbp, 0)} L.L.</td>
+            </tr>` : (!canTax20 ? `
+            <tr class="rdl-20-vat-lbp-row">
+              <td class="rdl-meta-lbl">VAT 11% in LBP (@ ${fmtNum(lbpRate, 0)} LL/$)</td>
+              <td class="rdl-meta-val mono" id="rdl20VatLbpVal">Restricted</td>
+            </tr>` : '')}
+            <tr>
+              <td class="rdl-meta-lbl bold">Total Invoice TTC</td>
+              <td class="rdl-meta-val bold mono">${fmtUsd(totGross, 2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+
+    return `
+      ${sheetHeaderHtml(meta, grp.co || ctx.co, `Invoice ${grp.vat_inv || grp.invoice_no || '-'} · Customer ${billName || '-'} · Date ${grp.date}`)}
+      ${retBtn20Html}
+      ${complianceAlertHtml}
+      <div class="rdl-doc-top">
+        ${companyBlockHtml(grp.co || ctx.co, ctx)}
+        ${metaRowsHtml([
+          [canTax20 ? 'VAT Invoice No' : 'Invoice No', grp.vat_inv || grp.invoice_no],
+          ['Invoice Date', grp.date],
+          [isRe ? 'Billing Lines' : (isMfg ? 'Loads' : dt.txCol), `${rows.length} ${rows.length === 1 ? (isRe ? 'billing period' : dt.txSingular) : (isRe ? 'billing periods' : dt.txPlural)}`],
+          [isRe ? 'Tax Regime' : (isMfg ? 'Dispatched Volume' : dt.volKpi), isRe ? (totVat > 0.005 ? 'MoF 11% VAT Sequential' : '0% Residential / Exempt') : `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`]
+        ])}
+      </div>
+      ${partyBlockHtml(isRe ? 'Bill To / Tenant (المستأجر)' : 'Bill To / الفاتورة إلى', billName, billSub, billMofLine, '')}
+      ${tableHtml}
+      ${summaryTotalsHtml}
+      <div id="rdl20SignatureStrip">${signatureRowHtml(isRe ? 'Landlord / Authorized Signatory' : 'Prepared by / إعداد', isRe ? 'Tenant Acknowledgment / توقيع المستأجر' : 'Customer Signature / توقيع الزبون')}</div>
       ${sheetFooterHtml(grp.co || ctx.co, 1, 1)}
     `;
   }
@@ -11343,12 +11685,17 @@
       ];
     } else if (stmtId === '20') {
       windowMode = 'document';
-      const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || { key: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', vat_inv: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', invoice_no: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', customer: ctx.customers[0] || dt.custDefault, site: dt.siteDefault, date: p.to || '2026-10-21', rows: [] };
+      const isReSnap = ctx.ind === 'Real Estate & Property';
+      const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList.find(g => String(g.seq_no || '').toLowerCase() === String(p.invoiceNo || '').toLowerCase()) || ctx.invoiceList[0] || { key: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', vat_inv: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', invoice_no: stmtIsDemo(ctx) ? (isMfg ? '2738' : 'INV-001') : '', customer: ctx.customers[0] || dt.custDefault, site: dt.siteDefault, date: p.to || '2026-10-21', rows: [] };
       const rows = grp.rows || [];
       const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
       const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
       const totVat = rows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
-      const totSub = Math.max(0, totGross - totVat);
+      const totSub = isReSnap
+        ? rows.reduce((s, r) => s + (r.net_usd != null ? Number(r.net_usd || 0) : (Number(r.total_usd || 0) - Number(r.vat_usd || 0))), 0)
+        : (totGross - totVat);
+      const lbpRateSnap = resolveStmtLbpRate(ctx, grp.date || p.to);
+      const vatLbpSnap = Math.round(totVat * lbpRateSnap);
       const invRef = grp.vat_inv || grp.invoice_no || 'INV';
       windowLabelEn = `Invoice ${invRef} (${grp.date || p.to})`;
       windowLabelAr = `فاتورة ${invRef} (${grp.date || p.to})`;
@@ -11361,7 +11708,7 @@
         lineCount: rows.length,
         dispatchedQty: Number(totQty.toFixed(dt.qtyDp)),
         qtyUnit: dt.qtyUnit,
-        ...(canTax20Snap ? { subtotalExclTaxUsd: Number(totSub.toFixed(2)), vatUsd: Number(totVat.toFixed(2)) } : {}),
+        ...(canTax20Snap ? { subtotalExclTaxUsd: Number(totSub.toFixed(2)), vatUsd: Number(totVat.toFixed(2)), vatLbp: vatLbpSnap, lbpRate: lbpRateSnap } : {}),
         invoiceTotalUsd: Number(totGross.toFixed(2))
       };
       kpis = [
@@ -12363,6 +12710,39 @@
               row: rowObj
             });
           }
+          return;
+        }
+        const retBtn20 = ev.target && ev.target.closest ? ev.target.closest('[data-stmt20-return]') : null;
+        if (retBtn20 && root.contains(retBtn20)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const ent = window.MFG_ENTERPRISE;
+          const stObj = (ent && ent.STATE) || window.STATE;
+          const ret = stObj && stObj.stmt20ReturnCtx;
+          if (ret && ret.view && (ret.userIdx === undefined || ret.userIdx === stObj.activeUserIdx) && ent && typeof ent.setView === 'function') {
+            stObj.stmt20ReturnCtx = null;
+            if (ret.chipFilter != null) stObj.chipFilter = ret.chipFilter;
+            if (ret.search != null) stObj.search = ret.search;
+            ent.setView(ret.view, { reset: false });
+            setTimeout(() => {
+              const wsEl = document.getElementById('workspace');
+              if (ret.scrollTop > 0 && wsEl) wsEl.scrollTop = ret.scrollTop;
+              else if (ret.panelId) {
+                const pnl = document.getElementById(ret.panelId);
+                if (pnl && typeof pnl.scrollIntoView === 'function') pnl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }, 60);
+          }
+          return;
+        }
+        const fixMof20Btn = ev.target && ev.target.closest ? ev.target.closest('[data-fix-party-mof]') : null;
+        if (fixMof20Btn && root.contains(fixMof20Btn)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const pNm = fixMof20Btn.getAttribute('data-fix-party-mof') || '';
+          const pRl = fixMof20Btn.getAttribute('data-party-role') || 'customer';
+          const hk = stmtHooks();
+          if (hk && typeof hk.openTenantTaxProfileQuickFix === 'function') hk.openTenantTaxProfileQuickFix(pNm, pRl);
           return;
         }
         const retBtn = ev.target && ev.target.closest ? ev.target.closest('[data-stmt16-return]') : null;
