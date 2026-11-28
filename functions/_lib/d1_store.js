@@ -4188,6 +4188,17 @@ function enforceStrictNumericLockFromOrig(orig, updated) {
       delete updated[k];
     }
   }
+  // Which ticket rates are Admin-overridden stays as it was (the rate basis mat_basis / trans_basis rides on them)
+  const RATE_OV = ['f_unitprice', 'f_transunitprice'];
+  const oOv = Array.isArray(orig.admin_overrides) ? orig.admin_overrides : [];
+  const uOv = Array.isArray(updated.admin_overrides) ? updated.admin_overrides : [];
+  const oRate = oOv.filter(k => RATE_OV.includes(k));
+  const uRate = uOv.filter(k => RATE_OV.includes(k));
+  if (oRate.slice().sort().join('|') !== uRate.slice().sort().join('|')) {
+    const nxt = uOv.filter(k => !RATE_OV.includes(k)).concat(oRate);
+    if (nxt.length) updated.admin_overrides = nxt;
+    else delete updated.admin_overrides;
+  }
   return updated;
 }
 
