@@ -9,15 +9,25 @@
 //      equals the whole document the cloud would have sent (add, edit, delete, kiosk punches, top-level parts).
 //   4. A writer that does not know the index (the top-up's direct write) leaves the stamps apart and the next read
 //      rebuilds the index: still only the changed entries, still equal.
-//   5. A company-scoped seat never receives another company's entry in a partial answer, loses an entry that leaves
-//      its scope, and starts again from the whole document when its scope changes.
+//   5. A company-scoped seat never receives another company's entry in a partial answer, nor its id, loses an entry
+//      that leaves its scope, and starts again from the whole document when its scope changes.
 //   6. Bounds: wrong epoch, a revision ahead of the cloud or under the floor, too many changes, a read that fell
 //      inside a save: the whole document, never a wrong partial answer.
 //   7. "Someone saved before you" comes back as changed entries.
 //   8. The comparison the cloud asks for: clean ones are counted, one failed comparison switches partial answers off
-//      until the counter is reset; `mode` 0 does the same.
+//      until the counter is reset; `mode` 0 does the same. Only a seat that sees the whole store is asked and believed.
 //   9. Edit history: a live entry travels without it, a voided one with it; a device that never held the history
 //      saves an entry and the stored history is exactly what an older device would have left (twin stores compared).
+//  13. A writer that rewrites the stored text under the stamp it found (a data release) is noticed: the index is
+//      anchored on the text itself, not on the stamp.
+//  14. What a scoped seat is told about entries it cannot see: nothing. The rule that decides it reads only the
+//      fields kept on the index line.
+//  15. An attendance entry the device tells apart by its edit history keeps it whenever the device's answer would
+//      change without it.
+//  16. A database restore (the cloud back at an earlier state): a device holding a copy from the lost timeline fails
+//      the digest check and reads the whole document.
+//  17. A document a copy keyed by id cannot stand for (a repeated id) gets no partial answers; the `mode` values;
+//      a page that cannot follow the cloud twice stops asking.
 // Uses in-memory node:sqlite (Node 22.5+). Touches nothing live.
 // Run: node build/verify_row_sync_edge.mjs
 
@@ -27,9 +37,13 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { onRequest } from '../functions/app/api/[[route]].js';
 import { signEdgeSession } from '../functions/_lib/security.js';
-import { effectiveMinSyncShellVer, handleSync, readEdgeKvDoc, writeEdgeKvDoc } from '../functions/_lib/d1_store.js';
+import {
+  effectiveMinSyncShellVer, handleSync, isShiftBackfillBloatedSeedAttRow, readEdgeKvDoc, scopedSeatSeesCrRow, scopedSeatSeesKioskPunch, writeEdgeKvDoc
+} from '../functions/_lib/d1_store.js';
 import { DEPLOYED_SHELL_VER } from '../functions/_lib/deployed_shell.js';
-import { ROW_SYNC_AUDIT_AFTER, ROW_SYNC_MAX_DELTA_ROWS, collectRowMaps } from '../functions/_lib/row_sync.js';
+import {
+  ROW_SYNC_AUDIT_AFTER, ROW_SYNC_AUDIT_TARGET, ROW_SYNC_MAX_DELTA_ROWS, ROW_VIS_FIELDS, collectRowMaps, docAnchorOf, hashPair, visStubOf
+} from '../functions/_lib/row_sync.js';
 
 // ---- the device code, cut out of app.js -----------------------------------------------------------------------------
 // The app source this checkout is paired with (ISABI_APP_SRC as build/sync_app.py reads it, else the checkout beside
@@ -64,8 +78,10 @@ function makeGlue() {
     const ROW_SYNC_CLIENT_ON = true;
     const ROW_MIRROR_MAX_AGE_MS = 12 * 60 * 60 * 1000;
     const ROW_MIRROR_MAX_DELTAS = 400;
+    const ROW_SYNC_MAX_STRIKES = 2;
     let _rowMirror = null;
     let _rowAuditReport = null;
+    let _rowSyncStrikes = 0;
     let _cloudTrailsOnDemand = false;
     ${GLUE_SRC}
     return {
@@ -73,6 +89,7 @@ function makeGlue() {
       settle: settleRowSyncAnswer,
       mirror: () => _rowMirror,
       report: () => _rowAuditReport,
+      strikes: () => _rowSyncStrikes,
       trails: () => _cloudTrailsOnDemand
     };
   `)(RowSyncClient, DOC_KEY);
@@ -183,6 +200,8 @@ async function makeWorld() {
     return row ? { ts: row.updated_at, doc: JSON.parse(row.payload_json), chars: row.payload_json.length, row } : null;
   };
   const meta = () => d1.one("SELECT * FROM store_row_meta WHERE doc_key = 'mfg_web_store'");
+  // The anchor the index must carry to describe the stored document: its stamp, its length, a SHA-256 of its text.
+  const anchor = async () => docAnchorOf(await readEdgeKvDoc(d1, DOC_KEY));
   const idxLive = () => d1.rows("SELECT bucket, row_id, rev, hash FROM store_row_index WHERE doc_key = 'mfg_web_store' AND deleted = 0");
   // A device on the older protocol: whole reads, delta or whole saves, no row sync fields.
   const legacy = {
@@ -193,7 +212,7 @@ async function makeWorld() {
       return api('sync', { token, body: Object.assign({ op: 'patch', key: '', ackOnly: true, ifMatchUpdatedAt: ts, patch: { [DOC_KEY]: doc } }, extra) });
     }
   };
-  return { d1, env, tok, api, buildTicketPatch, stored, meta, idxLive, legacy };
+  return { d1, env, tok, api, buildTicketPatch, stored, meta, anchor, idxLive, legacy };
 }
 
 // A device on the new protocol, driven by the glue cut out of app.js.
@@ -218,6 +237,7 @@ class Device {
     if (!this.g.settle(j, this.scopeKey, sent)) {
       const again = await this.read({ whole: true });
       again.refetched = true;
+      again.refusedDelta = rawDelta;
       return again;
     }
     if (j.etag && !j.notModified) this.etag = j.etag;
@@ -354,11 +374,13 @@ console.log('\n[2. First read: the whole document and an anchor]');
   const st = await W.stored();
   const m = W.meta();
   const distinct = Array.from(collectRowMaps(st.doc).values()).reduce((n, mm) => n + mm.size, 0);
-  ok('2a. the first read is the whole document with rowSyncV1 and an anchor (epoch, revision, scope, counts)',
-    r.kind === 'whole' && r.json.rowSyncV1 === true && r.json.rowSync.epoch && Number.isInteger(r.json.rowSync.rev) && r.json.rowSync.scope && r.json.rowSync.counts['cr:sales_tickets'] === 301,
+  ok('2a. the first read is the whole document with rowSyncV1 and an anchor (epoch, revision, scope, a count and digest per row set)',
+    r.kind === 'whole' && r.json.rowSyncV1 === true && r.json.rowSync.epoch && Number.isInteger(r.json.rowSync.rev) && r.json.rowSync.scope
+      && /^301\.[0-9a-z]+\.[0-9a-z]+$/.test(String(r.json.rowSync.sums['cr:sales_tickets'])) && r.json.rowSync.counts === undefined,
     r.json.rowSync);
-  ok('2b. the index describes the stored document: one line per entry, its stamp equal to the document stamp',
-    m && m.doc_ts === st.ts && Number(m.rev) === 1 && W.idxLive().length === distinct, { meta: m, idx: W.idxLive().length, distinct });
+  ok('2b. the index describes the stored document: one line per entry, anchored on the stamp, length and hash of the stored text',
+    m && m.doc_ts === await W.anchor() && m.doc_ts.startsWith(st.ts + '|' + st.chars.toString(36) + '|') && Number(m.rev) === 1 && W.idxLive().length === distinct,
+    { meta: m, idx: W.idxLive().length, distinct });
   ok('2c. the device holds a copy and the document rebuilt from it equals the one it was sent',
     Boolean(owner.g.mirror()) && firstDiff(RowSyncClient.toDoc(owner.g.mirror()), r.doc) === '', firstDiff(RowSyncClient.toDoc(owner.g.mirror() || { top: {}, sets: new Map() }), r.doc));
   const nm = await owner.read({ etag: true });
@@ -379,7 +401,7 @@ console.log('\n[3. After another device saves: only the changed entries]');
   const m = W.meta();
   const line = W.d1.one("SELECT rev, deleted FROM store_row_index WHERE bucket = 'cr:sales_tickets' AND row_id = 'st-wtc-new-1'");
   ok('3a. the save moved the index and its stamp together (old-protocol device saving)',
-    p.status === 200 && !p.json.conflict && m.doc_ts === st.ts && Number(m.rev) === Number(before.rev) + 1 && line && Number(line.rev) === Number(m.rev),
+    p.status === 200 && !p.json.conflict && m.doc_ts === await W.anchor() && m.doc_ts.startsWith(st.ts + '|') && Number(m.rev) === Number(before.rev) + 1 && line && Number(line.rev) === Number(m.rev),
     { p: p.json, meta: m, line });
   const r = await owner.read({ etag: true });
   const ids = deltaIds(r.delta);
@@ -409,12 +431,12 @@ console.log('\n[4. A writer that does not know the index (the top-up writing the
   doc.updatedAt = ts;
   await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(doc), ts, 'system-reconcile');
   const mBefore = W.meta();
-  ok('4a. after a direct write the two stamps are apart', mBefore.doc_ts !== ts, mBefore);
+  ok('4a. after a direct write the index no longer carries the document\'s anchor', mBefore.doc_ts !== await W.anchor() && !mBefore.doc_ts.startsWith(ts + '|'), mBefore);
   const r = await owner.read();
   const ids = deltaIds(r.delta);
   const mAfter = W.meta();
   ok('4b. the next read rebuilds the index and still returns only the three changes',
-    r.kind === 'partial' && sameList(ids.rows, ['sales_tickets/st-wtc-6', 'sales_tickets/st-wtc-direct-1']) && sameList(ids.gone, ['sales_tickets/st-wtc-5']) && mAfter.doc_ts === ts,
+    r.kind === 'partial' && sameList(ids.rows, ['sales_tickets/st-wtc-6', 'sales_tickets/st-wtc-direct-1']) && sameList(ids.gone, ['sales_tickets/st-wtc-5']) && mAfter.doc_ts === await W.anchor(),
     { kind: r.kind, ids, mAfter });
   ok('4c. rebuilt document equals the whole one after the direct write', firstDiff(r.doc, await wholeNow(W.tok.owner)) === '', firstDiff(r.doc, await wholeNow(W.tok.owner)));
   const live = W.idxLive().length;
@@ -431,8 +453,8 @@ console.log('\n[5. A company-scoped seat]');
   await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-bbc-2', company: 'BBConstruction', date: '2026-11-20', customer: 'ZzBbcCust 2', total: 31337, notes: 'BBC-ONLY-MARKER edited', source: 'app', modified_at: nextTs() }] } });
   const r1 = await wtc.read();
   const ids1 = deltaIds(r1.delta);
-  ok('5b. another company\'s change reaches the scoped seat as an id only, never as an entry',
-    r1.kind === 'partial' && ids1.rows.length === 0 && sameList(ids1.gone, ['sales_tickets/st-bbc-2']) && !r1.txt.includes('BBC-ONLY-MARKER') && !r1.txt.includes('31337'), { ids1 });
+  ok('5b. another company\'s change does not reach the scoped seat at all: no entry, no id, no trace of it in the answer',
+    r1.kind === 'partial' && ids1.rows.length === 0 && ids1.gone.length === 0 && !r1.txt.includes('st-bbc-') && !r1.txt.includes('BBC-ONLY-MARKER') && !r1.txt.includes('31337'), { ids1 });
   ok('5c. the scoped seat\'s rebuilt document equals its whole one', firstDiff(r1.doc, await wholeNow(W.tok.wtc)) === '', firstDiff(r1.doc, await wholeNow(W.tok.wtc)));
 
   await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-9', company: 'BBConstruction', date: '2026-11-20', customer: 'ZzCust 9', total: 109, source: 'app', modified_at: nextTs() }] } });
@@ -444,6 +466,22 @@ console.log('\n[5. A company-scoped seat]');
   const r3 = await wtc.read();
   ok('5e. when it moves back the scoped seat receives it again',
     r3.kind === 'partial' && sameList(deltaIds(r3.delta).rows, ['sales_tickets/st-wtc-9']) && firstDiff(r3.doc, await wholeNow(W.tok.wtc)) === '', deltaIds(r3.delta));
+
+  // An entry that left the seat's company some time ago: the other company's later edits to it are not reported.
+  await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-11', company: 'BBConstruction', date: '2026-11-20', customer: 'ZzCust 11', total: 111, source: 'app', modified_at: nextTs() }] } });
+  const rMoved = await wtc.read();
+  await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-11', company: 'BBConstruction', date: '2026-11-20', customer: 'ZzCust 11', total: 112, notes: 'BBC-ONLY-MARKER later edit', source: 'app', modified_at: nextTs() }] } });
+  const rLater = await wtc.read();
+  ok('5e2. once the seat has been told an entry left its company, the other company\'s later edits to it are not mentioned',
+    sameList(deltaIds(rMoved.delta).gone, ['sales_tickets/st-wtc-11']) && rLater.kind === 'partial' && deltaIds(rLater.delta).gone.length === 0 && deltaIds(rLater.delta).rows.length === 0
+      && !rLater.txt.includes('st-wtc-11') && firstDiff(rLater.doc, await wholeNow(W.tok.wtc)) === '', { moved: deltaIds(rMoved.delta), later: deltaIds(rLater.delta) });
+  // Deletes: the seat's own entry is reported gone, another company's is not mentioned.
+  await W.legacy.patch({ _deletedCrIds: { sales_tickets: ['st-bbc-7', 'st-wtc-12'], expenses: ['ex-bbc'] }, _deletedPunchIds: ['kp-bbc-1'] });
+  const rDel = await wtc.read();
+  ok('5e3. a deleted entry is reported gone to the seat that could see it, and another company\'s deleted entries and punches are not mentioned',
+    rDel.kind === 'partial' && sameList(deltaIds(rDel.delta).gone, ['sales_tickets/st-wtc-12']) && !rDel.txt.includes('st-bbc-7') && !rDel.txt.includes('ex-bbc') && !rDel.txt.includes('kp-bbc-1')
+      && firstDiff(rDel.doc, await wholeNow(W.tok.wtc)) === '', deltaIds(rDel.delta));
+  ok('5e4. the size of the whole store is told to a seat that sees the whole store only', rDel.json.storeChars === undefined && r0.json.storeChars === undefined, { a: rDel.json.storeChars, b: r0.json.storeChars });
 
   W.d1.db.prepare("UPDATE users SET companies = 'WTC,BBConstruction' WHERE id = 'u7'").run();
   const r4 = await wtc.read();
@@ -684,6 +722,327 @@ console.log('\n[11. A device without the history saves: the stored history is wh
   ok('11e. the history of the live entry was not in the new device\'s first read', liveB._pre_void_edits === undefined && liveB._pre_void_orig === undefined, liveB);
 }
 
+console.log('\n[13. A writer that rewrites the stored text under the stamp it found (a data release)]');
+{
+  const dev = new Device(W, W.tok.owner, 'owner-samestamp');
+  await dev.read();
+  const metaBefore = W.meta();
+  const st = await W.stored();
+  const doc = JSON.parse(JSON.stringify(st.doc));
+  // Same stamp, same number of entries, same length of text: one entry's content rewritten (the release keeping
+  // the newer of two rows). Only the hash of the text tells the two documents apart.
+  doc.customRecords.sales_tickets.find(r => r.id === 'st-wtc-20').total = 921;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(doc), st.ts, 'seed-export');
+  const stAfter = await W.stored();
+  ok('13a. the store was rewritten under the same stamp, to a text of the same length',
+    stAfter.ts === st.ts && stAfter.chars === st.chars && stAfter.doc.customRecords.sales_tickets.find(r => r.id === 'st-wtc-20').total === 921, { ts: stAfter.ts, chars: [st.chars, stAfter.chars] });
+  const r = await dev.read();
+  const ids = deltaIds(r.delta);
+  const mAfter = W.meta();
+  ok('13b. the next read notices (the anchor is the text, not the stamp), rebuilds the index and returns the rewritten entry',
+    r.kind === 'partial' && !r.refetched && sameList(ids.rows, ['sales_tickets/st-wtc-20']) && Number(mAfter.rev) === Number(metaBefore.rev) + 1 && mAfter.doc_ts === await W.anchor(),
+    { kind: r.kind, ids, rev: [metaBefore.rev, mAfter.rev] });
+  ok('13c. the device\'s rebuilt document equals the whole one', firstDiff(r.doc, await wholeNow(W.tok.owner)) === '', firstDiff(r.doc, await wholeNow(W.tok.owner)));
+
+  // Same stamp again, this time entries removed (the release dropping purged rows): gone ids, no failed comparison.
+  const doc2 = JSON.parse(JSON.stringify(stAfter.doc));
+  doc2.customRecords.sales_tickets = doc2.customRecords.sales_tickets.filter(x => x.id !== 'st-wtc-21' && x.id !== 'st-wtc-22');
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(doc2), st.ts, 'seed-export');
+  const r2 = await dev.read();
+  const m2 = W.meta();
+  ok('13d. entries removed under the same stamp arrive as gone ids; nothing is reported as a failed comparison and partial answers stay on',
+    r2.kind === 'partial' && !r2.refetched && sameList(deltaIds(r2.delta).gone, ['sales_tickets/st-wtc-21', 'sales_tickets/st-wtc-22']) && Number(m2.audit_bad) === 0 && dev.g.report() === null && dev.g.strikes() === 0
+      && firstDiff(r2.doc, await wholeNow(W.tok.owner)) === '', { kind: r2.kind, ids: deltaIds(r2.delta), m2 });
+
+  // A save after such a rewrite (again of the same length): the save does not take the stale index for current.
+  const doc3 = JSON.parse(JSON.stringify(doc2));
+  doc3.customRecords.sales_tickets.find(x => x.id === 'st-wtc-23').total = 321;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(doc3), st.ts, 'seed-export');
+  const p = await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-after-rewrite', company: 'WTC', date: '2026-11-27', customer: 'ZzAfter', total: 8, source: 'app' }] } });
+  const r3 = await dev.read();
+  const ids3 = deltaIds(r3.delta);
+  ok('13e. a save that follows a same-stamp rewrite leaves the index behind, and the next read hands out both the rewritten entry and the saved one',
+    p.status === 200 && !p.json.conflict && r3.kind === 'partial' && !r3.refetched && ids3.rows.includes('sales_tickets/st-wtc-23') && ids3.rows.includes('sales_tickets/st-wtc-after-rewrite')
+      && firstDiff(r3.doc, await wholeNow(W.tok.owner)) === '', { kind: r3.kind, ids3 });
+
+  // A seat that chooses its own stamp cannot make a stale index look current: a direct write leaves the index behind
+  // at stamp T1; a save then asks for a stamp the index once carried.
+  const stA = await W.stored();
+  const mA = W.meta();
+  const oldStamp = mA.doc_ts.split('|')[0];
+  const docA = JSON.parse(JSON.stringify(stA.doc));
+  docA.customRecords.sales_tickets.find(x => x.id === 'st-wtc-24').total = 2424242;
+  const tsDirect = nextTs();
+  docA.updatedAt = tsDirect;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docA), tsDirect, 'system-reconcile');
+  const pA = await W.api('sync', { token: W.tok.owner, body: { op: 'patch', key: '', ackOnly: true, ifMatchUpdatedAt: tsDirect,
+    patch: { [DOC_KEY]: { _deltaPatch: 1, minShellVer: SHELL, updatedAt: oldStamp, updatedBy: 'gate@example.test', lbpFxRate: 90600, lbpFxUpdatedAt: nextTs() } } } });
+  const stB = await W.stored();
+  const r4 = await dev.read();
+  ok('13f. a save that puts an earlier stamp back on the store does not make the stale index pass for current',
+    pA.status === 200 && !pA.json.conflict && stB.ts === oldStamp && (r4.kind === 'partial' || r4.kind === 'audit') && !r4.refetched && deltaIds(r4.delta).rows.includes('sales_tickets/st-wtc-24')
+      && firstDiff(r4.doc, await wholeNow(W.tok.owner)) === '' && W.meta().doc_ts === await W.anchor(), { p: pA.json, ts: stB.ts, oldStamp, kind: r4.kind, ids: deltaIds(r4.delta) });
+}
+
+console.log('\n[14. What decides who sees an entry is on the index line, and the rule reads nothing else]');
+{
+  // The scoping rule answers the same for an entry and for the fields kept on its index line. Every other field is
+  // set to a company the seat CAN see, so a rule that starts reading one of them fails here.
+  const seats = [
+    { sub: 'u7', email: 'a@example.test', role: 'Entry', companies: 'WTC' },
+    { sub: 'u8', email: 'b@example.test', role: 'Entry', companies: 'BBConstruction' },
+    { sub: 'u9', email: 'c@example.test', role: 'Supervisor', companies: 'WTC,Lions Transport' },
+    { sub: 'u10', email: 'd@example.test', role: 'Entry', companies: 'Blanca' },
+    { sub: 'u11', email: 'e@example.test', role: 'Entry', companies: 'Bdeir Holding' }
+  ];
+  const cos = ['', 'WTC', 'BBConstruction', 'Lions Transport', 'Blanca', 'Bdeir Holding', 'All', 'shared', ' wtc ', 'BBC'];
+  const inds = ['', 'Manufacturing', 'Hospitality & Resorts', 'Holding & Treasury'];
+  const tables = ['sales_tickets', 'expenses', 'attendance', 'receipts', 'customers', 'suppliers', 'sites', 'regions', 'equipment', 'fx_rates', 'vat_rates', 'zz_unknown_table'];
+  const decoy = seat => {
+    const mine = String(seat.companies).split(',')[0];
+    return { id: 'zz-1', fromCo: mine, toCo: mine, site: mine, region: mine, branch: mine, owner: mine, customer: mine, supplier: mine, party: mine, staff: mine, name: mine, notes: mine, created_by: seat.email, entered_by: seat.email };
+  };
+  let cases = 0;
+  const differ = [];
+  for (const seat of seats) {
+    for (const t of tables) {
+      for (const f of ['company', 'resort', 'entity']) {
+        for (const co of cos) {
+          for (const indF of ['_industry', 'industry', 'ind']) {
+            for (const ind of inds) {
+              const row = Object.assign(decoy(seat), co ? { [f]: co } : {}, ind ? { [indF]: ind } : {});
+              const stubText = visStubOf(row);
+              const stub = JSON.parse(stubText);
+              cases += 1;
+              if (scopedSeatSeesCrRow(seat, t, row) !== scopedSeatSeesCrRow(seat, t, stub)) differ.push(`${seat.companies}|${t}|${stubText}`);
+              if (scopedSeatSeesKioskPunch(seat, row) !== scopedSeatSeesKioskPunch(seat, stub)) differ.push(`kp|${seat.companies}|${stubText}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  ok(`14a. the scoping rule gives the same answer for an entry and for the fields kept on its index line (${cases} cases, decoy fields set to the seat's own company)`,
+    cases > 5000 && differ.length === 0, differ.slice(0, 5));
+  const stubKeys = Object.keys(JSON.parse(visStubOf(Object.assign({ id: 'x', total: 5, notes: 'n', customer: 'ZzCust' }, Object.fromEntries(ROW_VIS_FIELDS.map(f => [f, 'v']))))));
+  ok('14b. the index line keeps those fields and nothing else of the entry (no amounts, names or notes)',
+    sameList(stubKeys.sort(), ROW_VIS_FIELDS.slice().sort()) && visStubOf({ id: 'x', company: 'Z'.repeat(500) }) === '*', stubKeys);
+  const lines = W.d1.rows("SELECT bucket, row_id, vis, pvis, vrev, deleted FROM store_row_index WHERE row_id IN ('st-wtc-9', 'st-wtc-11', 'st-wtc-12', 'st-bbc-7')");
+  const by = Object.fromEntries(lines.map(l => [l.row_id, l]));
+  ok('14c. the index remembers an entry\'s earlier company when it moves, and a deleted entry\'s last one',
+    by['st-wtc-11'] && JSON.parse(by['st-wtc-11'].vis).company === 'BBConstruction' && by['st-wtc-11'].pvis.includes('"WTC"')
+      && by['st-wtc-9'] && JSON.parse(by['st-wtc-9'].vis).company === 'WTC' && by['st-wtc-9'].pvis.includes('"BBConstruction"')
+      && by['st-wtc-12'] && Number(by['st-wtc-12'].deleted) === 1 && JSON.parse(by['st-wtc-12'].vis).company === 'WTC'
+      && by['st-bbc-7'] && Number(by['st-bbc-7'].deleted) === 1 && JSON.parse(by['st-bbc-7'].vis).company === 'BBConstruction', lines);
+
+  // Universal tables (customers, sites): a shared entry is every seat's, a company's own is that company's.
+  const wtc2 = new Device(W, W.tok.wtc, 'wtc-universal');
+  const bbc2 = new Device(W, W.tok.bbc, 'bbc-universal');
+  await W.legacy.patch({ customRecords: { customers: [
+    { id: 'cu-shared', name: 'ZzShared Customer', source: 'app' },
+    { id: 'cu-wtc', name: 'ZzWtc Customer', company: 'WTC', source: 'app' },
+    { id: 'cu-bbc', name: 'ZzBbc Customer BBC-ONLY-MARKER', company: 'BBConstruction', source: 'app' }
+  ] } });
+  await wtc2.read();
+  await bbc2.read();
+  await W.legacy.patch({ _deletedCrIds: { customers: ['cu-shared', 'cu-wtc', 'cu-bbc'] } });
+  const rw = await wtc2.read();
+  const rb = await bbc2.read();
+  ok('14d. deleted shared and own-company customers are reported gone to each seat that could see them, and only to it',
+    rw.kind === 'partial' && sameList(deltaIds(rw.delta).gone, ['customers/cu-shared', 'customers/cu-wtc']) && !rw.txt.includes('cu-bbc')
+      && rb.kind === 'partial' && sameList(deltaIds(rb.delta).gone, ['customers/cu-bbc', 'customers/cu-shared']) && !rb.txt.includes('cu-wtc')
+      && firstDiff(rw.doc, await wholeNow(W.tok.wtc)) === '' && firstDiff(rb.doc, await wholeNow(W.tok.bbc)) === '', { w: deltaIds(rw.delta), b: deltaIds(rb.delta) });
+}
+
+console.log('\n[15. Attendance entries the device tells apart by their edit history]');
+{
+  const backfill = { at: '2026-11-24T13:25:10.000Z', by: 'System', changes: { shift_id: { from: 'a', to: 'b' } } };
+  const later = { at: '2026-11-26T10:00:00.000Z', by: 'Owner Seat', changes: { out_time: { from: '16:00', to: '17:00' } } };
+  const st = await W.stored();
+  const doc = JSON.parse(JSON.stringify(st.doc));
+  doc.customRecords.attendance = (doc.customRecords.attendance || []).concat([
+    // Real: a backfill line and a later one, no entered_by / modified_at. Bare, the device's test would call it bloated.
+    { id: 'at_0000000000b1', company: 'WTC', date: '2026-10-06', staff: 'ZzStaff Three', _pre_void_edits: [backfill, later] },
+    // Real and safe to lighten: it carries entered_by, so the test answers the same with or without history.
+    { id: 'at_0000000000b2', company: 'WTC', date: '2026-10-06', staff: 'ZzStaff Four', entered_by: 'owner@example.test', _pre_void_edits: [backfill, later] },
+    // Not a seeded id at all.
+    { id: 'at-app-2', company: 'WTC', date: '2026-10-06', staff: 'ZzStaff Five', source: 'app', _pre_void_edits: [later] }
+  ]);
+  doc.updatedAt = nextTs();
+  const seeded = await W.buildTicketPatch(doc);
+  const r = await new Device(W, W.tok.owner, 'owner-att').read();
+  const att = id => r.doc.customRecords.attendance.find(x => x.id === id);
+  const storedAtt = (await W.stored()).doc.customRecords.attendance;
+  ok('15a. an entry the device would misjudge without its history travels with it',
+    seeded.status === 200 && att('at_0000000000b1') && Array.isArray(att('at_0000000000b1')._pre_void_edits) && att('at_0000000000b1')._pre_void_edits.length === 2, att('at_0000000000b1'));
+  ok('15b. entries whose verdict does not depend on the history still travel without it',
+    att('at_0000000000b2') && att('at_0000000000b2')._pre_void_edits === undefined && att('at-app-2') && att('at-app-2')._pre_void_edits === undefined, { b2: att('at_0000000000b2'), app: att('at-app-2') });
+  const verdicts = storedAtt.map(x => [x.id, isShiftBackfillBloatedSeedAttRow(x), att(x.id) ? isShiftBackfillBloatedSeedAttRow(att(x.id)) : null]);
+  const b1 = verdicts.find(v => v[0] === 'at_0000000000b1');
+  ok('15c. for every stored attendance entry the device\'s verdict on what it received equals the verdict on the stored entry (the real one stays real)',
+    verdicts.length >= 3 && verdicts.every(v => v[1] === v[2]) && Boolean(b1) && b1[1] === false && b1[2] === false, verdicts);
+}
+
+console.log('\n[16. A database restore: the cloud back at an earlier state]');
+{
+  const dev = new Device(W, W.tok.owner, 'owner-restore');
+  await dev.read();
+  // Snapshot the store and the index, as a point-in-time restore would bring them back.
+  W.d1.exec("DROP TABLE IF EXISTS zz_kv; DROP TABLE IF EXISTS zz_idx; DROP TABLE IF EXISTS zz_meta;");
+  W.d1.exec("CREATE TABLE zz_kv AS SELECT * FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%'; CREATE TABLE zz_idx AS SELECT * FROM store_row_index; CREATE TABLE zz_meta AS SELECT * FROM store_row_meta;");
+  await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-lost-timeline', company: 'WTC', date: '2026-11-27', customer: 'ZzLost', total: 1, source: 'app' }] } });
+  const rLost = await dev.read();
+  const revLost = dev.g.mirror().rev;
+  const epochLost = dev.g.mirror().epoch;
+  W.d1.exec("DELETE FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%'; INSERT INTO edge_kv_store SELECT * FROM zz_kv; DELETE FROM store_row_index; INSERT INTO store_row_index SELECT * FROM zz_idx; DELETE FROM store_row_meta; INSERT INTO store_row_meta SELECT * FROM zz_meta;");
+  // The new timeline: another entry, at the revision number the lost one had.
+  await W.legacy.patch({ customRecords: { sales_tickets: [{ id: 'st-wtc-new-timeline', company: 'WTC', date: '2026-11-27', customer: 'ZzNew', total: 2, source: 'app' }] } });
+  const mNew = W.meta();
+  const r = await dev.read();
+  const has = id => r.doc.customRecords.sales_tickets.some(x => x.id === id);
+  ok('16a. the device held an entry from the lost timeline at a revision the new timeline reached again',
+    (rLost.kind === 'partial' || rLost.kind === 'audit') && Number(mNew.rev) === revLost && mNew.epoch === epochLost, { kind: rLost.kind, revLost, mNew });
+  ok('16b. its copy fails the digest check on the next answer and it reads the whole document: no entry of the lost timeline is kept, the new one is there',
+    r.refetched === true && r.kind === 'whole' && !has('st-wtc-lost-timeline') && has('st-wtc-new-timeline') && firstDiff(r.doc, await wholeNow(W.tok.owner)) === '' && dev.g.strikes() === 1,
+    { refetched: r.refetched, kind: r.kind, lost: has('st-wtc-lost-timeline'), fresh: has('st-wtc-new-timeline'), strikes: dev.g.strikes() });
+  // The report of that failure comes from a whole-store seat: it switches partial answers off. Put them back on.
+  await dev.read();
+  ok('16c. a whole-store seat\'s report of that failure is recorded and switches partial answers off (until the counter is reset)', Number(W.meta().audit_bad) === 1 && /apply sums/.test(String(W.meta().audit_note)), W.meta());
+  W.d1.db.prepare("UPDATE store_row_meta SET audit_bad = 0, audit_note = NULL WHERE doc_key = 'mfg_web_store'").run();
+  W.d1.exec("DROP TABLE zz_kv; DROP TABLE zz_idx; DROP TABLE zz_meta;");
+}
+
+console.log('\n[17. Scoped seats and the comparison; repeated ids; the mode values; a page that cannot follow]');
+{
+  // A company-scoped seat is never asked to compare, and whatever it reports changes nothing.
+  const sc = new Device(W, W.tok.wtc, 'wtc-audit');
+  const first = await sc.read();
+  const before = W.meta();
+  for (let i = 0; i < ROW_SYNC_AUDIT_AFTER + 2; i++) {
+    await W.legacy.patch({ customRecords: { sales_tickets: [{ id: `st-wtc-sc-${i}`, company: 'WTC', date: '2026-11-27', customer: 'ZzSc', total: i, source: 'app' }] } });
+    await sc.read();
+  }
+  const kinds = [];
+  const forged = async result => (await W.api('sync', { token: W.tok.wtc, body: { op: 'get_mfg', doc: DOC_KEY, noTrails: true, rowSync: { v: 1, auditResult: result } } })).json;
+  const fOk = [];
+  for (let i = 0; i < ROW_SYNC_AUDIT_TARGET + 5; i++) fOk.push((await forged({ epoch: before.epoch, rev: 1, ok: true, rows: 9, bad: 0, sample: '' })).rowAuditNoted);
+  const fBad = await forged({ epoch: before.epoch, rev: 1, ok: false, rows: 0, bad: 1, sample: 'forged' });
+  const askAudit = (await W.api('sync', { token: W.tok.wtc, body: { op: 'get_mfg', doc: DOC_KEY, noTrails: true, rowSync: Object.assign(RowSyncClient.request(sc.g.mirror(), { audit: true }), {}) } })).json;
+  const after = W.meta();
+  await W.legacy.patch({ lbpFxRate: 90700, lbpFxUpdatedAt: nextTs() });
+  const still = await sc.read();
+  ok('17a. a company-scoped seat is never asked for a comparison', first.json.rowSync.auditAfter === 0 && still.json.rowSync.auditAfter === 0 && sc.g.report() === null, { a: first.json.rowSync.auditAfter });
+  ok('17b. its reports, clean or failed, are acknowledged and counted nowhere: the counters stand and partial answers go on for everyone',
+    fOk.every(x => x === true) && fBad.rowAuditNoted === true && Number(after.audit_ok) === Number(before.audit_ok) && Number(after.audit_bad) === 0 && still.kind === 'partial',
+    { before: [before.audit_ok, before.audit_bad], after: [after.audit_ok, after.audit_bad], kind: still.kind });
+  ok('17c. asking for the whole document beside a partial answer is a whole-store seat\'s to ask: the scoped seat gets the partial answer alone',
+    Boolean(askAudit.rowDelta) && askAudit.docs === undefined, Object.keys(askAudit));
+
+  // A repeated id in a row set: a copy keyed by id cannot stand for that document.
+  const stD = await W.stored();
+  const docD = JSON.parse(JSON.stringify(stD.doc));
+  docD.customRecords.sales_tickets.push(Object.assign({}, docD.customRecords.sales_tickets.find(x => x.id === 'st-wtc-30'), { total: 303030 }));
+  const tsD = nextTs();
+  docD.updatedAt = tsD;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docD), tsD, 'system-reconcile');
+  const dup = new Device(W, W.tok.owner, 'owner-dup');
+  const rD = await dup.read();
+  const rOwnerD = await owner.read();
+  ok('17d. a document holding a repeated id gets whole answers and no anchor: no device keeps a copy of it',
+    rD.kind === 'whole' && rD.json.rowSyncV1 === undefined && !dup.g.mirror() && rD.doc.customRecords.sales_tickets.filter(x => x.id === 'st-wtc-30').length === 2
+      && rOwnerD.kind === 'whole' && !owner.g.mirror(), { kind: rD.kind, rs: rD.json.rowSyncV1, ownerKind: rOwnerD.kind });
+  docD.customRecords.sales_tickets.pop();
+  const tsD2 = nextTs();
+  docD.updatedAt = tsD2;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docD), tsD2, 'system-reconcile');
+  const rD2 = await dup.read();
+  ok('17e. once the repeated id is gone the anchor is offered again', rD2.kind === 'whole' && rD2.json.rowSyncV1 === true && Boolean(dup.g.mirror()), { kind: rD2.kind });
+
+  // The mode values.
+  const modeDev = new Device(W, W.tok.owner, 'owner-mode');
+  const setMode = n => W.d1.db.prepare("UPDATE store_row_meta SET mode = ? WHERE doc_key = 'mfg_web_store'").run(n);
+  const trailOf = r => (r.doc.customRecords.expenses.find(x => x.id === 'ex-live-trail') || {})._pre_void_edits;
+  setMode(1);
+  const m1 = await modeDev.read();
+  setMode(3);
+  const m3a = await modeDev.read();
+  await W.legacy.patch({ lbpFxRate: 90800, lbpFxUpdatedAt: nextTs() });
+  const m3b = await modeDev.read();
+  const m3bDiff = firstDiff(m3b.doc, await wholeNow(W.tok.owner));
+  setMode(0);
+  const m0 = await modeDev.read();
+  const legacyMode0 = await W.legacy.read();
+  setMode(2);
+  // A copy made while history was left out is not patched once history travels again (and the other way round):
+  // the whole document, and nothing counted against the page or the cloud.
+  const flip = new Device(W, W.tok.owner, 'owner-flip');
+  await flip.read();
+  setMode(3);
+  await W.legacy.patch({ lbpFxRate: 90850, lbpFxUpdatedAt: nextTs() });
+  const f3 = await flip.read();
+  setMode(2);
+  await W.legacy.patch({ lbpFxRate: 90860, lbpFxUpdatedAt: nextTs() });
+  const f2 = await flip.read();
+  await W.legacy.patch({ lbpFxRate: 90870, lbpFxUpdatedAt: nextTs() });
+  const f2b = await flip.read();
+  ok('17h2. switching the lighter entries on or off sends every device the whole document once (its copy was made under the other rule), with no failed comparison',
+    f3.kind === 'whole' && !f3.refetched && Array.isArray(trailOf(f3)) && f2.kind === 'whole' && !f2.refetched && trailOf(f2) === undefined && f2b.kind !== 'whole'
+      && flip.g.strikes() === 0 && flip.g.report() === null && Number(W.meta().audit_bad) === 0, { f3: f3.kind, f2: f2.kind, f2b: f2b.kind, strikes: flip.g.strikes() });
+  ok('17f. mode 1: lighter entries only (whole documents, live entries without history)', m1.kind === 'whole' && m1.json.rowSyncV1 === undefined && m1.json.trailsOnDemand === true && trailOf(m1) === undefined, { kind: m1.kind, t: m1.json.trailsOnDemand });
+  ok('17g. mode 3: partial answers only (history travels as before)',
+    m3a.kind === 'whole' && m3a.json.rowSyncV1 === true && m3a.json.trailsOnDemand === undefined && Array.isArray(trailOf(m3a)) && m3b.kind === 'partial' && m3bDiff === '' && Array.isArray(trailOf(m3b)),
+    { a: m3a.kind, b: m3b.kind, t: m3a.json.trailsOnDemand, m3bDiff });
+  ok('17h. mode 0: everything off (whole documents with history, the same entries an older device gets)',
+    m0.kind === 'whole' && m0.json.rowSyncV1 === undefined && m0.json.trailsOnDemand === undefined && Array.isArray(trailOf(m0))
+      && JSON.stringify(m0.doc.customRecords) === JSON.stringify(legacyMode0.docs[DOC_KEY].customRecords), { kind: m0.kind, t: m0.json.trailsOnDemand });
+
+  // A page whose copy cannot follow the cloud twice stops asking for partial answers.
+  const bad = new Device(W, W.tok.wtc, 'wtc-strikes');
+  await bad.read();
+  const breakCopy = () => { const s = bad.g.mirror().sets.get('cr:sales_tickets'); s.delete(Array.from(s.keys())[0]); };
+  breakCopy();
+  await W.legacy.patch({ lbpFxRate: 90900, lbpFxUpdatedAt: nextTs() });
+  const s1 = await bad.read();
+  breakCopy();
+  await W.legacy.patch({ lbpFxRate: 91000, lbpFxUpdatedAt: nextTs() });
+  const s2 = await bad.read();
+  const s2Diff = firstDiff(s2.doc, await wholeNow(W.tok.wtc));
+  await W.legacy.patch({ lbpFxRate: 91100, lbpFxUpdatedAt: nextTs() });
+  const s3 = await bad.read();
+  await W.legacy.patch({ lbpFxRate: 91200, lbpFxUpdatedAt: nextTs() });
+  const s4 = await bad.read();
+  ok('17i. a copy that cannot follow an answer is dropped and the whole document read, each time',
+    s1.refetched === true && s2.refetched === true && s2Diff === '' && bad.g.strikes() === 2, { s1: s1.refetched, s2: s2.refetched, s2Diff, strikes: bad.g.strikes() });
+  ok('17j. after the second time the page keeps no copy and asks for whole documents only; a scoped seat\'s failures switch nothing off for others',
+    !bad.g.mirror() && s4.kind === 'whole' && s4.req.rowSync === undefined && s4.req.noTrails === true && s4.json.rowSyncV1 === undefined && Number(W.meta().audit_bad) === 0
+      && firstDiff(s4.doc, await wholeNow(W.tok.wtc)) === '', { kind: s4.kind, req: s4.req.rowSync, bad: W.meta().audit_bad });
+
+  // The digest the device checks is the one the cloud computes: same function, same text.
+  const probe = ['', 'a', '{"id":"x","n":1.5,"s":"éم😀"}', 'x'.repeat(70000)];
+  ok('17k. the device and the cloud hash a text to the same pair', probe.every(t => sameList(RowSyncClient.hashPair(t), hashPair(t))), probe.map(t => [RowSyncClient.hashPair(t), hashPair(t)]).slice(0, 2));
+
+  // A table key with a line break in it is indexed under its own name.
+  const stN = await W.stored();
+  const docN = JSON.parse(JSON.stringify(stN.doc));
+  docN.customRecords['zz\nodd'] = [{ id: 'odd-1', company: 'WTC', note: 'first' }];
+  const tsN = nextTs();
+  docN.updatedAt = tsN;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docN), tsN, 'system-reconcile');
+  const nd = new Device(W, W.tok.owner, 'owner-odd');
+  await nd.read();
+  docN.customRecords['zz\nodd'][0].note = 'second';
+  const tsN2 = nextTs();
+  docN.updatedAt = tsN2;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docN), tsN2, 'system-reconcile');
+  const rN = await nd.read();
+  ok('17l. a table key holding a line break is indexed under its own name and its change arrives as a changed entry',
+    rN.kind === 'partial' && sameList(deltaIds(rN.delta).rows, ['zz\nodd/odd-1']) && firstDiff(rN.doc, await wholeNow(W.tok.owner)) === '', deltaIds(rN.delta));
+  delete docN.customRecords['zz\nodd'];
+  const tsN3 = nextTs();
+  docN.updatedAt = tsN3;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docN), tsN3, 'system-reconcile');
+}
+
 console.log('\n[12. The index at the end]');
 {
   await owner.read();
@@ -691,7 +1050,7 @@ console.log('\n[12. The index at the end]');
   const m = W.meta();
   const distinct = Array.from(collectRowMaps(st.doc).values()).reduce((n, mm) => n + mm.size, 0);
   ok('12a. stamps together and one live line per stored entry after everything above',
-    m.doc_ts === st.ts && W.idxLive().length === distinct, { doc_ts: m.doc_ts, ts: st.ts, live: W.idxLive().length, distinct });
+    m.doc_ts === await W.anchor() && W.idxLive().length === distinct, { doc_ts: m.doc_ts, ts: st.ts, live: W.idxLive().length, distinct });
   const legacyAfter = await W.legacy.read();
   ok('12b. an old-protocol read still carries exactly the old fields', sameList(Object.keys(legacyAfter).sort(), ['deltaSyncV1', 'docs', 'edge', 'etag', 'ok', 'updatedAt']), Object.keys(legacyAfter));
 }

@@ -341,8 +341,11 @@ CREATE TABLE IF NOT EXISTS edge_kv_store (
 );
 
 -- Row sync (functions/_lib/row_sync.js): which entry of mfg_web_store changed at which revision. A derived index of
--- the stored document, valid only while store_row_meta.doc_ts equals the document's updated_at; rebuilt from the
--- document whenever the two differ. mode 0 switches partial answers off; audit_bad above 0 does the same.
+-- the stored document, valid only while store_row_meta.doc_ts equals the document's anchor (its updated_at, its
+-- length and a SHA-256 of its text); rebuilt from the document whenever the two differ. vis / pvis / vrev: the
+-- fields that decide which seat may see the entry, the earlier ones, and the revision they last changed at.
+-- mode: 0 everything off, 1 lighter entries only, 2 both (default), 3 partial answers only; audit_bad above 0
+-- switches partial answers off as well.
 CREATE TABLE IF NOT EXISTS store_row_index (
   doc_key TEXT NOT NULL,
   bucket TEXT NOT NULL,
@@ -350,6 +353,9 @@ CREATE TABLE IF NOT EXISTS store_row_index (
   hash TEXT NOT NULL DEFAULT '',
   rev INTEGER NOT NULL DEFAULT 0,
   deleted INTEGER NOT NULL DEFAULT 0,
+  vis TEXT NOT NULL DEFAULT '',
+  pvis TEXT NOT NULL DEFAULT '',
+  vrev INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (doc_key, bucket, row_id)
 );
 CREATE INDEX IF NOT EXISTS idx_store_row_index_rev ON store_row_index (doc_key, rev);
