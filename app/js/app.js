@@ -73196,6 +73196,23 @@
     const reIso = v => { const s = String(v || '').trim().slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; };
     const reTodayIso = todayISO();
     const reAsOf = (rePm.pr && reIso(rePm.pr.to) && reIso(rePm.pr.to) < reTodayIso) ? reIso(rePm.pr.to) : '';
+    const projectReLeaseAsOf = (l, dIso) => {
+      const stHit = dIso ? resolveLeaseStepAtDate(l, dIso) : null;
+      if (!stHit) return l;
+      const aNet = Number(stHit.annual_net_usd || 0);
+      const aTtc = Number(stHit.annual_ttc_usd || aNet);
+      const aVat = round2(aTtc - aNet);
+      return Object.assign({}, l, {
+        net_period_usd: Number(stHit.net_period_usd || l.net_period_usd),
+        ttc_period_usd: Number(stHit.ttc_period_usd || l.ttc_period_usd),
+        rent_ttc: Number(stHit.ttc_period_usd || l.ttc_period_usd),
+        annual_net_usd: aNet,
+        annual_base_usd: aNet,
+        annual_vat_usd: aVat,
+        annual_ttc_usd: aTtc
+      });
+    };
+    if (reAsOf) fLeases = fLeases.map(l => projectReLeaseAsOf(l, reAsOf));
     const leaseInForceOn = (r, d) => Boolean(r) && !r.voided && !r._scheduleVoided
       && (reIso(r.start_date) || '1900-01-01') <= d && (reIso(r.end_date) || '9999-12-31') >= d;
     const statusOpenLeases = fLeases.filter(r => r.status !== 'Closed Window');
@@ -73427,6 +73444,38 @@
       </div>
     `;
 
+    const isDemoRe = isDemoScopeActive();
+    const c4235SeqNums = Array.from(new Set(
+      (data.invoices || [])
+        .filter(iv => iv && iv.company === '4235 Company S.A.L' && (Number(iv.vat_usd || 0) > 0 || /^VAT-/i.test(String(iv.tax_seq || iv.id || ''))))
+        .map(iv => {
+          if (Number(iv.vat_seq_no || 0) > 0) return Number(iv.vat_seq_no);
+          const m = String(iv.tax_seq || iv.id || '').match(/VAT-4235-#?0*(\d+)$/i);
+          return m ? Number(m[1]) : 0;
+        })
+        .filter(n => Number.isFinite(n) && n > 0)
+    )).sort((a, b) => a - b);
+    const seqMin = c4235SeqNums.length ? c4235SeqNums[0] : 0;
+    const seqMax = c4235SeqNums.length ? c4235SeqNums[c4235SeqNums.length - 1] : 0;
+    const seqSet = new Set(c4235SeqNums);
+    const seqGaps = [];
+    for (let sq = 1; sq <= seqMax; sq++) {
+      if (!seqSet.has(sq)) seqGaps.push(sq);
+    }
+    const seqRangeText = isDemoRe
+      ? 'Seq #1..#6'
+      : (c4235SeqNums.length ? `Seq #${fmtNum(seqMin, 0)}..#${fmtNum(seqMax, 0)}` : '0 VAT Invoices');
+    const seqAuditSubText = isDemoRe
+      ? 'Gaps #3-#4 & #7-#8 flagged for physical voucher check'
+      : (c4235SeqNums.length
+        ? (seqGaps.length === 0
+          ? `${fmtNum(c4235SeqNums.length, 0)} official VAT invoices · 0 sequence gaps`
+          : `Gaps ${seqGaps.map(n => `#${n}`).join(', ')} flagged for physical voucher check`)
+        : 'No official VAT invoices in selected period');
+    const invBannerSubText = isDemoRe
+      ? 'Period rent invoices · 11% VAT breakdown on 4235 Company S.A.L commercial leases · Sequence gap audit (#3-#4 & #7-#8)'
+      : `Period rent invoices · Per-lease VAT breakdown on 4235 Company S.A.L · ${seqGaps.length === 0 && c4235SeqNums.length ? `0 sequence gaps (${seqRangeText})` : seqAuditSubText}`;
+
     if (submode === 'invoicing') {
       const sumNet = filteredInv.reduce((a, r) => a + r.net_usd, 0);
       const sumVat = filteredInv.reduce((a, r) => a + r.vat_usd, 0);
@@ -73439,7 +73488,7 @@
           <div class="panel-head">
             <div>
               <h3>Period Rent Invoices &amp; 4235 Company S.A.L VAT Sequence Ledger ${shownCount('re_invoicing', filteredInv.length, data.invoices.length)}</h3>
-              <p>Period rent invoices · 11% VAT breakdown on 4235 Company S.A.L commercial leases · Sequence gap audit (#3-#4 &amp; #7-#8)</p>
+              <p>${esc(invBannerSubText)}</p>
             </div>
             <div class="panel-actions">${searchBox('Search invoice, tax seq, tenant, period...')}</div>
           </div>
@@ -73461,7 +73510,7 @@
                   ${th('re_invoicing', 'tenant', 'Tenant')}
                   ${th('re_invoicing', 'period', 'Billing Period')}
                   ${th('re_invoicing', 'net_usd', 'Net Rent ($)', 'r')}
-                  ${th('re_invoicing', 'vat_usd', '11% VAT ($)', 'r')}
+                  ${th('re_invoicing', 'vat_usd', 'VAT ($)', 'r')}
                   ${th('re_invoicing', 'amount_ttc_usd', 'Amount ($)', 'r')}
                   ${th('re_invoicing', 'collected_usd', 'Collected ($)', 'r')}
                   ${th('re_invoicing', 'open_ar_usd', 'Open AR ($)', 'r')}
@@ -73482,7 +73531,7 @@
                     <td class="r mono"><strong>${fmtUSD(r.amount_ttc_usd, 2)}</strong></td>
                     <td class="r mono">${canReLBooks ? fmtUSD(r.collected_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                     <td class="r mono ${canReLBooks && r.open_ar_usd > 0 ? 'crit' : ''}">${canReLBooks ? `<strong>${fmtUSD(r.open_ar_usd, 2)}</strong>` : '<span class="muted">Restricted</span>'}</td>
-                    <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : r.status === 'Partial' ? 'badge-warn' : 'badge-crit'}">${esc(r.status)}</span></td>
+                    <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : ((r.status === 'Partial' || r.status === 'Open') ? 'badge-warn' : 'badge-crit')}">${esc(r.status)}</span></td>
                   </tr>
                 `).join('') : emptyRow(hideCo ? 11 : 12, 'No period rent invoices match current filter')}
                 ${showMoreRow('re_invoicing', filteredInv.length, hideCo ? 11 : 12)}
@@ -73593,6 +73642,20 @@
     const sumTtcPeriod = rollLeases.reduce((a, r) => a + r.ttc_period_usd, 0);
     const sumAnnualTtc = rollLeases.reduce((a, r) => a + r.annual_ttc_usd, 0);
     const sumDep = rollLeases.reduce((a, r) => a + r.deposit_usd, 0);
+    const c4235Roll = rollLeases.filter(x => x.company === '4235 Company S.A.L');
+    const c4235VatCnt = c4235Roll.filter(x => Number(x.vat_rate || 0) > 0).length;
+    const c4235ExCnt = Math.max(0, c4235Roll.length - c4235VatCnt);
+    const c4235RollSubText = isDemoRe
+      ? '6 Msaytbeh commercial leases (11% VAT scope)'
+      : `${fmtNum(c4235Roll.length, 0)} Msaytbeh commercial leases (${fmtNum(c4235VatCnt, 0)} VAT · ${fmtNum(c4235ExCnt, 0)} exempt)`;
+    const swapRcts = (data.receipts || []).filter(r => r && (r.status === 'Swap Audit' || /swap/i.test(String(r.audit_flag || r.type || ''))));
+    const swapDiffUsd = round2(swapRcts.reduce((a, r) => a + Number(r.unallocated_adv_usd || 0), 0));
+    const swapValText = isDemoRe ? '$5,550 Diff' : (swapRcts.length ? `${fmtUSD(swapDiffUsd, 0)} Diff` : '0 Swap Flags');
+    const swapSubText = isDemoRe
+      ? '2026-05-05 Cedar Pharmacy $19,425 vs Meridian $13,875'
+      : (swapRcts.length
+        ? `${String(swapRcts[0].date || '').slice(0, 10)} cross-tenant receipt check (${swapRcts.slice(0, 2).map(r => fmtUSD(r.gross_usd || 0, 0)).join(' vs ')})`
+        : 'No cross-tenant receipt anomalies in period');
 
     return `
       ${bannerHtml}
@@ -73600,21 +73663,21 @@
           <div class="panel-head">
             <div>
               <h3>Lease Escalation &amp; VAT Compliance Summary</h3>
-              <p>9-Year stepped commercial escalations · 11% VAT effective 2025-11-01 on 4235 Company S.A.L</p>
+              <p>9-Year stepped commercial escalations · Per-lease 11% VAT compliance from 2025-11-01 on 4235 Company S.A.L</p>
             </div>
           </div>
           <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">4235 Company S.A.L Rent Roll</div>
-              <div class="kpi-val mono" style="font-size:18px">${fmtUSD(filteredLeases.filter(x => x.company === '4235 Company S.A.L').reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
-              <div class="kpi-sub">6 Msaytbeh commercial leases (11% VAT scope)</div>
+              <div class="kpi-val mono" style="font-size:18px">${fmtUSD(c4235Roll.reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
+              <div class="kpi-sub">${esc(c4235RollSubText)}</div>
             </div>
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">Properties Portfolio Rent Roll</div>
-              <div class="kpi-val mono" style="font-size:18px">${fmtUSD(filteredLeases.filter(x => x.company === 'Properties').reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
+              <div class="kpi-val mono" style="font-size:18px">${fmtUSD(rollLeases.filter(x => x.company === 'Properties').reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
               <div class="kpi-sub">${esc((() => {
                 const propRows = (data.properties || []).filter(x => x.company === 'Properties');
-                if (isDemoScopeActive()) return 'Marina Tower · Hamra Pavillon · Mazraa · Baghdad';
+                if (isDemoRe) return 'Marina Tower · Hamra Pavillon · Mazraa · Baghdad';
                 if (!propRows.length) return '0 Properties plots in scope';
                 const topLabels = propRows.slice(0, 3).map(x => String(x.name || x.property || '').replace(/^\d+(?:\/\d+)?\s+/, '').trim()).filter(Boolean);
                 return `${propRows.length} plots (${topLabels.join(' · ')})`;
@@ -73622,13 +73685,13 @@
             </div>
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">VAT Seq Audit (4235 S.A.L)</div>
-              <div class="kpi-val mono" style="font-size:18px">${canReLTax ? 'Seq #1..#6' : 'Restricted'}</div>
-              <div class="kpi-sub">${canReLTax ? 'Gaps #3-#4 &amp; #7-#8 flagged for physical voucher check' : 'Restricted by seat permissions'}</div>
+              <div class="kpi-val mono" style="font-size:18px">${canReLTax ? esc(seqRangeText) : 'Restricted'}</div>
+              <div class="kpi-sub">${canReLTax ? esc(seqAuditSubText) : 'Restricted by seat permissions'}</div>
             </div>
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">Cross-Tenant Swap Watch</div>
-              <div class="kpi-val mono" style="font-size:18px">${canReLBooks ? '$5,550 Diff' : 'Restricted'}</div>
-              <div class="kpi-sub">${canReLBooks ? '2026-05-05 Cedar Pharmacy $19,425 vs Meridian $13,875' : 'Restricted by seat permissions'}</div>
+              <div class="kpi-val mono" style="font-size:18px">${canReLBooks ? esc(swapValText) : 'Restricted'}</div>
+              <div class="kpi-sub">${canReLBooks ? esc(swapSubText) : 'Restricted by seat permissions'}</div>
             </div>
           </div>
       </div>
@@ -73676,12 +73739,12 @@
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
                   <td class="td-raw-leg-party"><strong>${esc(r.tenant)}</strong>${renderCustStmtActionsHtml(r.tenant, 'reLeasesPanel', canReLBooks)}<div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
-                  <td>${esc(r.frequency)}${r.start_date ? `<div class="muted mono" style="font-size:11px">${esc(r.start_date)} .. ${esc(r.end_date || 'Open')}</div>` : ''}</td>
+                  <td>${esc(r.frequency)}${r.start_date ? `<div class="muted mono" style="font-size:11px">${esc(r.start_date)} .. ${esc(r.end_date || 'Open')}</div>` : ''}${r.next_payment_date ? `<div class="muted mono" style="font-size:11px">Next Due: ${esc(r.next_payment_date)}</div>` : ''}</td>
                   <td class="r mono">${canReLTax ? fmtUSD(r.net_period_usd, 2) : '<span class="muted">Restricted</span>'}</td>
                   <td class="r mono"><strong>${fmtUSD(r.ttc_period_usd, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(r.annual_ttc_usd, 2)}</strong></td>
                   <td class="r mono">${canReLBooks ? fmtUSD(r.deposit_usd, 2) : '<span class="muted">Restricted</span>'}</td>
-                  <td><span class="badge ${r.status === 'Active' || r.status === 'Billed Current' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span>${(canReLBooks && canReLTax && canEnterAny() && r.status !== 'Billed Current') ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="re_lease_bill" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-prop="${esc(r.property)}" data-wf-tenant="${esc(r.tenant)}" data-wf-net="${r.net_period_usd}">+ Rent Inv</button>` : ''}</td>
+                  <td><span class="badge ${r.status === 'Active' || r.status === 'Billed Current' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span>${(canReLBooks && canReLTax && canEnterAny() && r.status !== 'Billed Current') ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="re_lease_bill" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-prop="${esc(r.property)}" data-wf-tenant="${esc(r.tenant)}" data-wf-net="${r.net_period_usd}" data-wf-vat="${r.vat_rate != null ? r.vat_rate : (/4235/i.test(r.company) ? 11 : 0)}">+ Rent Inv</button>` : ''}</td>
                 </tr>
               `).join('') : emptyRow(hideCo ? 10 : 11, 'No lease contracts match current filter')}
               ${showMoreRow('re_leases', filteredLeases.length, hideCo ? 10 : 11)}
@@ -76265,14 +76328,34 @@
       const rchWarn = getAlertParam('ind_re_04', 'recharge_warn_usd', 500);
       const maxVac = getAlertParam('ind_re_05', 'max_vacant_units', 1);
       const expLeases = re.leases.filter(l => Number(l.days_to_expiry || 0) >= 0 && Number(l.days_to_expiry || 0) <= expDays);
+      const stepSoonLeases = re.leases.filter(l => l && l.next_step_date && daysBetween(todayISO(), l.next_step_date) >= 0 && daysBetween(todayISO(), l.next_step_date) <= 180);
       const unbilledLeases = re.leases.filter(l => Number(l.unbilled_periods || 0) > 0);
       const dueInst = re.instalments.filter(x => Number(x.open_usd || 0) > openInstWarn);
+      let unitOverlapCount = 0;
+      const leasesByUnitKey = new Map();
+      re.leases.forEach(l => {
+        if (!l || l.voided || l._scheduleVoided || l.status === 'Closed Window' || isGenericReUnit(l.unit)) return;
+        const uk = `${norm(l.property)}::${norm(l.unit)}`;
+        if (!leasesByUnitKey.has(uk)) leasesByUnitKey.set(uk, []);
+        leasesByUnitKey.get(uk).push(l);
+      });
+      leasesByUnitKey.forEach(arr => {
+        for (let i = 0; i < arr.length; i++) {
+          for (let j = i + 1; j < arr.length; j++) {
+            const s1 = String(arr[i].start_date || '1900-01-01').slice(0, 10);
+            const e1 = (!arr[i].end_date || arr[i].end_date === 'Open') ? '9999-12-31' : String(arr[i].end_date).slice(0, 10);
+            const s2 = String(arr[j].start_date || '1900-01-01').slice(0, 10);
+            const e2 = (!arr[j].end_date || arr[j].end_date === 'Open') ? '9999-12-31' : String(arr[j].end_date).slice(0, 10);
+            if (s1 <= e2 && s2 <= e1) unitOverlapCount += 1;
+          }
+        }
+      });
       return onlyEnabled([
         {
           id: 'P1', ruleId: 'ind_re_01',
           code: 'Lease Renewals & Escalation',
           title: `Leases Expiring in <= ${fmtNum(expDays, 0)} Days & Stepped Escalation Watchdog`,
-          detail: `${fmtNum(expLeases.length)} lease contract${expLeases.length === 1 ? '' : 's'} within ${fmtNum(expDays, 0)}-day renewal window across ${fmtUSD(s.contractedAnnualRentUsd, 0)} contracted annual rent roll.`,
+          detail: `${fmtNum(expLeases.length)} lease contract${expLeases.length === 1 ? '' : 's'} within ${fmtNum(expDays, 0)}-day renewal window across ${fmtUSD(s.contractedAnnualRentUsd, 0)} contracted annual rent roll${stepSoonLeases.length ? ` · ${fmtNum(stepSoonLeases.length)} upcoming stepped escalation${stepSoonLeases.length === 1 ? '' : 's'} within 180d` : ''}.`,
           severity: expLeases.length > 0 ? 'warn' : 'ok',
           badge: expLeases.length > 0 ? `${fmtNum(expLeases.length)} EXPIRING <=${fmtNum(expDays, 0)}D` : 'LEASES CURRENT',
           company: scopeLabel,
@@ -76316,8 +76399,8 @@
           id: 'P5', ruleId: 'ind_re_05',
           code: 'Unit Occupancy & Overlap',
           title: 'Vacant Units & Double-Leased Unit Overlap Guard (/2400 Deed Shares)',
-          detail: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalUnits)} building units occupied (${s.occupancyPct.toFixed(1)}%) · ${fmtNum(re.vacantUnitCount)} vacant/fit-out unit${re.vacantUnitCount === 1 ? '' : 's'} · 0 overlapping active leases.`,
-          severity: re.vacantUnitCount >= maxVac && maxVac > 0 ? 'warn' : 'ok',
+          detail: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalUnits)} building units occupied (${s.occupancyPct.toFixed(1)}%) · ${fmtNum(re.vacantUnitCount)} vacant/fit-out unit${re.vacantUnitCount === 1 ? '' : 's'} · ${fmtNum(unitOverlapCount)} overlapping active lease${unitOverlapCount === 1 ? '' : 's'}.`,
+          severity: (unitOverlapCount > 0 || (re.vacantUnitCount >= maxVac && maxVac > 0)) ? 'warn' : 'ok',
           badge: re.vacantUnitCount > 0 ? `${fmtNum(re.vacantUnitCount)} VACANT / FIT-OUT` : '100% OCCUPIED',
           company: scopeLabel,
           rawMetric: re.vacantUnitCount, rawSecondary: s.totalUnits,
@@ -77495,10 +77578,14 @@
         chartTitle = lens.profit ? 'Annual Rent Roll, VAT/OpEx & Net NOI by Active Lease' : 'Annual Rent Roll by Active Lease';
         s1Label = 'Rent Roll'; s2Label = 'VAT & OpEx'; s3Label = 'Net NOI';
         chartBars = re.leases.slice(0, 6).map(l => {
-          const leaseNoi = round2(Number(l.annual_net_usd != null ? l.annual_net_usd : (Number(l.annual_ttc_usd || 0) / 1.11)) * 0.875);
+          const lNet = l.annual_net_usd != null
+            ? Number(l.annual_net_usd)
+            : (Number(l.vat_rate || 0) > 0 ? Number(l.annual_ttc_usd || 0) / (1 + Number(l.vat_rate) / 100) : Number(l.annual_ttc_usd || 0));
+          const leaseNoi = round2(lNet * 0.875);
           const leaseRev = Number(l.annual_ttc_usd || 0);
           return {
             label: cleanCeoText(l.unit || l.id),
+            noI18nLabel: true,
             fullLabel: cleanCeoText(`${l.tenant || ''} · ${l.unit || ''}`),
             rev: leaseRev,
             cost: Math.max(0, round2(leaseRev - leaseNoi)),
@@ -77952,7 +78039,7 @@
     ],
     'Real Estate & Property': [
       { id: 'p01_overview', num: '01', label: 'Portfolio Pulse', title: '$55.83M Gross / $40.44M Share-Adjusted Portfolio & NOI Yield', view: 're_properties' },
-      { id: 'p02_leases', num: '02', label: 'Leases & 4235 VAT', title: 'Active Rent Roll, 4235 S.A.L VAT Sequence #1..#6 & Receipts', view: 're_leases' },
+      { id: 'p02_leases', num: '02', label: 'Leases & 4235 VAT', title: 'Active Rent Roll, 4235 S.A.L VAT Sequence Audit & Receipts', view: 're_leases' },
       { id: 'p03_sales', num: '03', label: 'Property Sales', title: 'Deed Sales Contracts, Buyer Instalments & Title Transfers', view: 're_sales' },
       { id: 'p04_properties', num: '04', label: 'Units & Mulk (/2400)', title: '13 Properties, 32 Units, LGB Valuations & Co-Ownership Stakes', view: 're_units' },
       { id: 'p05_workorders', num: '05', label: 'Fit-Out & Recharges', title: 'Maintenance Work Orders, Cost Variance & Tenant Recharges', view: 're_workorders' },
@@ -78499,15 +78586,17 @@
       const noi = round2(s.portfolioNoiUsd != null ? s.portfolioNoiUsd : (s.contractedAnnualNetRentUsd - s.woActualUsd));
 
       if (pIdx === 1) {
-        const leases = re.leases || [];
+        const leases = (re.leases || []).filter(l => l && !/closed\s*window/i.test(String(l.status || '')));
         const invs = re.invoices || [];
         const totTtc = Number(s.contractedAnnualRentUsd || 0);
-        const totVat = round2(leases.reduce((a, l) => a + (Number(l.vat_rate || 0) > 0 ? round2(l.annual_ttc_usd - l.annual_ttc_usd / 1.11) : 0), 0));
-        const totBase = round2(totTtc - totVat);
+        const totBase = round2(s.contractedAnnualNetRentUsd != null
+          ? Number(s.contractedAnnualNetRentUsd || 0)
+          : leases.reduce((a, l) => a + Number(l.annual_net_usd != null ? l.annual_net_usd : (Number(l.vat_rate || 0) > 0 ? round2(Number(l.annual_ttc_usd || 0) / (1 + Number(l.vat_rate) / 100)) : Number(l.annual_ttc_usd || 0))), 0));
+        const totVat = round2(Math.max(0, totTtc - totBase));
         return {
           kpis: [
             { label: 'Active Lease Contracts', val: fmtNum(leases.length), sub: `${fmtNum(re.expiringLeaseCount)} expiring within horizon`, cls: 'good' },
-            { label: 'Annualized Rent Roll', val: fmtUSD(totTtc, 0), sub: `Base ${fmtUSD(totBase, 0)} + 11% VAT ${fmtUSD(totVat, 0)}`, cls: 'good' },
+            { label: 'Annualized Rent Roll', val: fmtUSD(totTtc, 0), sub: `Base ${fmtUSD(totBase, 0)} + VAT ${fmtUSD(totVat, 0)}`, cls: 'good' },
             { label: 'Period Rent Billed', val: fmtUSD(s.totalInvoicedTtcUsd, 0), sub: `${fmtNum(invs.length)} tax & commercial rent bills`, cls: 'brass' },
             { label: 'Rent Cash Collected', val: fmtUSD(s.totalCollectedRentUsd, 0), sub: 'Escrow & fresh USD receipts', cls: 'good' },
             { label: 'Open Tenant Rent AR', val: fmtUSD(s.openRentArUsd, 0), sub: 'Past-due quarterly tranches', cls: s.openRentArUsd > 0 ? 'warn' : 'good' },
@@ -78518,11 +78607,12 @@
           secondTitle: 'Period Rent Invoices & 4235 S.A.L Official Sequence ($)',
           secondBars: invs.slice(0, 8).map(iv => ({ label: `${iv.id} · ${iv.tenant}`, val: iv.amount_ttc_usd, sub: `${iv.period} · Open AR ${fmtUSD(iv.open_ar_usd, 0)}` })),
           tableTitle: 'Active Commercial & Residential Leases & 4235 S.A.L Rent Roll Register',
-          headers: ['Lease Code', 'Entity / Legal', 'Property & Unit', 'Tenant', 'Term', 'Annual Base ($)', '11% VAT ($)', 'Annual Rent ($)'],
+          headers: ['Lease Code', 'Entity / Legal', 'Property & Unit', 'Tenant', 'Term', 'Annual Base ($)', 'VAT ($)', 'Annual Rent ($)'],
           rows: leases.map(l => {
             const ttc = Number(l.annual_ttc_usd || 0);
-            const vat = Number(l.vat_rate || 0) > 0 ? round2(ttc - ttc / 1.11) : 0;
-            const base = round2(ttc - vat);
+            const vr = Number(l.vat_rate || 0);
+            const base = l.annual_net_usd != null ? Number(l.annual_net_usd) : (vr > 0 ? round2(ttc / (1 + vr / 100)) : ttc);
+            const vat = round2(Math.max(0, ttc - base));
             return [l.id, l.company, `${l.property} · ${l.unit}`, l.tenant, `${l.start_date} to ${l.end_date}`, fmtUSD(base, 0), fmtUSD(vat, 0), fmtUSD(ttc, 0)];
           }),
           totals: ['Total Rent Roll', 'Properties + 4235 S.A.L', `${leases.length} Active Leases`, 'All Tenants', 'Active Terms', fmtUSD(totBase, 0), fmtUSD(totVat, 0), fmtUSD(totTtc, 0)]
@@ -84818,7 +84908,7 @@
   //    The fields that make a save "another value" (rates and amounts, not the derived totals or the labels):
   const SIBLING_CHRONO_VALUE_KEYS = {
     ins_agreements: ['new_bus_pct', 'renewal_pct', 'override_bonus_pct'],
-    re_leases: ['tenant', 'net_period_usd', 'frequency'],
+    re_leases: ['tenant', 'net_period_usd', 'frequency', 'vat_rate'],
     trd_targets: ['unit_net_usd', 'unit_cost_usd', 'fob_unit_usd', 'landed_pct'],
     hsp_tariffs: ['seasonal_rate_usd', 'nightly_rate_usd'],
     hld_partners: ['pct', 'pool_usd'],
@@ -84826,8 +84916,44 @@
   };
   // Values written two ways for one thing (a live lease billed "Yearly" is the form's "Annual")
   const SIBLING_CHRONO_VALUE_NORM = {
-    frequency: v => (/^(yearly|annual|annually)$/i.test(String(v || '').trim()) ? 'annual' : String(v || '').trim().toLowerCase()),
+    frequency: v => {
+      const s = String(v || '').trim();
+      if (/^(semi[-\s]?annual|half[-\s]?yearly)$/i.test(s)) return 'semi-annual';
+      if (/^(yearly|annual|annually)$/i.test(s)) return 'annual';
+      return s.toLowerCase();
+    },
   };
+  function isGenericReUnit(u) {
+    return /^(commercial\s+(suite|unit)|property\s+unit|floor\s+\d+|ground\s+floor|-|)$/i.test(String(u || '').trim());
+  }
+  function matchReChronoPeer(l, propVal, unitVal, tenantVal, exclIdUp) {
+    if (!l) return false;
+    const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
+    const idUp = String(l.id || '').trim().toUpperCase();
+    if (exclIdUp && idUp === exclIdUp) return false;
+    if (normReProp(l.property) !== normReProp(propVal)) return false;
+    const uUp = String(unitVal || '').trim().toUpperCase();
+    if (String(l.unit || '').trim().toUpperCase() !== uUp) return false;
+    if (isGenericReUnit(unitVal) && tenantVal && norm(l.tenant || '') !== norm(tenantVal)) return false;
+    return true;
+  }
+  function parseReVatRatePct(rawVal, fallbackCo) {
+    if (rawVal === 0 || rawVal === '0') return 0;
+    const s = String(rawVal == null ? '' : rawVal).trim();
+    if (s !== '') {
+      const m = s.match(/(\d+(?:\.\d+)?)/);
+      if (m) return Number(m[1]) > 0 ? Number(m[1]) : 0;
+    }
+    return /4235/i.test(String(fallbackCo || '')) ? 11 : 0;
+  }
+  function resolveLeaseStepAtDate(lease, dtIso) {
+    if (!lease || !dtIso || lease._customEdited || lease._continues_id || lease._scheduleEdited) return null;
+    const wins = Array.isArray(lease.step_windows) ? lease.step_windows : null;
+    if (!wins || !wins.length) return null;
+    const d = String(dtIso).trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    return wins.find(w => w && w.start_date && w.end_date && d >= w.start_date && d <= w.end_date) || null;
+  }
   const _siblingChronoEnd = r => {
     const e = String((r && r.end_date) || '').trim();
     return (!e || /^open$/i.test(e)) ? '' : e.slice(0, 10);
@@ -85219,8 +85345,7 @@
       peers = (curOps.agreements || []).filter(a => a && norm(a.carrier) === norm(origSched.carrier) && normInsLineKey(a.line) === normInsLineKey(origSched.line) && String(a.id || '').toUpperCase() !== pidUp);
     } else if (fk === 're_leases') {
       const curRe = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true });
-      const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
-      peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(origSched.property) && String(l.unit || '').trim().toUpperCase() === String(origSched.unit || '').trim().toUpperCase() && String(l.id || '').toUpperCase() !== pidUp);
+      peers = (curRe.leases || []).filter(l => matchReChronoPeer(l, origSched.property, origSched.unit, origSched.tenant, pidUp));
     } else if (fk === 'trd_targets') {
       const curTrd = computeTradingOperations({ ignoreSearch: true, ignorePeriod: true });
       peers = (curTrd.targetRows || []).filter(t => t && t.company === origSched.company && normTradingTariffCat(t.category) === normTradingTariffCat(origSched.category) && String(t.id || '').toUpperCase() !== pidUp);
@@ -86083,7 +86208,9 @@
       const nTu = norm(tuStr);
       const nTen = norm(l.tenant || '');
       const nUnt = norm(l.unit || '');
-      return nTen === nTu || nUnt === nTu || (nTen && (nTu.includes(nTen) || nTen.includes(nTu)));
+      const nNote = norm(l.escalation || '');
+      const noteMatch = nTu.length >= 6 && !/^(office|block|commercial|floor|suite|tenant)\b/.test(nTu) && nNote.includes(nTu);
+      return nTen === nTu || nUnt === nTu || (nTen && (nTu.includes(nTen) || nTen.includes(nTu))) || noteMatch;
     };
     const activeHits = leases.filter(l => {
       if (!l) return false;
@@ -86100,15 +86227,17 @@
     if (activeHits.length > 0) {
       const best = activeHits[0];
       const is4235 = /4235/i.test(best.company || coStr);
+      const stepHit = resolveLeaseStepAtDate(best, dtStr);
+      const effVatRate = best.vat_rate != null ? Number(best.vat_rate) : (is4235 ? 11 : 0);
       return {
-        net_period_usd: Number(best.net_period_usd || 12500),
-        vat_rate: is4235 ? 11 : 0,
+        net_period_usd: Number((stepHit && stepHit.net_period_usd) || best.net_period_usd || 12500),
+        vat_rate: effVatRate,
         frequency: best.frequency || 'Quarterly',
         leaseId: best.id || 'LSE-ACTIVE',
         property: best.property || propStr,
         tenant: best.tenant || tuStr,
-        startDate: best.start_date || '',
-        endDate: best.end_date || 'Open',
+        startDate: (stepHit && stepHit.start_date) || best.start_date || '',
+        endDate: (stepHit && stepHit.end_date) || best.end_date || 'Open',
         isFallback: false
       };
     }
@@ -86149,8 +86278,8 @@
       if (!iDate || iDate < sweepStart || iDate > sweepEnd) return;
       const hit = lookupActiveRealEstateLeaseRate(inv.company, inv.property || leaseObj.property, inv.tenant || leaseObj.tenant, iDate);
       const net = round2(Number(hit.net_period_usd || 0));
-      const is4235 = /4235/i.test(inv.company);
-      const vat = is4235 ? round2(net * 0.11) : 0;
+      const effVatRate = hit && hit.vat_rate != null ? Number(hit.vat_rate) : (leaseObj.vat_rate != null ? Number(leaseObj.vat_rate) : (/4235/i.test(inv.company) ? 11 : 0));
+      const vat = effVatRate > 0 ? round2(net * (effVatRate / 100)) : 0;
       const tot = round2(net + vat);
       const col = round2(Number(inv.collected_usd || 0));
       const openAr = Math.max(0, round2(tot - col));
@@ -86165,6 +86294,7 @@
         net_usd: net,
         base_usd: net,
         vat_usd: vat,
+        vat_rate: effVatRate,
         amount_ttc_usd: tot,
         ttc_usd: tot,
         collected_usd: col,
@@ -87423,45 +87553,61 @@
         ${fldWrap('Next Settlement Due Date', `<input type="date" id="ide_due" style="${inpStyle}" value="${esc(prefill.next_due || prefill.due_date || '2026-11-30')}">`)}
       `;
     } else if (spec.key === 're_leases') {
-      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
-      const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
-      // Live leases are billed "Yearly": the form's Annual (else the select fell back to Quarterly on every edit)
-      const defFreq = /^(yearly|annually)$/i.test(String(prefill.frequency || '').trim()) ? 'Annual' : (prefill.frequency || 'Quarterly');
+      const reOpsForDl = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : null;
+      const tenants = freqRankCandidates('customer', []
+        .concat((reOpsForDl && reOpsForDl.leases || []).map(r => r && r.tenant))
+        .concat(['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']));
+      const props = freqRankCandidates('site', []
+        .concat((reOpsForDl && reOpsForDl.properties || []).map(r => r && (r.name || r.property)))
+        .concat(['4235 Msaytbeh', '4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '1354/50 Mina el Hosn']));
+      const rawFqL = String(prefill.frequency || '').trim();
+      const defFreq = /^(semi[-\s]?annual|half[-\s]?yearly)$/i.test(rawFqL) ? 'Semi-Annual'
+        : (/^(yearly|annually|annual)$/i.test(rawFqL) ? 'Annual' : (rawFqL || 'Quarterly'));
+      const defVatRate = prefill.vat_rate != null ? Number(prefill.vat_rate) : (/4235/.test(defCo) ? 11 : 0);
       const endVal = prefill.end_date === 'Open' ? '' : (prefill.end_date || '2029-10-31');
       datalistsHtml = `
         <datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
         <datalist id="dl_ide_re_props">${props.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
       `;
       fieldsHtml = `
-        ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
+        ${fldWrap('Legal Entity *', coSelectHtml, 'Per-lease VAT treatment (11% Official VAT or 0% Exempt)')}
         ${fldWrap('Lease Contract ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'LSE-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Property / Building *', `<input type="text" id="ide_property" list="dl_ide_re_props" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
+        ${fldWrap('Property / Building *', `<input type="text" id="ide_property" list="dl_ide_re_props" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
         ${fldWrap('Leased Unit / Floor *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Floor 2 Medical Suite (210 m2)')}">`)}
         ${fldWrap('Tenant Name *', `<input type="text" id="ide_tenant" list="dl_ide_re_tenants" style="${inpStyle}" value="${esc(prefill.tenant || '')}" placeholder="Select or type tenant...">`)}
         ${fldWrap('Lease Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2020-01-01' : '2025-01-02'}" value="${esc(prefill.start_date || '2026-11-01')}">`, 'Forward chronology: auto-closes prior Open lease on unit at prev day')}
         ${fldWrap('Lease End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set evergreen Open lease" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open evergreen lease (preserves vacancy/gap windows)')}
-        ${fldWrap('Billing Frequency', `<select id="ide_freq" data-plain-options="1" style="${inpStyle}"><option value="Quarterly" ${defFreq === 'Quarterly' ? 'selected' : ''}>Quarterly (4x/yr)</option><option value="Monthly" ${defFreq === 'Monthly' ? 'selected' : ''}>Monthly (12x/yr)</option><option value="Annual" ${defFreq === 'Annual' ? 'selected' : ''}>Annual (1x/yr)</option></select>`)}
+        ${fldWrap('Billing Frequency', `<select id="ide_freq" data-plain-options="1" style="${inpStyle}"><option value="Quarterly" ${defFreq === 'Quarterly' ? 'selected' : ''}>Quarterly (4x/yr)</option><option value="Semi-Annual" ${defFreq === 'Semi-Annual' ? 'selected' : ''}>Semi-Annual (2x/yr)</option><option value="Monthly" ${defFreq === 'Monthly' ? 'selected' : ''}>Monthly (12x/yr)</option><option value="Annual" ${defFreq === 'Annual' ? 'selected' : ''}>Annual (1x/yr)</option></select>`)}
         ${fldWrap('Net Period Rent ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(prefill.net_period_usd != null ? prefill.net_period_usd : '10000')}">`)}
-        ${fldWrap('Applicable VAT Rate (%)', `<input type="text" id="ide_vat_rate" class="mono" readonly style="${roStyle}" value="${/4235/.test(defCo) ? '11%' : '0%'}">`)}
+        ${fldWrap('Applicable VAT Rate (%)', `<select id="ide_vat_rate" data-plain-options="1" style="${inpStyle}"><option value="11%" ${defVatRate > 0 ? 'selected' : ''}>11% (Official VAT)</option><option value="0%" ${defVatRate <= 0 ? 'selected' : ''}>0% (Exempt)</option></select>`)}
         ${fldWrap('Period Billed Rent ($)', `<input type="text" id="ide_period_tot" class="mono" readonly style="${roStyle}" value="$11,100.00">`)}
         ${fldWrap('Contracted Annual Rent ($)', `<input type="text" id="ide_annual_tot" class="mono" readonly style="${roStyle}" value="$44,400.00">`)}
+        ${fldWrap('Next Payment Date', `<input type="date" id="ide_next_payment" style="${inpStyle}" value="${esc(prefill.next_payment_date || '')}">`)}
         ${fldWrap('Security Deposit Held ($)', `<input type="number" id="ide_deposit" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.deposit_usd != null ? prefill.deposit_usd : '10000')}">`)}
         ${fldWrap('Escalation Schedule', `<input type="text" id="ide_escalation" style="${inpStyle}" value="${esc(prefill.escalation || '3-Yr Commercial (+8% Yr 4)')}">`)}
       `;
     } else if (spec.key === 're_invoicing') {
-      const tenants = freqRankCandidates('customer', ['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']);
-      const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
-      const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)');
+      const reOpsForDl = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : null;
+      const tenants = freqRankCandidates('customer', []
+        .concat((reOpsForDl && reOpsForDl.leases || []).map(r => r && r.tenant))
+        .concat((reOpsForDl && reOpsForDl.invoices || []).map(r => r && r.tenant))
+        .concat(['Cedar Pharmacy', 'Meridian Consulting SAL', 'Nabil Khoury', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']));
+      const props = freqRankCandidates('site', []
+        .concat((reOpsForDl && reOpsForDl.properties || []).map(r => r && (r.name || r.property)))
+        .concat(['4235 Msaytbeh', '4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '1354/50 Mina el Hosn']));
+      const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh' : '1354/50 Mina el Hosn (Marina Tower)');
       const defTenant = prefill.tenant || tenants[0] || 'Cedar Pharmacy';
       const defDate = prefill.date || today;
       const initLeaseHit = lookupActiveRealEstateLeaseRate(defCo, defProp, defTenant, defDate);
       const defNet = prefill.net_usd != null ? prefill.net_usd : initLeaseHit.net_period_usd;
+      const defInvVatRate = prefill.vat_rate != null ? Number(prefill.vat_rate)
+        : (prefill.vat_usd != null ? (Number(prefill.vat_usd) > 0 ? 11 : 0) : Number(initLeaseHit.vat_rate != null ? initLeaseHit.vat_rate : (/4235/.test(defCo) ? 11 : 0)));
       datalistsHtml = `
         <datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
         <datalist id="dl_ide_re_props">${props.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
       `;
       fieldsHtml = `
-        ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
+        ${fldWrap('Legal Entity *', coSelectHtml, 'Per-lease VAT treatment (11% Official VAT or 0% Exempt)')}
         ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'INV-RE-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
         ${fldWrap('Official Tax Sequence', `<input type="text" id="ide_tax_seq" class="mono" style="${inpStyle}" value="${esc(prefill.tax_seq || 'VAT-4235-#016')}">`)}
@@ -87469,6 +87615,7 @@
         ${fldWrap('Tenant *', `<input type="text" id="ide_tenant" list="dl_ide_re_tenants" style="${inpStyle}" value="${esc(defTenant)}">`)}
         ${fldWrap('Billing Period', `<input type="text" id="ide_period" style="${inpStyle}" value="${esc(prefill.period || '2026-Q4 (Nov-Jan)')}">`)}
         ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="0.01" min="0.01" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initLeaseHit.isFallback ? 'Baseline rate (' + initLeaseHit.leaseId + ' · ' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')' : 'Chrono Lease ' + initLeaseHit.leaseId + ' (' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')')}</span>`)}
+        ${fldWrap('Applicable VAT Rate (%)', `<select id="ide_vat_rate" data-plain-options="1" style="${inpStyle}"><option value="11%" ${defInvVatRate > 0 ? 'selected' : ''}>11% (Official VAT)</option><option value="0%" ${defInvVatRate <= 0 ? 'selected' : ''}>0% (Exempt)</option></select>`)}
         ${fldWrap('VAT Amount ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
         ${fldWrap('Total Billed Rent ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$13,875.00">`)}
         ${domainNearCopyAmtJumpHtml()}
@@ -88228,14 +88375,13 @@
         if ($('ide_payable')) $('ide_payable').value = fmtUSD(Math.max(0, pay), 2);
       } else if (spec.key === 're_leases') {
         const co = strVal('ide_company');
-        const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
-        const freq = strVal('ide_freq');
-        const mult = freq === 'Monthly' ? 12 : (freq === 'Annual' ? 1 : 4);
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const fqNorm = SIBLING_CHRONO_VALUE_NORM.frequency(strVal('ide_freq'));
+        const mult = fqNorm === 'monthly' ? 12 : (fqNorm === 'semi-annual' ? 2 : (fqNorm === 'annual' ? 1 : 4));
+        const vatRate = parseReVatRatePct($('ide_vat_rate') ? $('ide_vat_rate').value : null, co);
+        const vat = vatRate > 0 ? round2(net * (vatRate / 100)) : 0;
         const pTot = round2(net + vat);
         const aTot = round2(pTot * mult);
-        if ($('ide_vat_rate')) $('ide_vat_rate').value = is4235 ? '11% (Official VAT)' : '0% (Exempt)';
         if ($('ide_period_tot')) $('ide_period_tot').value = fmtUSD(pTot, 2);
         if ($('ide_annual_tot')) $('ide_annual_tot').value = fmtUSD(aTot, 2);
         const sd = strVal('ide_start_date');
@@ -88245,9 +88391,9 @@
           return false;
         }
       } else if (spec.key === 're_invoicing') {
-        const is4235 = /4235/i.test(strVal('ide_company'));
         const net = numVal('ide_net');
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const vatRate = parseReVatRatePct($('ide_vat_rate') ? $('ide_vat_rate').value : null, strVal('ide_company'));
+        const vat = vatRate > 0 ? round2(net * (vatRate / 100)) : 0;
         if ($('ide_vat')) $('ide_vat').value = fmtUSD(vat, 2);
         if ($('ide_tot')) $('ide_tot').value = fmtUSD(net + vat, 2);
       } else if (spec.key === 're_receipts') {
@@ -88651,15 +88797,16 @@
       });
       syncAgrChronoBounds();
     } else if (spec.key === 're_leases') {
-      const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
+      modal._ideVatTouched = false;
       const syncReLeaseChronoBounds = () => {
         if (isEditMode) return;
         const sdInp = $('ide_start_date');
         if (!sdInp) return;
-        const propPfx = normReProp(strVal('ide_property'));
-        const unitUp = String(strVal('ide_unit') || '').trim().toUpperCase();
-        const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { leases: [] };
-        const peers = (re.leases || []).filter(l => l && normReProp(l.property) === propPfx && String(l.unit || '').trim().toUpperCase() === unitUp && String(l.id || '') !== strVal('ide_id'));
+        const propVal = strVal('ide_property');
+        const unitVal = strVal('ide_unit');
+        const tenantVal = strVal('ide_tenant');
+        const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : { leases: [] };
+        const peers = (re.leases || []).filter(l => matchReChronoPeer(l, propVal, unitVal, tenantVal, String(strVal('ide_id') || '').toUpperCase()));
         let minBound = '2025-01-02';
         peers.forEach(p => {
           const nextAfterStart = nextCalendarDayISO(p.start_date);
@@ -88671,17 +88818,35 @@
         });
         sdInp.min = minBound;
       };
-      ['ide_property', 'ide_unit'].forEach(fid => {
+      ['ide_property', 'ide_unit', 'ide_tenant'].forEach(fid => {
         const el = $(fid);
         if (el) el.addEventListener('change', syncReLeaseChronoBounds);
       });
+      if ($('ide_vat_rate')) {
+        $('ide_vat_rate').addEventListener('change', () => {
+          modal._ideVatTouched = true;
+          recalcLive();
+        });
+      }
+      if ($('ide_company')) {
+        $('ide_company').addEventListener('change', () => {
+          if (!isEditMode && !modal._ideVatTouched && $('ide_vat_rate')) {
+            $('ide_vat_rate').value = /4235/i.test(strVal('ide_company')) ? '11%' : '0%';
+          }
+          recalcLive();
+        });
+      }
       syncReLeaseChronoBounds();
     } else if (spec.key === 're_invoicing') {
+      modal._ideVatTouched = isEditMode || prefill.vat_rate != null;
       const syncReInvoiceLeaseRate = () => {
         const hit = lookupActiveRealEstateLeaseRate(strVal('ide_company'), strVal('ide_property'), strVal('ide_tenant'), strVal('ide_date') || today);
         const netInp = $('ide_net');
         const hintEl = $('ideRateSourceHint');
         if (netInp) netInp.value = String(hit.net_period_usd);
+        if ($('ide_vat_rate') && !modal._ideVatTouched) {
+          $('ide_vat_rate').value = Number(hit.vat_rate || 0) > 0 ? '11%' : '0%';
+        }
         if (hintEl) {
           hintEl.textContent = hit.isFallback
             ? `Baseline rate (${hit.leaseId} · ${fmtUSD(hit.net_period_usd, 0)})`
@@ -88689,6 +88854,12 @@
         }
         recalcLive();
       };
+      if ($('ide_vat_rate')) {
+        $('ide_vat_rate').addEventListener('change', () => {
+          modal._ideVatTouched = true;
+          recalcLive();
+        });
+      }
       ['ide_company', 'ide_property', 'ide_tenant', 'ide_date'].forEach(fid => {
         const el = $(fid);
         if (el) el.addEventListener('change', syncReInvoiceLeaseRate);
@@ -89404,25 +89575,26 @@
       } else if (spec.key === 're_leases') {
         const tenant = strVal('ide_tenant');
         if (!tenant) { showMsg('Tenant Name is required.', true); return; }
-        const propVal = strVal('ide_property') || '4235 Msaytbeh Commercial Center';
+        const propVal = strVal('ide_property') || '4235 Msaytbeh';
         const unitVal = strVal('ide_unit') || 'Commercial Unit';
         const sd = strVal('ide_start_date');
         const rawEd = strVal('ide_end_date') || 'Open';
         const curRe = computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true });
-        const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
-        const peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(propVal) && String(l.unit || '').trim().toUpperCase() === unitVal.trim().toUpperCase() && String(l.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const peers = (curRe.leases || []).filter(l => matchReChronoPeer(l, propVal, unitVal, tenant, String(recId || '').toUpperCase()));
         const existingSelf = (curRe.leases || []).find(l => l && String(l.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
         let cState = resolveDomainChronoSaveState(peers, existingSelf, sd, siblingChronoEditEnd(isEditMode, existingSelf, sd, rawEd), isEditMode, 'Chronological Lease Guard');
         if (!cState.ok) { showMsg(cState.error, true); return; }
         const ed = cState.ed;
-        const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
         const freq = strVal('ide_freq') || 'Quarterly';
-        const mult = freq === 'Monthly' ? 12 : (freq === 'Annual' ? 1 : 4);
-        const vatRate = is4235 ? 11 : 0;
-        const vatUsd = is4235 ? round2(net * 0.11) : 0;
+        const fqNorm = SIBLING_CHRONO_VALUE_NORM.frequency(freq);
+        const mult = fqNorm === 'monthly' ? 12 : (fqNorm === 'semi-annual' ? 2 : (fqNorm === 'annual' ? 1 : 4));
+        const vatRate = parseReVatRatePct($('ide_vat_rate') ? $('ide_vat_rate').value : null, co);
+        const vatUsd = vatRate > 0 ? round2(net * (vatRate / 100)) : 0;
         const ttcPeriod = round2(net + vatUsd);
+        const annualNet = round2(net * mult);
         const annualTtc = round2(ttcPeriod * mult);
+        const isVatable = vatRate > 0;
         const daysExp = ed === 'Open' ? 365 : Math.max(30, Math.round((Date.parse(ed + 'T00:00:00Z') - Date.parse('2026-11-06T00:00:00Z')) / 86400000));
         const leaseRec = {
           id: recId,
@@ -89436,11 +89608,14 @@
           net_period_usd: net,
           vat_rate: vatRate,
           ttc_period_usd: ttcPeriod,
+          annual_net_usd: annualNet,
           annual_ttc_usd: annualTtc,
+          next_payment_date: strVal('ide_next_payment') || '',
           deposit_usd: numVal('ide_deposit'),
           escalation: strVal('ide_escalation') || '3-Yr Stepped',
           days_to_expiry: daysExp,
           unbilled_periods: 0,
+          _customEdited: true,
           autoClosePriorId: cState.priorPrimaryId,
           autoClosePriorIds: cState.closeIds,
           autoCloseDate: cState.closeDate,
@@ -89463,7 +89638,7 @@
             id: `INV-${recId}`,
             date: sd,
             company: co,
-            tax_seq: is4235 ? `VAT-4235-${recId.slice(-3)}` : `INV-PROP-${recId.slice(-3)}`,
+            tax_seq: isVatable ? `VAT-4235-${recId.slice(-3)}` : `INV-PROP-${recId.slice(-3)}`,
             property: propVal,
             tenant,
             period: `${sd.slice(0, 7)} Initial Period`,
@@ -89475,13 +89650,14 @@
             collected_usd: 0,
             open_ar_usd: ttcPeriod,
             status: 'Open',
-            audit_note: is4235 ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
+            audit_note: isVatable ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
           }, { skipCloudSync: true });
         });
       } else if (spec.key === 're_invoicing') {
-        const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
-        const vatUsd = is4235 ? round2(net * 0.11) : 0;
+        const vatRate = parseReVatRatePct($('ide_vat_rate') ? $('ide_vat_rate').value : null, co);
+        const isVatable = vatRate > 0;
+        const vatUsd = isVatable ? round2(net * (vatRate / 100)) : 0;
         const tot = round2(net + vatUsd);
         const col = Math.min(tot, numVal('ide_collected'));
         addIndustryCustomRow('re_invoicing', {
@@ -89489,18 +89665,19 @@
           date: strVal('ide_date') || today,
           company: co,
           tax_seq: strVal('ide_tax_seq') || 'INV-2026-Q4',
-          property: strVal('ide_property') || '4235 Msaytbeh Commercial Center',
+          property: strVal('ide_property') || '4235 Msaytbeh',
           tenant: strVal('ide_tenant') || 'Tenant',
           period: strVal('ide_period') || '2026-Q4',
           net_usd: net,
           base_usd: net,
+          vat_rate: vatRate,
           vat_usd: vatUsd,
           amount_ttc_usd: tot,
           ttc_usd: tot,
           collected_usd: col,
           open_ar_usd: round2(tot - col),
           status: col >= tot ? 'Paid' : (col > 0 ? 'Partial' : 'Open'),
-          audit_note: is4235 ? '11% Official VAT Applied' : '0% VAT Properties Scope',
+          audit_note: isVatable ? '11% Official VAT Applied' : '0% VAT Exempt Scope',
           ...domNearCopyLink
         });
       } else if (spec.key === 're_receipts') {
@@ -90900,7 +91077,7 @@
         if (bill) return { formKey: 'ins_billing', prefill: Object.assign({}, bill, basePrefill, { id: bill.id }) };
       }
     } else if (ind === 'Real Estate & Property') {
-      const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : null;
+      const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true, ignorePeriod: true }) : null;
       if (re) {
         const lse = (re.leases || []).find(l => String(l.id || '').toUpperCase() === pidUp);
         if (lse) return { formKey: 're_leases', prefill: Object.assign({}, lse, basePrefill, { id: lse.id }) };
@@ -103474,16 +103651,30 @@
           }
         } else if (ind === 'Real Estate & Property') {
           const entInp = findInp(/entity|legal/);
-          const baseInp = findEditableInp(/base/);
+          const baseInp = findEditableInp(/net\s*\/\s*period|period net|net rent|base/);
           const vatInp = findEditableInp(/vat/);
-          const totInp = findEditableInp(/annual rent|billed rent|total/);
-          if (baseInp && vatInp && totInp) {
+          const perTotInp = findEditableInp(/rent\s*\/\s*period|billed rent|amount/);
+          const annTotInp = findEditableInp(/annual rent|total/);
+          const freqInp = findInp(/billing|freq/);
+          const pf = resolvedDomainChrono && resolvedDomainChrono.prefill;
+          const rawFreq = (freqInp ? String(freqInp.value || '').split(/\r?\n|Next Due:|\d{4}-\d{2}-\d{2}/i)[0].trim() : '') || (pf && pf.frequency) || 'Quarterly';
+          const fqN = SIBLING_CHRONO_VALUE_NORM.frequency(rawFreq);
+          const mult = fqN === 'monthly' ? 12 : (fqN === 'semi-annual' ? 2 : (fqN === 'annual' ? 1 : 4));
+          const entTxt = entInp ? entInp.value : (COMPANY_LABELS[STATE.company] || '');
+          const vatRate = (pf && pf.vat_rate != null)
+            ? Number(pf.vat_rate)
+            : ((pf && pf.vat_usd != null) ? (Number(pf.vat_usd) > 0 ? 11 : 0) : (/4235/i.test(entTxt) ? 11 : 0));
+          if (baseInp && vatInp && perTotInp) {
             const base = parseNumVal(baseInp.value);
-            const entTxt = entInp ? entInp.value : (COMPANY_LABELS[STATE.company] || '');
-            const is4235 = /4235/i.test(entTxt);
-            const vat = is4235 ? round2(base * 0.11) : 0;
+            const vat = vatRate > 0 ? round2(base * (vatRate / 100)) : 0;
             if (document.activeElement !== vatInp) vatInp.value = fmtUSD(vat, 0);
-            if (document.activeElement !== totInp) totInp.value = fmtUSD(base + vat, 0);
+            if (document.activeElement !== perTotInp) perTotInp.value = fmtUSD(base + vat, 0);
+          } else if (baseInp && (perTotInp || annTotInp)) {
+            const base = parseNumVal(baseInp.value);
+            const vat = vatRate > 0 ? round2(base * (vatRate / 100)) : 0;
+            const ttcPer = round2(base + vat);
+            if (perTotInp && document.activeElement !== perTotInp) perTotInp.value = fmtUSD(ttcPer, 2);
+            if (annTotInp && document.activeElement !== annTotInp) annTotInp.value = fmtUSD(round2(ttcPer * mult), 2);
           }
         } else if (ind === 'Hospitality & Resorts') {
           const catInp = findInp(/category|stream|item/);
@@ -103865,15 +104056,41 @@
                 if (bnInp) upd.override_bonus_pct = parseNumVal(bnInp.value);
               } else if (fk === 're_leases') {
                 const netInp = findEditableInp(/net.*period|period net|base/);
-                if (netInp) {
-                  const netV = parseNumVal(netInp.value);
-                  const is4235 = /4235/i.test(String(upd.company || ''));
-                  const vatUsd = is4235 ? round2(netV * 0.11) : 0;
+                const freqInp = findEditableInp(/billing|freq/);
+                const tenantInp = findEditableInp(/tenant/);
+                const depInp = findEditableInp(/deposit/);
+                if (tenantInp) {
+                  const initT = String(tenantInp.getAttribute('data-init-val') || '').trim();
+                  const curT = String(tenantInp.value || '').trim();
+                  if (curT && curT !== initT) upd.tenant = curT.split(/\r?\n/)[0].trim();
+                }
+                if (depInp) upd.deposit_usd = parseNumVal(depInp.value);
+                let parsedFreq = upd.frequency || 'Quarterly';
+                if (freqInp) {
+                  const rawF = String(freqInp.value || '').trim();
+                  if (/semi[-\s]?annual|half[-\s]?year|bi[-\s]?annual|2x\/yr/i.test(rawF)) parsedFreq = 'Semi-Annual';
+                  else if (/month/i.test(rawF)) parsedFreq = 'Monthly';
+                  else if (/quarter/i.test(rawF)) parsedFreq = 'Quarterly';
+                  else if (/annual|year/i.test(rawF)) parsedFreq = 'Yearly';
+                  upd.frequency = parsedFreq;
+                }
+                const freqChanged = Boolean(freqInp && SIBLING_CHRONO_VALUE_NORM.frequency(parsedFreq) !== SIBLING_CHRONO_VALUE_NORM.frequency(origSched.frequency));
+                const netV = netInp ? parseNumVal(netInp.value) : Number(origSched.net_period_usd || 0);
+                const netChanged = Boolean(netInp && Math.abs(netV - Number(origSched.net_period_usd || 0)) > 0.005);
+                if (netInp || freqInp) {
+                  const vatRate = upd.vat_rate != null ? Number(upd.vat_rate) : (/4235/i.test(String(upd.company || '')) ? 11 : 0);
+                  const vatUsd = vatRate > 0 ? round2(netV * (vatRate / 100)) : 0;
                   const fqN = SIBLING_CHRONO_VALUE_NORM.frequency(upd.frequency);
-                  const mult = fqN === 'monthly' ? 12 : (fqN === 'annual' ? 1 : 4);
+                  const mult = fqN === 'monthly' ? 12 : (fqN === 'semi-annual' ? 2 : (fqN === 'annual' ? 1 : 4));
                   upd.net_period_usd = netV;
-                  upd.ttc_period_usd = round2(netV + vatUsd);
-                  upd.annual_ttc_usd = round2(upd.ttc_period_usd * mult);
+                  upd.vat_rate = vatRate;
+                  if (netChanged || freqChanged) {
+                    upd.annual_net_usd = round2(netV * mult);
+                    upd.ttc_period_usd = round2(netV + vatUsd);
+                    upd.annual_ttc_usd = round2(upd.ttc_period_usd * mult);
+                    upd._customEdited = true;
+                    delete upd.step_windows;
+                  }
                 }
               } else if (fk === 'trd_targets') {
                 const unInp = findEditableInp(/list net|unit net/);
@@ -175194,10 +175411,11 @@
       }
     } else if (activeInd === 'Real Estate & Property') {
       const co = strV('ik_company');
-      const is4235 = /4235/.test(co);
       if (kMode === 'sales' || kMode === 'raw') {
+        const kHit = lookupActiveRealEstateLeaseRate(co, strV('ik_property'), strV('ik_tenant'), strV('ik_date') || todayISO());
+        const kVatRate = kHit && !kHit.isFallback && kHit.vat_rate != null ? Number(kHit.vat_rate) : (/4235/.test(co) ? 11 : 0);
         const net = Math.max(0, numV('ik_net'));
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const vat = kVatRate > 0 ? round2(net * (kVatRate / 100)) : 0;
         const tot = round2(net + vat);
         if ($('ik_vat')) $('ik_vat').value = fmtUSD(vat, 2);
         if ($('ik_tot')) $('ik_tot').value = fmtUSD(tot, 2);
@@ -175359,10 +175577,12 @@
     }
 
     if (activeInd === 'Real Estate & Property') {
-      const is4235 = /4235/.test(co);
+      const kHit = lookupActiveRealEstateLeaseRate(co, strV('ik_property'), strV('ik_tenant'), dt);
+      const kVatRate = kHit && !kHit.isFallback && kHit.vat_rate != null ? Number(kHit.vat_rate) : (/4235/.test(co) ? 11 : 0);
+      const isVatable = kVatRate > 0;
       if (kMode === 'sales') {
         const net = numV('ik_net') || 12500;
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const vat = isVatable ? round2(net * (kVatRate / 100)) : 0;
         const tot = round2(net + vat);
         return {
           id: recId, ticket_no: recId, company: co, date: dt,
@@ -175374,9 +175594,9 @@
           method: strV('ik_method') || 'Bank Wire (Fresh USD)', entered_by: who,
           _domainSlip: {
             ind: activeInd,
-            title: is4235 ? 'OFFICIAL 11% VAT RENT RECEIPT' : 'OFFICIAL PROPERTY RENT RECEIPT',
+            title: isVatable ? 'OFFICIAL 11% VAT RENT RECEIPT' : 'OFFICIAL PROPERTY RENT RECEIPT',
             unpricedTitle: 'TENANT CLEARANCE & ACCESS PASS',
-            badge: is4235 ? '4235 S.A.L · 11% VAT' : 'PROPERTIES · 0% VAT',
+            badge: isVatable ? '4235 S.A.L · 11% VAT' : '0% VAT EXEMPT',
             refLabel: 'RECEIPT #',
             counterpartyLbl: 'Tenant Name',
             counterparty: strV('ik_tenant') || 'Tenant',
@@ -175385,14 +175605,14 @@
             itemLbl: 'Rent Settlement Details',
             itemVal: `Linked Invoice ${strV('ik_inv_ref') || 'INV-4235-010'}`,
             extraPairs: [
-              { k: 'Tax Regime', v: is4235 ? '11% Statutory VAT' : '0% Non-Corporate' }
+              { k: 'Tax Regime', v: isVatable ? '11% Statutory VAT' : '0% Non-Corporate' }
             ]
           }
         };
       }
       if (kMode === 'raw') {
         const net = numV('ik_net') || 15000;
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const vat = isVatable ? round2(net * (kVatRate / 100)) : 0;
         const tot = round2(net + vat);
         return {
           id: recId, ticket_no: recId, company: co, date: dt,
@@ -175772,10 +175992,12 @@
         });
       }
     } else if (activeInd === 'Real Estate & Property') {
-      const is4235 = /4235/.test(co);
+      const kHit = lookupActiveRealEstateLeaseRate(co, strV('ik_property'), strV('ik_tenant'), dt);
+      const kVatRate = kHit && !kHit.isFallback && kHit.vat_rate != null ? Number(kHit.vat_rate) : (/4235/.test(co) ? 11 : 0);
+      const isVatable = kVatRate > 0;
       if (kMode === 'sales') {
         const net = numV('ik_net');
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const vat = isVatable ? round2(net * (kVatRate / 100)) : 0;
         const tot = round2(net + vat);
         postedBucket = 're_receipts';
         postedRow = addIndustryCustomRow('re_receipts', {
@@ -175786,16 +176008,19 @@
         });
       } else if (kMode === 'raw') {
         const net = numV('ik_net');
-        const vat = is4235 ? round2(net * 0.11) : 0;
+        const vat = isVatable ? round2(net * (kVatRate / 100)) : 0;
         const tot = round2(net + vat);
+        const rawFreq = strV('ik_freq') || 'Quarterly';
+        const fqN = SIBLING_CHRONO_VALUE_NORM.frequency(rawFreq);
+        const kMult = fqN === 'monthly' ? 12 : (fqN === 'semi-annual' ? 2 : (fqN === 'annual' ? 1 : 4));
         postedBucket = 're_leases';
         postedRow = addIndustryCustomRow('re_leases', {
           id: recId, company: co, property: strV('ik_property') || co,
           unit: strV('ik_unit') || 'Commercial Suite', tenant: strV('ik_tenant') || 'Tenant',
           start_date: dt, end_date: '2029-10-31', days_to_expiry: 1095,
-          freq: strV('ik_freq') || 'Quarterly', vat_rate_pct: is4235 ? 11 : 0,
+          freq: rawFreq, vat_rate: kVatRate, vat_rate_pct: kVatRate,
           net_period_usd: net, vat_period_usd: vat, period_ttc_usd: tot,
-          annual_base_usd: net * 4, annual_vat_usd: vat * 4, annual_ttc_usd: tot * 4,
+          annual_base_usd: round2(net * kMult), annual_vat_usd: round2(vat * kMult), annual_ttc_usd: round2(tot * kMult),
           deposit_usd: numV('ik_deposit'), escalation: '3-Yr Commercial', status: 'Active'
         });
       } else {
@@ -209741,6 +209966,7 @@
             tenant: wfBtn.getAttribute('data-wf-tenant') || '',
             period: '2026-Q4 (Nov-Jan)',
             net_usd: Number(wfBtn.getAttribute('data-wf-net') || 12500),
+            vat_rate: wfBtn.hasAttribute('data-wf-vat') ? Number(wfBtn.getAttribute('data-wf-vat')) : undefined,
             _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('re_leases', wfId, { unbilled_periods: 0, status: 'Billed Current' }); }
           });
         } else if (wfAction === 're_wo_recharge') {
