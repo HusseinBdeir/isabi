@@ -5274,6 +5274,22 @@
     };
   }
 
+  function _normalizeSharePhoneDigits(raw) {
+    if (typeof window !== 'undefined' && typeof window.__mfgNormalizeWhatsappPhoneDigits === 'function') {
+      return window.__mfgNormalizeWhatsappPhoneDigits(raw);
+    }
+    let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
+    if (!digits) return '';
+    if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
+      digits = '961' + digits.slice(1);
+    } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
+      digits = '961' + digits;
+    } else if (/^0[1456789]\d{6}$/.test(digits)) {
+      digits = '961' + digits.slice(1);
+    }
+    return (digits.length >= 8 && digits.length <= 15) ? digits : '';
+  }
+
   function _resolveStmt14CustomerPhoneDigits(custName, ctx) {
     if (!custName || custName === 'ALL') return '';
     const normLow = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -5298,60 +5314,283 @@
     const seedObj = (ctx && ctx.seed) || (typeof window !== 'undefined' && window.MFG_SEED) || {};
     const stObj = (ctx && ctx.state) || (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE) || {};
     const indCtx = (ctx && ctx.ind) || '';
+    const demoActive = stmtIsDemo(ctx) || Boolean(stObj && stObj.company === 'democompany');
     const candidates = [];
     const pushPhones = r => {
       if (!r || r.voided) return;
       candidates.push(r.phone, r.mobile, r.whatsapp, r.contact_phone, r.tenant_phone, r.client_phone);
     };
-    const custLists = [
-      (seedObj.records && Array.isArray(seedObj.records.customers)) ? seedObj.records.customers : [],
-      (stObj.customRecords && Array.isArray(stObj.customRecords.customers)) ? stObj.customRecords.customers : []
-    ];
-    custLists.forEach(arr => {
+    const customCusts = Array.isArray(stObj.customRecords && stObj.customRecords.customers)
+      ? stObj.customRecords.customers.slice().sort((a, b) =>
+        String((b && (b.modified_at || b.entered_at)) || '').localeCompare(String((a && (a.modified_at || a.entered_at)) || ''))
+      )
+      : [];
+    const seedCusts = (seedObj.records && Array.isArray(seedObj.records.customers)) ? seedObj.records.customers : [];
+    const custMatchesInd = c => {
+      if (!c || c.voided) return false;
+      if (!demoActive && c._demoSpineRow) return false;
+      const targetInd = indCtx || 'Manufacturing';
+      if (targetInd === 'Manufacturing' && c._multiIndustrySeed) return false;
+      if (typeof window !== 'undefined' && typeof window.__mfgInferUnivRowIndustry === 'function') {
+        return window.__mfgInferUnivRowIndustry(c) === targetInd;
+      }
+      const rowInd = String(c._industry || c.industry || '').trim();
+      return targetInd === 'Manufacturing' ? (!rowInd || rowInd === 'Manufacturing') : (rowInd === targetInd);
+    };
+    [customCusts, seedCusts].forEach(arr => {
       arr.forEach(c => {
-        if (!c || c.voided) return;
-        if (c.industry && indCtx && c.industry !== indCtx) return;
+        if (!custMatchesInd(c)) return;
         const nm = normLow(c.name || c.customer);
         if (nm && targetNames.has(nm)) pushPhones(c);
       });
     });
-    const domainTables = ['re_leases', 're_tenants', 're_buyers', 'trd_sales', 'trd_customers', 'hsp_memberships', 'ins_policies'];
-    const domSeed = seedObj.industryDomain || {};
-    const domCustom = stObj.industryCustomRows || {};
-    const indLive = seedObj.industryLive || {};
-    const liveArrays = [
-      indLive.realestate && indLive.realestate.leases,
-      indLive.realestate && indLive.realestate.tenants,
-      indLive.realestate && indLive.realestate.buyers,
-      indLive.trading && indLive.trading.sales,
-      indLive.trading && indLive.trading.customers,
-      indLive.hospitality && indLive.hospitality.memberships,
-      indLive.insurance && indLive.insurance.policies
-    ];
-    const pushIfMatch = arr => {
-      if (!Array.isArray(arr)) return;
-      arr.forEach(r => {
-        if (!r || r.voided) return;
-        const nm = normLow(r.name || r.customer || r.tenant || r.buyer || r.member_name || r.client_name || r.client);
-        if (nm && targetNames.has(nm)) pushPhones(r);
+    const effInd14 = indCtx || 'Manufacturing';
+    if (effInd14 !== 'Manufacturing') {
+      const domSeed = seedObj.industryDomain || {};
+      const domCustom = stObj.industryCustomRows || {};
+      const rowEdits = stObj.industryRowEdits || {};
+      const indLive = seedObj.industryLive || {};
+      const domSpecs = [
+        { ind: 'Real Estate & Property', tbl: 're_leases', live: indLive.realestate && indLive.realestate.leases },
+        { ind: 'Real Estate & Property', tbl: 're_tenants', live: indLive.realestate && indLive.realestate.tenants },
+        { ind: 'Real Estate & Property', tbl: 're_buyers', live: indLive.realestate && indLive.realestate.buyers },
+        { ind: 'Automotive & Heavy Trading', tbl: 'trd_sales', live: indLive.trading && indLive.trading.sales },
+        { ind: 'Automotive & Heavy Trading', tbl: 'trd_customers', live: indLive.trading && indLive.trading.customers },
+        { ind: 'Hospitality & Resorts', tbl: 'hsp_memberships', live: indLive.hospitality && indLive.hospitality.memberships },
+        { ind: 'Insurance & Brokerage', tbl: 'ins_policies', live: indLive.insurance && indLive.insurance.policies }
+      ];
+      const pushIfMatch = arr => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(rawR => {
+          let r = rawR;
+          if (!r || r.voided) return;
+          if (!demoActive && r._demoSpineRow) return;
+          const ed = r.id && rowEdits[String(r.id)];
+          if (ed && typeof ed === 'object') {
+            if (ed.voided) return;
+            r = Object.assign({}, r, ed);
+          }
+          const nm = normLow(r.name || r.customer || r.tenant || r.buyer || r.member_name || r.client_name || r.client);
+          if (nm && targetNames.has(nm)) pushPhones(r);
+        });
+      };
+      domSpecs.forEach(sp => {
+        if (sp.ind !== effInd14) return;
+        pushIfMatch(domCustom[sp.tbl]);
+        pushIfMatch(domSeed[sp.tbl]);
+        pushIfMatch(sp.live);
       });
-    };
-    domainTables.forEach(tbl => {
-      pushIfMatch(domSeed[tbl]);
-      pushIfMatch(domCustom[tbl]);
-    });
-    liveArrays.forEach(pushIfMatch);
+    }
     for (const raw of candidates) {
-      let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
-      if (!digits) continue;
-      if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
-        digits = '961' + digits.replace(/^0/, '');
-      } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
-        digits = '961' + digits;
-      }
-      if (digits.length >= 8 && digits.length <= 15) return digits;
+      const digits = _normalizeSharePhoneDigits(raw);
+      if (digits) return digits;
     }
     return '';
+  }
+
+  function _translateShareModalFragment(el) {
+    if (!el || typeof window === 'undefined') return;
+    if (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang() !== 'en' && typeof window.MFG_I18N.translateDom === 'function') {
+      window.MFG_I18N.translateDom(el);
+    }
+  }
+
+  function _buildSharePhoneHintHtml(opts) {
+    const { isErr, draftDigits, noteSuffixHtml } = opts;
+    if (isErr) {
+      return `<span>Enter a valid WhatsApp number (8 to 15 digits)</span>${noteSuffixHtml || ''}`;
+    }
+    if (draftDigits) {
+      return `<span>Direct chat ready:</span> <b dir="ltr" data-no-i18n="1">+${esc(draftDigits)}</b> <span data-no-i18n="1">·</span> <span>Saves to directory on Save or Open WhatsApp</span>${noteSuffixHtml || ''}`;
+    }
+    return `<span>No saved WhatsApp number on file</span> <span data-no-i18n="1">·</span> <span>Enter once to open direct chat next time</span>${noteSuffixHtml || ''}`;
+  }
+
+  function _renderSharePhoneBarHtml(opts) {
+    const { prefix, phoneDigits, draftDigits, canSavePhone, state, noteSuffixHtml } = opts;
+    const suffix = noteSuffixHtml || '';
+    if (phoneDigits && !state.editingPhone) {
+      const editBtn = canSavePhone
+        ? ` <button type="button" class="hld-share-phone-edit-btn" id="${prefix}PhoneEditBtn"><span>Edit</span></button>`
+        : '';
+      return `<p class="hld-share-note" id="${prefix}PhoneNote"><span>Recipient WhatsApp:</span> <b dir="ltr" data-no-i18n="1">+${esc(phoneDigits)}</b>${editBtn}${suffix}</p>`;
+    }
+    if (!canSavePhone) {
+      return `<p class="hld-share-note" id="${prefix}PhoneNote"><span>No saved WhatsApp number on file (WhatsApp opens contact picker)</span>${suffix}</p>`;
+    }
+    const isErr = Boolean(state.phoneError);
+    const hintHtml = _buildSharePhoneHintHtml({ isErr, draftDigits, noteSuffixHtml: suffix });
+    return `
+      <div class="hld-share-phone-wrap" id="${prefix}PhoneSaveBar">
+        <div class="hld-share-phone-row">
+          <label class="hld-share-phone-lbl" for="${prefix}PhoneInput">${ic('smartphone')} <span>${phoneDigits ? 'WhatsApp Number' : 'Save WhatsApp #'}</span></label>
+          <input type="tel" inputmode="tel" autocomplete="tel" dir="ltr" class="hld-share-phone-input${isErr ? ' is-invalid' : ''}" id="${prefix}PhoneInput" value="${esc(state.phoneDraft || '')}" placeholder="+961 70 123 456" data-no-i18n="1" aria-label="WhatsApp Number" />
+          <button type="button" class="btn btn-ghost-bar hld-share-phone-save-btn" id="${prefix}PhoneSaveBtn"${state.savingPhone ? ' disabled' : ''}><span>Save</span></button>
+          ${phoneDigits ? `<button type="button" class="btn btn-ghost-bar hld-share-phone-cancel-btn" id="${prefix}PhoneCancelBtn"><span>Cancel</span></button>` : ''}
+        </div>
+        <p class="hld-share-note${isErr ? ' is-err' : ''}" id="${prefix}PhoneHint">${hintHtml}</p>
+      </div>
+    `;
+  }
+
+  function _wireSharePhoneBar(opts) {
+    const { modal, prefix, partyKind, partyName, ctx, state, phoneDigits, ta, wa, noteSuffixHtml, renderBody, isCurrentState } = opts;
+    const inp = document.getElementById(`${prefix}PhoneInput`);
+    const hint = document.getElementById(`${prefix}PhoneHint`);
+    const saveBtn = document.getElementById(`${prefix}PhoneSaveBtn`);
+    const cancelBtn = document.getElementById(`${prefix}PhoneCancelBtn`);
+    const editBtn = document.getElementById(`${prefix}PhoneEditBtn`);
+
+    const syncWaHref = () => {
+      if (!ta || !wa) return '';
+      const d = inp ? (_normalizeSharePhoneDigits(inp.value) || phoneDigits) : phoneDigits;
+      const prefixUrl = d ? `https://wa.me/${d}?text=` : 'https://wa.me/?text=';
+      wa.setAttribute('href', `${prefixUrl}${encodeURIComponent(_cleanOutwardCopy(ta.value))}`);
+      return d;
+    };
+
+    if (ta && wa) {
+      ta.addEventListener('input', () => {
+        state.customText = ta.value;
+        syncWaHref();
+      });
+    }
+
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        if (!isCurrentState()) return;
+        state.editingPhone = true;
+        state.phoneDraft = phoneDigits ? `+${phoneDigits}` : '';
+        state.phoneError = '';
+        renderBody();
+        const isCoarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (!isCoarse) {
+          const freshInp = document.getElementById(`${prefix}PhoneInput`);
+          if (freshInp) {
+            try { freshInp.focus({ preventScroll: true }); freshInp.select(); } catch (_) {}
+          }
+        }
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        if (!isCurrentState()) return;
+        state.editingPhone = false;
+        state.phoneDraft = '';
+        state.phoneError = '';
+        renderBody();
+      });
+    }
+
+    const showInlinePhoneError = () => {
+      state.phoneError = 'invalid';
+      if (inp) {
+        inp.classList.add('is-invalid');
+        try { inp.focus({ preventScroll: true }); } catch (_) {}
+      }
+      if (hint) {
+        hint.classList.add('is-err');
+        hint.innerHTML = _buildSharePhoneHintHtml({ isErr: true, draftDigits: '', noteSuffixHtml });
+        _translateShareModalFragment(hint);
+      }
+    };
+
+    const persistTypedPhone = async rawValue => {
+      if (!isCurrentState() || state.savingPhone) return { ok: false };
+      const digits = _normalizeSharePhoneDigits(rawValue);
+      if (!digits) {
+        showInlinePhoneError();
+        return { ok: false, code: 'invalid_phone' };
+      }
+      if (typeof window === 'undefined' || typeof window.__mfgSaveCounterpartyPhone !== 'function') {
+        return { ok: false };
+      }
+      state.savingPhone = true;
+      if (saveBtn) saveBtn.disabled = true;
+      try {
+        const res = await window.__mfgSaveCounterpartyPhone({
+          partyKind,
+          partyName,
+          rawPhone: rawValue,
+          ctx,
+          onRollback: () => {
+            if (isCurrentState() && modal && !modal.hidden) renderBody();
+          }
+        });
+        if (res && res.ok && isCurrentState()) {
+          state.editingPhone = false;
+          state.phoneDraft = '';
+          state.phoneError = '';
+          if (modal && !modal.hidden) renderBody();
+        }
+        return res;
+      } finally {
+        if (isCurrentState()) state.savingPhone = false;
+        if (saveBtn && saveBtn.isConnected) saveBtn.disabled = false;
+      }
+    };
+
+    if (inp) {
+      inp.addEventListener('input', () => {
+        if (!isCurrentState()) return;
+        state.phoneDraft = inp.value;
+        state.phoneError = '';
+        inp.classList.remove('is-invalid');
+        const liveDigits = _normalizeSharePhoneDigits(inp.value);
+        syncWaHref();
+        if (hint) {
+          hint.classList.remove('is-err');
+          hint.innerHTML = _buildSharePhoneHintHtml({ isErr: false, draftDigits: liveDigits, noteSuffixHtml });
+          _translateShareModalFragment(hint);
+        }
+      });
+      inp.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          persistTypedPhone(inp.value);
+        } else if (ev.key === 'Escape' && state.editingPhone && phoneDigits) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          state.editingPhone = false;
+          state.phoneDraft = '';
+          state.phoneError = '';
+          renderBody();
+          const freshEdit = document.getElementById(`${prefix}PhoneEditBtn`);
+          if (freshEdit) { try { freshEdit.focus({ preventScroll: true }); } catch (_) {} }
+        }
+      });
+    }
+
+    if (saveBtn && inp) {
+      saveBtn.addEventListener('click', () => { persistTypedPhone(inp.value); });
+    }
+
+    if (wa && inp) {
+      wa.addEventListener('click', ev => {
+        const rawVal = String(inp.value || '').trim();
+        if (!rawVal) return;
+        const digits = _normalizeSharePhoneDigits(rawVal);
+        if (!digits) {
+          ev.preventDefault();
+          showInlinePhoneError();
+          return;
+        }
+        const textClean = ta ? _cleanOutwardCopy(ta.value) : '';
+        wa.setAttribute('href', `https://wa.me/${digits}?text=${encodeURIComponent(textClean)}`);
+        if (digits !== phoneDigits) {
+          persistTypedPhone(rawVal);
+        } else if (state.editingPhone && isCurrentState()) {
+          setTimeout(() => {
+            if (!isCurrentState()) return;
+            state.editingPhone = false;
+            state.phoneDraft = '';
+            state.phoneError = '';
+            if (modal && !modal.hidden) renderBody();
+          }, 0);
+        }
+      });
+    }
   }
 
   function _fmtStmt14MovementText(r, basis, lang) {
@@ -5478,13 +5717,22 @@
   function renderStmt14ShareModalBody() {
     const modal = document.getElementById('stmt14ShareModal');
     if (!modal || !_stmt14ShareState) return;
-    const m = _stmt14ShareState.model;
-    const ctx = _stmt14ShareState.ctx;
-    const lang = _stmt14ShareState.lang || 'en_ar';
-    const text = buildStmt14ConfirmationText(m, lang);
+    const stateRef = _stmt14ShareState;
+    const m = stateRef.model;
+    const ctx = stateRef.ctx;
+    const lang = stateRef.lang || 'en_ar';
+    const defaultText = buildStmt14ConfirmationText(m, lang);
+    const text = stateRef.customText != null ? stateRef.customText : defaultText;
     const phoneDigits = _resolveStmt14CustomerPhoneDigits(m.custName, ctx);
-    const waPrefix = phoneDigits ? `https://wa.me/${phoneDigits}?text=` : 'https://wa.me/?text=';
-    const waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    const canSavePhone = Boolean(
+      typeof window !== 'undefined'
+      && typeof window.__mfgCanSaveCounterpartyPhone === 'function'
+      && window.__mfgCanSaveCounterpartyPhone('customer', m.custName, ctx)
+    );
+    const draftDigits = (stateRef.editingPhone || !phoneDigits) ? _normalizeSharePhoneDigits(stateRef.phoneDraft || '') : '';
+    const effDigits = draftDigits || phoneDigits;
+    const waPrefix = effDigits ? `https://wa.me/${effDigits}?text=` : 'https://wa.me/?text=';
+    const waHref = `${waPrefix}${encodeURIComponent(_cleanOutwardCopy(text))}`;
     const balCls = m.closingBal > 0.005 ? 'is-brass' : (m.closingBal < -0.005 ? 'is-good' : '');
     const langBtn = (k, lbl) => `<button type="button" class="hld-share-lang-btn ${lang === k ? 'active' : ''}" data-stmt14-share-lang="${k}" aria-pressed="${lang === k ? 'true' : 'false'}" data-no-i18n="1">${lbl}</button>`;
 
@@ -5519,7 +5767,14 @@
             </div>
           </div>
           <textarea id="stmt14ShareText" class="hld-share-text" rows="13" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="Customer confirmation message">${esc(text)}</textarea>
-          <p class="hld-share-note">${phoneDigits ? `<span>Recipient WhatsApp:</span> <b data-no-i18n="1">+${esc(phoneDigits)}</b>` : `<span>No saved WhatsApp number on file (WhatsApp opens contact picker)</span>`}</p>
+          ${_renderSharePhoneBarHtml({
+            prefix: 'stmt14',
+            phoneDigits,
+            draftDigits,
+            canSavePhone,
+            state: stateRef,
+            noteSuffixHtml: ''
+          })}
           <div class="hld-share-actions">
             <button type="button" class="btn btn-ghost-bar" id="stmt14SharePrintBtn">${ic('printer')} <span>Print / Save PDF</span></button>
             <button type="button" class="btn btn-ghost-bar" id="stmt14ShareCopyBtn">${ic('copy')} <span>Copy Message</span></button>
@@ -5531,18 +5786,27 @@
 
     const ta = document.getElementById('stmt14ShareText');
     const wa = document.getElementById('stmt14ShareWaLink');
-    if (ta && wa) {
-      ta.addEventListener('input', () => {
-        const cleanVal = _cleanOutwardCopy(ta.value);
-        wa.setAttribute('href', `${waPrefix}${encodeURIComponent(cleanVal)}`);
-      });
-    }
+    _wireSharePhoneBar({
+      modal,
+      prefix: 'stmt14',
+      partyKind: 'customer',
+      partyName: m.custName,
+      ctx,
+      state: stateRef,
+      phoneDigits,
+      ta,
+      wa,
+      noteSuffixHtml: '',
+      renderBody: renderStmt14ShareModalBody,
+      isCurrentState: () => _stmt14ShareState === stateRef
+    });
     const closeBtn = document.getElementById('stmt14ShareCloseBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeStmt14ShareModal);
     modal.querySelectorAll('[data-stmt14-share-lang]').forEach(btn => btn.addEventListener('click', () => {
       const nextL = btn.getAttribute('data-stmt14-share-lang');
       if (!STMT14_SHARE_LANGS.includes(nextL) || !_stmt14ShareState) return;
       _stmt14ShareState.lang = nextL;
+      _stmt14ShareState.customText = null;
       try { localStorage.setItem(STMT14_SHARE_LANG_KEY, nextL); } catch (_) {}
       renderStmt14ShareModalBody();
     }));
@@ -5630,6 +5894,10 @@
     } catch (_) {}
     const keyHandler = ev => {
       if (ev.key === 'Escape') {
+        const tgtId = ev && ev.target && ev.target.id;
+        if (tgtId === 'stmt14PhoneInput' && _stmt14ShareState && _stmt14ShareState.editingPhone) {
+          return;
+        }
         ev.preventDefault();
         closeStmt14ShareModal();
       }
@@ -7091,22 +7359,33 @@
   function renderStmt16ShareModalBody() {
     const modal = document.getElementById('stmt16ShareModal');
     if (!modal || !_stmt16ShareState) return;
-    const m = _stmt16ShareState.model;
-    const cmp = _stmt16ShareState.cmp || null;
+    const stateRef = _stmt16ShareState;
+    const m = stateRef.model;
+    const ctx = stateRef.ctx;
+    const cmp = stateRef.cmp || null;
     const canBooks = Boolean(m.lAp16 && m.lAp16.books);
     const discRows = getStmt16DiscrepancyRows(cmp, canBooks);
     const hasDisc = discRows.length > 0;
-    const mode = (_stmt16ShareState.mode === 'discrepancy' && hasDisc) ? 'discrepancy' : 'confirmation';
-    _stmt16ShareState.mode = mode;
-    const lang = _stmt16ShareState.lang || 'en_ar';
-    const text = mode === 'discrepancy'
+    const mode = (stateRef.mode === 'discrepancy' && hasDisc) ? 'discrepancy' : 'confirmation';
+    stateRef.mode = mode;
+    const lang = stateRef.lang || 'en_ar';
+    const defaultText = mode === 'discrepancy'
       ? buildStmt16DiscrepancyText(m, cmp, lang)
       : buildStmt16ConfirmationText(m, lang);
+    const text = stateRef.customText != null ? stateRef.customText : defaultText;
     const phoneDigits = (typeof window !== 'undefined' && typeof window.__mfgResolveSupplierPhoneDigits === 'function')
-      ? window.__mfgResolveSupplierPhoneDigits(m.supName)
+      ? window.__mfgResolveSupplierPhoneDigits(m.supName, ctx)
       : '';
-    const waPrefix = phoneDigits ? `https://wa.me/${phoneDigits}?text=` : 'https://wa.me/?text=';
-    const waHref = `${waPrefix}${encodeURIComponent(text)}`;
+    const canSavePhone = Boolean(
+      typeof window !== 'undefined'
+      && typeof window.__mfgCanSaveCounterpartyPhone === 'function'
+      && window.__mfgCanSaveCounterpartyPhone('supplier', m.supName, ctx)
+    );
+    const draftDigits = (stateRef.editingPhone || !phoneDigits) ? _normalizeSharePhoneDigits(stateRef.phoneDraft || '') : '';
+    const effDigits = draftDigits || phoneDigits;
+    const waPrefix = effDigits ? `https://wa.me/${effDigits}?text=` : 'https://wa.me/?text=';
+    const waHref = `${waPrefix}${encodeURIComponent(_cleanOutwardCopy(text))}`;
+    const noteSuffixHtml = ` <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>`;
     const balCls = !canBooks ? '' : (m.closingBal > 0.005 ? 'is-brass' : (m.closingBal < -0.005 ? 'is-good' : ''));
     const round2Local = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
     const discMissing = discRows.filter(r => r.status === 'missing_in_isabi').length;
@@ -7166,7 +7445,14 @@
             </div>
           </div>
           <textarea id="stmt16ShareText" class="hld-share-text" rows="13" dir="${lang === 'ar' ? 'rtl' : 'auto'}" data-no-i18n="1" spellcheck="false" aria-label="${mode === 'discrepancy' ? 'Supplier discrepancy note message' : 'Supplier confirmation message'}">${esc(text)}</textarea>
-          <p class="hld-share-note">${phoneDigits ? `<span>Recipient WhatsApp:</span> <b data-no-i18n="1">+${esc(phoneDigits)}</b> <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>` : `<span>No saved WhatsApp number on file (WhatsApp opens contact picker)</span> <span data-no-i18n="1">·</span> <span>Scoped strictly to</span> <span>${esc(m.legLbl.en)}</span>`}</p>
+          ${_renderSharePhoneBarHtml({
+            prefix: 'stmt16',
+            phoneDigits,
+            draftDigits,
+            canSavePhone,
+            state: stateRef,
+            noteSuffixHtml
+          })}
           <div class="hld-share-actions">
             ${mode === 'discrepancy' ? `<button type="button" class="btn btn-ghost-bar" id="stmt16ShareCsvBtn">${ic('download')} <span>Download CSV</span></button>` : ''}
             <button type="button" class="btn btn-ghost-bar" id="stmt16SharePrintBtn">${ic('printer')} <span>Print / Save PDF</span></button>
@@ -7179,24 +7465,34 @@
 
     const ta = document.getElementById('stmt16ShareText');
     const wa = document.getElementById('stmt16ShareWaLink');
-    if (ta && wa) {
-      ta.addEventListener('input', () => {
-        const cleanVal = _cleanOutwardCopy(ta.value);
-        wa.setAttribute('href', `${waPrefix}${encodeURIComponent(cleanVal)}`);
-      });
-    }
+    _wireSharePhoneBar({
+      modal,
+      prefix: 'stmt16',
+      partyKind: 'supplier',
+      partyName: m.supName,
+      ctx,
+      state: stateRef,
+      phoneDigits,
+      ta,
+      wa,
+      noteSuffixHtml,
+      renderBody: renderStmt16ShareModalBody,
+      isCurrentState: () => _stmt16ShareState === stateRef
+    });
     const closeBtn = document.getElementById('stmt16ShareCloseBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeStmt16ShareModal);
     modal.querySelectorAll('[data-stmt16-share-mode]').forEach(btn => btn.addEventListener('click', () => {
       const nextM = btn.getAttribute('data-stmt16-share-mode');
       if (!_stmt16ShareState || (nextM !== 'discrepancy' && nextM !== 'confirmation')) return;
       _stmt16ShareState.mode = nextM;
+      _stmt16ShareState.customText = null;
       renderStmt16ShareModalBody();
     }));
     modal.querySelectorAll('[data-stmt16-share-lang]').forEach(btn => btn.addEventListener('click', () => {
       const nextL = btn.getAttribute('data-stmt16-share-lang');
       if (!STMT16_SHARE_LANGS.includes(nextL) || !_stmt16ShareState) return;
       _stmt16ShareState.lang = nextL;
+      _stmt16ShareState.customText = null;
       try { localStorage.setItem(STMT16_SHARE_LANG_KEY, nextL); } catch (_) {}
       renderStmt16ShareModalBody();
     }));
@@ -7268,6 +7564,25 @@
     }
   }
 
+  function _stmt16ShareScopeSig(ctx, m) {
+    const l = (m && m.lAp16) || _rdlSeatLens(ctx);
+    const st = (ctx && ctx.state) || {};
+    const uid = st.activeUserId != null && st.activeUserId !== '' ? String(st.activeUserId) : (st.activeUserIdx != null ? String(st.activeUserIdx) : '');
+    const aCos = Array.isArray(st.allowedCompanyNames) ? st.allowedCompanyNames.join(',') : '';
+    return `${ctx.ind || ''}|${ctx.co || ''}|${(m && m.supName) || ''}|${(m && m.leg) || 'ALL'}|${(m && m.from) || ''}|${(m && m.to) || ''}|${ctx.basis || 'tx'}|${l.books ? 1 : 0}|${l.expenses ? 1 : 0}|${st._officialScopeActive ? 1 : 0}|${uid}|${aCos}`;
+  }
+
+  function _syncStmt16ShareModalScope(ctx, stObj) {
+    if (!_stmt16ShareState) return;
+    const st = stObj || (ctx && ctx.state) || {};
+    const curStId = String(st.activeStatement || '01').padStart(2, '0');
+    const curLens = _rdlSeatLens(ctx);
+    const curSig = _stmt16ShareScopeSig(ctx, buildStmt16Model(ctx));
+    if ((st.view && st.view !== 'statements') || curStId !== '16' || (!curLens.books && !curLens.expenses) || Boolean(st.kioskLocked) || curSig !== _stmt16ShareState.scopeSig) {
+      closeStmt16ShareModal();
+    }
+  }
+
   function openStmt16ShareModal(ctxOverride, opts = {}) {
     if (typeof document === 'undefined' || !document.body) return false;
     if (_stmt16ShareState) closeStmt16ShareModal();
@@ -7300,13 +7615,20 @@
     } catch (_) {}
     const keyHandler = ev => {
       if (ev.key === 'Escape') {
+        const tgtId = ev && ev.target && ev.target.id;
+        if (tgtId === 'stmt16PhoneInput' && _stmt16ShareState && _stmt16ShareState.editingPhone) {
+          return;
+        }
         ev.preventDefault();
         closeStmt16ShareModal();
       }
     };
     document.addEventListener('keydown', keyHandler, true);
+    const scopeSig = _stmt16ShareScopeSig(ctx, m);
     _stmt16ShareState = {
       model: m,
+      ctx,
+      scopeSig,
       cmp: cmpNow,
       mode: reqMode,
       lang: savedLang,
@@ -10975,6 +11297,7 @@
   function renderStatementsView(SEED, STATE) {
     const ctx = buildRdlContext(SEED, STATE);
     _syncStmt14ShareModalScope(ctx, STATE);
+    _syncStmt16ShareModalScope(ctx, STATE);
     const catalog = getVisibleRdlCatalog(STATE);
     if (!catalog.length) {
       STATE.activeStatement = '';
@@ -11133,6 +11456,7 @@
     const refreshSheetAndParams = () => {
       const updatedCtx = buildRdlContext(SEED, STATE);
       _syncStmt14ShareModalScope(updatedCtx, STATE);
+      _syncStmt16ShareModalScope(updatedCtx, STATE);
       const catalog = getVisibleRdlCatalog(STATE);
       if (!catalog.length) {
         STATE.activeStatement = '';

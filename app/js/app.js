@@ -237,6 +237,16 @@
   if (window.MFG_SEED) {
     SEED._coreReady = true;
     SEED._recordsReady = true;
+    SEED._seedRowIds = {};
+    Object.keys(SEED.records).forEach(k => {
+      const arr = Array.isArray(SEED.records[k]) ? SEED.records[k] : [];
+      const s = new Set();
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (r && r.id != null && String(r.id) !== '') s.add(String(r.id));
+      }
+      SEED._seedRowIds[k] = s;
+    });
   }
 
   function cleanNotesText(s) {
@@ -1302,6 +1312,21 @@
       merged.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
       target._pre_void_edits = merged.slice(-15);
     }
+  }
+  // Takes the cloud's edit history onto a local entry when the two differ (mergeCustomRecords, voided on both sides).
+  // Never removes history the cloud does not have.
+  function _adoptCloudTrail(cur, rem) {
+    if (!cur || !rem || (rem._pre_void_orig === undefined && rem._pre_void_edits === undefined)) return false;
+    const remEdits = _clonePreVoidEdits(rem._pre_void_edits);
+    const remOrig = (rem._pre_void_orig && typeof rem._pre_void_orig === 'object' && Object.keys(rem._pre_void_orig).length) ? rem._pre_void_orig : null;
+    if (!remEdits.length && !remOrig) return false;
+    const curOrig = (cur._pre_void_orig && typeof cur._pre_void_orig === 'object') ? cur._pre_void_orig : null;
+    const sameEdits = JSON.stringify(remEdits) === JSON.stringify(_clonePreVoidEdits(cur._pre_void_edits));
+    const sameOrig = !remOrig || JSON.stringify(remOrig) === JSON.stringify(curOrig);
+    if (sameEdits && sameOrig) return false;
+    if (remOrig) cur._pre_void_orig = Object.assign({}, remOrig);
+    if (remEdits.length) cur._pre_void_edits = remEdits;
+    return true;
   }
   function capturePreVoidEditTrail(prevObj, nextObj, opts = {}) {
     if (!prevObj || !nextObj || typeof prevObj !== 'object' || typeof nextObj !== 'object') return false;
@@ -5044,6 +5069,120 @@
     return 0;
   }
 
+  const CASH_TILL_DELTA_KEYS = [
+    'sales_tickets', 'receipts', 'expenses', 'settlements', 'salaries',
+    'attendance', 'external_movements', 'loans', 'loan_settlements', 'conversions'
+  ];
+
+  // Single source of truth for per-row cash till arithmetic across computeCustomCashDeltas and tie-out checks.
+  // No JV leg: JV cash in the till comes from the workbooks only (the top-up never refreshes jv_distributions, so an
+  // app edit or void of a workbook JV row would stay in the till after the workbook carries the same correction).
+  function evalCashCustomRowDelta(key, r) {
+    if (!r) return null;
+    if (key === 'sales_tickets') {
+      if (!isCashSaleTicket(r)) return null;
+      const sgn = ticketSign(r);
+      if (sgn === 0) return null;
+      const net = Number(r.total != null ? r.total : (Number(r.total_ttc || 0) - Number(r.vat || 0))) * sgn;
+      const vat = Number(r.vat || 0) * sgn;
+      return {
+        date: cashTillPostingDate(r),
+        iu: net >= 0 ? net : 0,
+        ou: net < 0 ? -net : 0,
+        il: vat >= 0 ? Math.round(vat * 89500) : 0,
+        ol: vat < 0 ? Math.round(-vat * 89500) : 0
+      };
+    }
+    if (key === 'receipts') {
+      const mth = String(r.method || '').trim();
+      const knd = receiptKind(r);
+      const isRentComm = mth === 'Rent' || mth === 'VATRent';
+      if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return null;
+      if (isCarriedBalanceMethod(r)) return null;
+      if (mth === 'VATRent') {
+        const lbp = Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * 89500)));
+        return { date: r.date, iu: 0, ou: 0, il: 0, ol: lbp };
+      }
+      if (mth === 'Rent') {
+        const usd = Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
+        return { date: r.date, iu: 0, ou: usd, il: 0, ol: 0 };
+      }
+      if (knd === 'VAT received') {
+        const lbp = Math.round(Number(r.lbp_amount || (Number(r.amount || 0) * 89500)));
+        return { date: r.date, iu: 0, ou: 0, il: lbp, ol: 0 };
+      }
+      const lbp = Math.round(Number(r.lbp_amount || 0));
+      const usd = r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
+      return { date: r.date, iu: usd, ou: 0, il: lbp, ol: 0 };
+    }
+    if (key === 'expenses') {
+      const sgn = expenseSign(r);
+      if (sgn === 0 || !isCashExpense(r)) return null;
+      const lbp = Number(r.lbp_amount || 0) * sgn;
+      const usd = (r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0)) * sgn;
+      return { date: r.date, iu: usd < 0 ? -usd : 0, ou: usd >= 0 ? usd : 0, il: lbp < 0 ? -lbp : 0, ol: lbp >= 0 ? lbp : 0 };
+    }
+    if (key === 'settlements') {
+      if (isCarriedBalanceMethod(r)) return null;
+      const knd = settlementKind(r);
+      const lbp = Number(r.lbp_amount || 0);
+      const usd = lbp ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
+      if (knd === 'Payment') return { date: r.date, iu: 0, ou: usd, il: 0, ol: lbp };
+      if (knd === 'VAT paid') return { date: r.date, iu: 0, ou: 0, il: 0, ol: lbp || Math.round(Number(r.amount || 0) * 89500) };
+      return null;
+    }
+    if (key === 'salaries') {
+      const lbp = Math.round(Number(r.lbp_amount || 0));
+      const usd = r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
+      return { date: r.date, iu: usd < 0 ? -usd : 0, ou: usd >= 0 ? usd : 0, il: lbp < 0 ? -lbp : 0, ol: lbp >= 0 ? lbp : 0 };
+    }
+    if (key === 'attendance') {
+      const tp = String(r.type || '');
+      if (!/^Config\s+(USD|LBP)$/i.test(tp)) return null;
+      const tally = Number(r.tally || 0);
+      if (!tally) return null;
+      const isLbp = /LBP/i.test(tp);
+      const u = isLbp ? 0 : round2(-tally);
+      const l = isLbp ? -Math.round(tally) : 0;
+      return { date: r.date, iu: u > 0 ? u : 0, ou: u < 0 ? -u : 0, il: l > 0 ? l : 0, ol: l < 0 ? -l : 0 };
+    }
+    if (key === 'external_movements') {
+      const flowStr = String(r.flow || r.method || '').trim();
+      const isCfg = /^config$/i.test(flowStr);
+      const lbpRaw = Number(r.lbp_amount || 0);
+      const hasExpUsd = r.usd_amount != null && r.usd_amount !== '';
+      const usdRaw = hasExpUsd ? Number(r.usd_amount || 0) : (Math.abs(lbpRaw) > 0.5 ? 0 : Number(r.amount || 0));
+      if (isCfg) {
+        return { date: r.date, iu: usdRaw > 0 ? usdRaw : 0, ou: usdRaw < 0 ? -usdRaw : 0, il: lbpRaw > 0 ? lbpRaw : 0, ol: lbpRaw < 0 ? -lbpRaw : 0 };
+      }
+      const isOut = /out|expense/i.test(String(r.direction || flowStr));
+      const usdMag = Math.abs(usdRaw);
+      const lbpMag = Math.abs(lbpRaw);
+      return { date: r.date, iu: isOut ? 0 : usdMag, ou: isOut ? usdMag : 0, il: isOut ? 0 : lbpMag, ol: isOut ? lbpMag : 0 };
+    }
+    if (key === 'loans') {
+      const dt = String(r.date || r.start_date || '').slice(0, 10);
+      if (!dt) return null;
+      const isBorrowIn = /borrows/i.test(String(r.direction || ''));
+      const lbpMag = Math.round(Math.abs(Number(r.lbp_amount || 0)));
+      const usdMag = Math.abs(r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.principal || 0));
+      return { date: dt, iu: isBorrowIn ? usdMag : 0, ou: isBorrowIn ? 0 : usdMag, il: isBorrowIn ? lbpMag : 0, ol: isBorrowIn ? 0 : lbpMag };
+    }
+    if (key === 'loan_settlements') {
+      const lbp = Number(r.lbp_amount || 0);
+      const usd = lbp ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
+      const isIn = /inflow|drawdown/i.test(String(r.method || r.type || ''));
+      return { date: r.date, iu: isIn ? usd : 0, ou: isIn ? 0 : usd, il: isIn ? lbp : 0, ol: isIn ? 0 : lbp };
+    }
+    if (key === 'conversions') {
+      const d = convSignedDeltas(r);
+      return d.u2l
+        ? { date: r.date, iu: 0, ou: d.usdMag, il: d.lbpMag, ol: 0 }
+        : { date: r.date, iu: d.usdMag, ou: 0, il: 0, ol: d.lbpMag };
+    }
+    return null;
+  }
+
   // perDay (optional Map): collects each date's app-entry cash as [inU, outU, inL, outL] (till-on-this-day scrubber).
   function computeCustomCashDeltas(coKey, range, perDay, userOverride) {
     const allowed = allowedCompanyNames(userOverride);
@@ -5072,101 +5211,13 @@
         perDay.set(dk, cur);
       }
     };
-    forEachCashCustomDelta('sales_tickets', matchCo, (s, mult) => {
-      if (isCashSaleTicket(s)) {
-        const sgn = ticketSign(s);
-        const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
-        const vat = Number(s.vat || 0) * sgn;
-        addMove(cashTillPostingDate(s), net >= 0 ? net : 0, net < 0 ? -net : 0, vat >= 0 ? Math.round(vat * 89500) : 0, vat < 0 ? Math.round(-vat * 89500) : 0, mult);
-      }
-    });
-    // No JV leg: JV cash in the till comes from the workbooks only (the top-up never refreshes jv_distributions, so an
-    // app edit or void of a workbook JV row would stay in the till after the workbook carries the same correction).
-    forEachCashCustomDelta('receipts', matchCo, (r, mult) => {
-      const mth = String(r.method || '').trim();
-      const knd = receiptKind(r);
-      const isRentComm = mth === 'Rent' || mth === 'VATRent';
-      if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
-      if (isCarriedBalanceMethod(r)) return;
-      if (mth === 'VATRent') {
-        const lbp = Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * 89500)));
-        addMove(r.date, 0, 0, 0, lbp, mult);
-      } else if (mth === 'Rent') {
-        const usd = Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
-        addMove(r.date, 0, usd, 0, 0, mult);
-      } else if (knd === 'VAT received') {
-        const lbp = Math.round(Number(r.lbp_amount || (Number(r.amount || 0) * 89500)));
-        addMove(r.date, 0, 0, lbp, 0, mult);
-      } else {
-        const lbp = Math.round(Number(r.lbp_amount || 0));
-        const usd = r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
-        addMove(r.date, usd, 0, lbp, 0, mult);
-      }
-    });
-    forEachCashCustomDelta('expenses', matchCo, (x, mult) => {
-      const sgn = expenseSign(x);
-      if (sgn === 0 || !isCashExpense(x)) return;
-      const lbp = Number(x.lbp_amount || 0) * sgn;
-      const usd = (x.lbp_amount ? Number(x.usd_amount || 0) : Number(x.usd_amount != null ? x.usd_amount : x.amount || 0)) * sgn;
-      addMove(x.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0, mult);
-    });
-    forEachCashCustomDelta('settlements', matchCo, (s, mult) => {
-      if (isCarriedBalanceMethod(s)) return;
-      const knd = settlementKind(s);
-      const lbp = Number(s.lbp_amount || 0);
-      const usd = lbp ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0);
-      if (knd === 'Payment') addMove(s.date, 0, usd, 0, lbp, mult);
-      else if (knd === 'VAT paid') addMove(s.date, 0, 0, 0, lbp || Math.round(Number(s.amount || 0) * 89500), mult);
-    });
-    forEachCashCustomDelta('salaries', matchCo, (s, mult) => {
-      const lbp = Math.round(Number(s.lbp_amount || 0));
-      const usd = s.lbp_amount ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0);
-      addMove(s.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0, mult);
-    });
-    forEachCashCustomDelta('attendance', matchCo, (at, mult) => {
-      const tp = String(at.type || '');
-      if (!/^Config\s+(USD|LBP)$/i.test(tp)) return;
-      const tally = Number(at.tally || 0);
-      if (!tally) return;
-      const isLbp = /LBP/i.test(tp);
-      const u = isLbp ? 0 : round2(-tally);
-      const l = isLbp ? -Math.round(tally) : 0;
-      addMove(at.date, u > 0 ? u : 0, u < 0 ? -u : 0, l > 0 ? l : 0, l < 0 ? -l : 0, mult);
-    });
-    forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
-      const flowStr = String(ex.flow || ex.method || '').trim();
-      const isCfg = /^config$/i.test(flowStr);
-      const lbpRaw = Number(ex.lbp_amount || 0);
-      const hasExpUsd = ex.usd_amount != null && ex.usd_amount !== '';
-      const usdRaw = hasExpUsd ? Number(ex.usd_amount || 0) : (Math.abs(lbpRaw) > 0.5 ? 0 : Number(ex.amount || 0));
-      if (isCfg) {
-        addMove(ex.date, usdRaw > 0 ? usdRaw : 0, usdRaw < 0 ? -usdRaw : 0, lbpRaw > 0 ? lbpRaw : 0, lbpRaw < 0 ? -lbpRaw : 0, mult);
-      } else {
-        const isOut = /out|expense/i.test(String(ex.direction || flowStr));
-        const usdMag = Math.abs(usdRaw);
-        const lbpMag = Math.abs(lbpRaw);
-        addMove(ex.date, isOut ? 0 : usdMag, isOut ? usdMag : 0, isOut ? 0 : lbpMag, isOut ? lbpMag : 0, mult);
-      }
-    });
-    forEachCashCustomDelta('loans', matchCo, (ln, mult) => {
-      const dt = String(ln.date || ln.start_date || '').slice(0, 10);
-      if (!dt) return;
-      const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
-      const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
-      const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
-      addMove(dt, isBorrowIn ? usdMag : 0, isBorrowIn ? 0 : usdMag, isBorrowIn ? lbpMag : 0, isBorrowIn ? 0 : lbpMag, mult);
-    });
-    forEachCashCustomDelta('loan_settlements', matchCo, (ls, mult) => {
-      const lbp = Number(ls.lbp_amount || 0);
-      const usd = lbp ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0);
-      const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
-      addMove(ls.date, isIn ? usd : 0, isIn ? 0 : usd, isIn ? lbp : 0, isIn ? 0 : lbp, mult);
-    });
-    forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
-      const d = convSignedDeltas(cv);
-      if (d.u2l) addMove(cv.date, 0, d.usdMag, d.lbpMag, 0, mult);
-      else addMove(cv.date, d.usdMag, 0, 0, d.lbpMag, mult);
-    });
+    for (let ki = 0; ki < CASH_TILL_DELTA_KEYS.length; ki++) {
+      const tk = CASH_TILL_DELTA_KEYS[ki];
+      forEachCashCustomDelta(tk, matchCo, (row, mult) => {
+        const d = evalCashCustomRowDelta(tk, row);
+        if (d) addMove(d.date, d.iu, d.ou, d.il, d.ol, mult);
+      });
+    }
     return { liveInU, liveOutU, liveInL, liveOutL, perInU, perOutU, perInL, perOutL, endNetU, endNetL };
   }
 
@@ -5449,7 +5500,7 @@
     const t = range ? range.to : MAX_DATE;
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
-    const cacheKey = `${rawKey}|${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}`;
+    const cacheKey = `${rawKey}|${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}|${activeSeatFullFinKey()}|${activeSeatCashPermSig()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}`;
     if (_kpiRangeCacheMap.has(cacheKey)) return _kpiRangeCacheMap.get(cacheKey);
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
@@ -6957,33 +7008,331 @@
   }
   window.__mfgComputeSupplierStatement16Vouchers = computeSupplierStatement16Vouchers;
 
-  function resolveSupplierPhoneDigits(supplierName) {
-    const sk = normSupPayable(supplierName);
-    const skPlain = norm(supplierName);
-    const sups = ((SEED && SEED.records && SEED.records.suppliers) || []).concat(
-      (typeof STATE !== 'undefined' && STATE && STATE.customRecords && Array.isArray(STATE.customRecords.suppliers)) ? STATE.customRecords.suppliers : []
-    );
-    const candidates = [];
-    for (let i = 0; i < sups.length; i++) {
-      const s = sups[i];
-      if (!s || s.voided || !s.name) continue;
-      if (normSupPayable(s.name) === sk || norm(s.name) === skPlain) {
-        candidates.push(s.phone, s.mobile, s.whatsapp, s.contact_phone);
-      }
+  function normalizeWhatsappPhoneDigits(raw) {
+    let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
+    if (!digits) return '';
+    if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
+      digits = '961' + digits.slice(1);
+    } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
+      digits = '961' + digits;
+    } else if (/^0[1456789]\d{6}$/.test(digits)) {
+      digits = '961' + digits.slice(1);
     }
-    for (const raw of candidates) {
-      let digits = String(raw || '').trim().replace(/^00/, '').replace(/\D+/g, '');
-      if (!digits) continue;
-      if (/^0(3|70|71|76|78|79|81)\d{6}$/.test(digits)) {
-        digits = '961' + digits.replace(/^0/, '');
-      } else if (/^(3\d{6}|(70|71|76|78|79|81)\d{6})$/.test(digits)) {
-        digits = '961' + digits;
+    return (digits.length >= 8 && digits.length <= 15) ? digits : '';
+  }
+  window.__mfgNormalizeWhatsappPhoneDigits = normalizeWhatsappPhoneDigits;
+
+  function inferUnivRowIndustry(r) {
+    if (!r || typeof r !== 'object') return 'Manufacturing';
+    const rawInd = String(r._industry || r.industry || r.ind || '').trim();
+    if (rawInd) return normGeoIndustryName(rawInd);
+    if (r._multiIndustrySeed) return '';
+    const co = String(r.company || r.resort || r.entity || '').trim();
+    if (co && !/^(all(\s+bus?|\s+companies)?|shared|manufacturing-group)$/i.test(co)) {
+      const ck = canonCompany(co) || co;
+      const byMap = (typeof COMPANY_INDUSTRY_BY_KEY !== 'undefined' && COMPANY_INDUSTRY_BY_KEY[ck.toLowerCase().replace(/[^a-z0-9]/g, '')]) || '';
+      const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+      const catHit = cat.find(c => String(canonCompany(c.name) || c.name).toLowerCase() === ck.toLowerCase()) || null;
+      const indHit = byMap || (catHit && catHit.industry) || '';
+      if (indHit) return normGeoIndustryName(indHit);
+    }
+    return 'Manufacturing';
+  }
+  window.__mfgInferUnivRowIndustry = inferUnivRowIndustry;
+
+  function _counterpartyRowMatchesIndustry(r, indCtx, demoActive) {
+    if (!r || r.voided) return false;
+    if (!demoActive && r._demoSpineRow) return false;
+    const targetInd = normGeoIndustryName(indCtx || 'Manufacturing');
+    if (targetInd === 'Manufacturing' && r._multiIndustrySeed) return false;
+    return inferUnivRowIndustry(r) === targetInd;
+  }
+
+  function _sortCustomRowsNewestFirst(arr) {
+    if (!Array.isArray(arr) || arr.length < 2) return Array.isArray(arr) ? arr : [];
+    return arr.slice().sort((a, b) => {
+      const ta = String((a && (a.modified_at || a.entered_at)) || '');
+      const tb = String((b && (b.modified_at || b.entered_at)) || '');
+      return tb.localeCompare(ta);
+    });
+  }
+
+  function resolveSupplierPhoneDigits(supplierName, ctxOpt) {
+    if (!supplierName || supplierName === 'ALL') return '';
+    const indCtx = normGeoIndustryName((ctxOpt && ctxOpt.ind) || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing'));
+    const demoActive = (ctxOpt && typeof ctxOpt.isDemo === 'boolean') ? ctxOpt.isDemo : isDemoScopeActive();
+    const targetExact = new Set([norm(supplierName)]);
+    const targetPayable = new Set([normSupPayable(supplierName)]);
+    const lockObj = (typeof window !== 'undefined' && window.MFG_STMT_LOCK) ? window.MFG_STMT_LOCK : null;
+    if (lockObj && typeof lockObj.getRollupMeta === 'function') {
+      try {
+        const metaR = lockObj.getRollupMeta({
+          industry: indCtx,
+          company: (ctxOpt && ctxOpt.co) || 'ALL',
+          partyType: 'supplier',
+          partyName: supplierName
+        });
+        if (metaR && Array.isArray(metaR.mergedAliases)) {
+          metaR.mergedAliases.forEach(a => {
+            const k1 = norm(a);
+            const k2 = normSupPayable(a);
+            if (k1) targetExact.add(k1);
+            if (k2) targetPayable.add(k2);
+          });
+        }
+      } catch (_) {}
+    }
+    const seedObj = (ctxOpt && ctxOpt.seed) || (typeof SEED !== 'undefined' ? SEED : {});
+    const stObj = (ctxOpt && ctxOpt.state) || (typeof STATE !== 'undefined' ? STATE : {});
+    const customSups = _sortCustomRowsNewestFirst((stObj && stObj.customRecords && stObj.customRecords.suppliers) || []);
+    const seedSups = (seedObj && seedObj.records && Array.isArray(seedObj.records.suppliers)) ? seedObj.records.suppliers : [];
+    const exactCandidates = [];
+    const aliasCandidates = [];
+    const pushPhones = (bucket, s) => {
+      bucket.push(s.phone, s.mobile, s.whatsapp, s.contact_phone, s.contact);
+    };
+    [customSups, seedSups].forEach(pool => {
+      for (let i = 0; i < pool.length; i++) {
+        const s = pool[i];
+        if (!_counterpartyRowMatchesIndustry(s, indCtx, demoActive)) continue;
+        const nmRaw = s.name || s.supplier || '';
+        if (!nmRaw) continue;
+        if (targetExact.has(norm(nmRaw))) pushPhones(exactCandidates, s);
+        else if (targetPayable.has(normSupPayable(nmRaw))) pushPhones(aliasCandidates, s);
       }
-      if (digits.length >= 8 && digits.length <= 15) return digits;
+    });
+    if (indCtx === 'Automotive & Heavy Trading') {
+      const domCustom = (stObj && stObj.industryCustomRows) || {};
+      const domSeed = (seedObj && seedObj.industryDomain) || {};
+      const indLive = (seedObj && seedObj.industryLive) || {};
+      const rowEdits = (stObj && stObj.industryRowEdits) || {};
+      const domPools = [
+        domCustom.trd_suppliers, domCustom.trd_purchases,
+        domSeed.trd_suppliers, domSeed.trd_purchases,
+        indLive.trading && indLive.trading.suppliers,
+        indLive.trading && indLive.trading.purchases
+      ];
+      domPools.forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+          let r = arr[i];
+          if (!r || r.voided) continue;
+          if (!demoActive && r._demoSpineRow) continue;
+          const ed = r.id && rowEdits[String(r.id)];
+          if (ed && typeof ed === 'object') {
+            if (ed.voided) continue;
+            r = Object.assign({}, r, ed);
+          }
+          const nmRaw = r.name || r.supplier || r.vendor || '';
+          if (!nmRaw) continue;
+          if (targetExact.has(norm(nmRaw))) pushPhones(exactCandidates, r);
+          else if (targetPayable.has(normSupPayable(nmRaw))) pushPhones(aliasCandidates, r);
+        }
+      });
+    }
+    const candidates = exactCandidates.concat(aliasCandidates);
+    for (let i = 0; i < candidates.length; i++) {
+      const digits = normalizeWhatsappPhoneDigits(candidates[i]);
+      if (digits) return digits;
     }
     return '';
   }
   window.__mfgResolveSupplierPhoneDigits = resolveSupplierPhoneDigits;
+
+  function getCounterpartyPhoneSaveTarget(partyKind, partyName, ctxOpt) {
+    const fail = { canSave: false };
+    const cleanName = String(partyName || '').trim();
+    if (!STATE || !STATE.authed || STATE.kioskLocked || !cleanName || cleanName === 'ALL' || cleanName.startsWith('(')) {
+      return fail;
+    }
+    const u = activeUser();
+    const indCtx = normGeoIndustryName((ctxOpt && ctxOpt.ind) || (typeof getActiveIndustry === 'function' ? getActiveIndustry() : 'Manufacturing'));
+    const demoActive = (ctxOpt && typeof ctxOpt.isDemo === 'boolean') ? ctxOpt.isDemo : isDemoScopeActive();
+    if (!u || !canAccessGeoIndustry(indCtx, u) || !canModifyRecord(u)) {
+      return fail;
+    }
+    const isSup = partyKind === 'supplier';
+    const crKey = isSup ? 'suppliers' : 'customers';
+    const formKey = isSup ? 'supplier' : 'customer';
+    const customList = _sortCustomRowsNewestFirst((STATE.customRecords && STATE.customRecords[crKey]) || []);
+    const seedList = (SEED && SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
+    const targetExact = norm(cleanName);
+    const seenIds = new Set();
+    const activePool = [];
+    [customList, seedList].forEach(arr => {
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || r.voided) continue;
+        if (!demoActive && r._demoSpineRow) continue;
+        const rid = r.id != null ? String(r.id) : '';
+        if (rid && seenIds.has(rid)) continue;
+        if (rid) seenIds.add(rid);
+        activePool.push(r);
+      }
+    });
+    let existingRow = null;
+    for (let i = 0; i < activePool.length; i++) {
+      const r = activePool[i];
+      if (norm(r.name) !== targetExact) continue;
+      if (_counterpartyRowMatchesIndustry(r, indCtx, demoActive)) {
+        existingRow = r;
+        break;
+      }
+    }
+    if (!existingRow && isSup && indCtx === 'Manufacturing') {
+      const targetPayable = normSupPayable(cleanName);
+      const payableMatches = activePool.filter(r =>
+        _counterpartyRowMatchesIndustry(r, indCtx, demoActive) && normSupPayable(r.name) === targetPayable
+      );
+      if (payableMatches.length === 1) existingRow = payableMatches[0];
+      else if (payableMatches.length > 1) return fail;
+    }
+    if (existingRow) {
+      const exCo = String(existingRow.company || existingRow.resort || existingRow.entity || '').trim();
+      if (exCo && !/^(all(\s+bus?|\s+companies)?|shared|manufacturing-group)$/i.test(exCo) && !canAccessGeoCompany(exCo, u)) {
+        return fail;
+      }
+      const inCustom = Boolean(existingRow.id && customList.some(c => c && String(c.id) === String(existingRow.id)));
+      const wordsOnlySeat = !canEnterAny(u) && canModifyTextOnly(u);
+      if (wordsOnlySeat && !demoActive && !inCustom) {
+        return fail;
+      }
+      if (!canEnterForm(formKey, u) && !wordsOnlySeat) {
+        return fail;
+      }
+    } else if (!canEnterForm(formKey, u)) {
+      return fail;
+    }
+    return { canSave: true, existingRow: existingRow || null, crKey, formKey, indCtx, demoActive };
+  }
+
+  function canSaveCounterpartyWhatsappPhone(partyKind, partyName, ctxOpt) {
+    return Boolean(getCounterpartyPhoneSaveTarget(partyKind, partyName, ctxOpt).canSave);
+  }
+  window.__mfgCanSaveCounterpartyPhone = canSaveCounterpartyWhatsappPhone;
+
+  async function saveCounterpartyWhatsappPhone(opts = {}) {
+    const partyKind = opts.partyKind === 'supplier' ? 'supplier' : 'customer';
+    const partyName = String(opts.partyName || '').trim();
+    const target = getCounterpartyPhoneSaveTarget(partyKind, partyName, opts.ctx);
+    if (!target.canSave) {
+      return { ok: false, code: 'forbidden', error: 'Restricted by seat permissions' };
+    }
+    const digits = normalizeWhatsappPhoneDigits(opts.rawPhone);
+    if (!digits) {
+      return { ok: false, code: 'invalid_phone', error: 'Enter a valid WhatsApp number (8 to 15 digits)' };
+    }
+    const formattedPhone = '+' + digits;
+    const { crKey, existingRow, indCtx } = target;
+    if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+    const customSnap = STATE.customRecords[crKey].map(r => (r ? JSON.parse(JSON.stringify(r)) : r));
+    const seedArr = (SEED && SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : null;
+    const existingId = existingRow && existingRow.id != null ? String(existingRow.id) : '';
+    const seedIdx = (seedArr && existingId) ? seedArr.findIndex(r => r && String(r.id) === existingId) : -1;
+    const seedRowSnap = seedIdx >= 0 ? JSON.parse(JSON.stringify(seedArr[seedIdx])) : null;
+    const hadOrigMap = Boolean(SEED_ORIG_ARCHIVE[crKey]);
+    const hadOrigEntry = Boolean(existingId && hadOrigMap && SEED_ORIG_ARCHIVE[crKey].has(existingId));
+    const prevOrigEntry = hadOrigEntry ? JSON.parse(JSON.stringify(SEED_ORIG_ARCHIVE[crKey].get(existingId))) : null;
+
+    const u = activeUser();
+    const stampIso = nextMonotonicIso();
+    const actorEmail = String((u && u.email) || '').trim();
+    const actorName = String((u && (u.full_name || u.name || actorEmail)) || '').trim();
+
+    let record;
+    if (existingRow) {
+      let origSeed = null;
+      if (!isAppRecord(existingRow)) {
+        origSeed = captureSeedOrigSnapshot(crKey, existingRow);
+      }
+      record = Object.assign({}, existingRow, {
+        phone: formattedPhone,
+        source: 'app',
+        modified_by: actorEmail || existingRow.modified_by || '',
+        modified_at: stampIso,
+        rev: (Number(existingRow.rev) || 1) + 1
+      });
+      if (origSeed && !record._seed_orig) {
+        record._seed_orig = buildSeedOrigMeta(origSeed);
+      }
+      capturePreVoidEditTrail(existingRow, record, { at: stampIso });
+      if (seedIdx >= 0 && seedArr) {
+        Object.assign(seedArr[seedIdx], record);
+      }
+      const cIdx = existingId ? STATE.customRecords[crKey].findIndex(r => r && String(r.id) === existingId) : -1;
+      if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
+      else STATE.customRecords[crKey].unshift(Object.assign({}, record));
+    } else {
+      const ctxCo = String((opts.ctx && opts.ctx.co) || '').trim();
+      const useCo = (
+        indCtx !== 'Manufacturing'
+        && ctxCo
+        && ctxCo !== 'ALL'
+        && !/group$/i.test(ctxCo)
+        && !ctxCo.startsWith('industry:')
+        && canAccessGeoCompany(ctxCo, u)
+      ) ? ctxCo : '';
+      record = {
+        id: uid(crKey === 'suppliers' ? 'su' : 'cu'),
+        name: partyName,
+        official_name: '',
+        company: useCo,
+        phone: formattedPhone,
+        source: 'app',
+        entered_by: actorName || actorEmail,
+        entered_by_email: actorEmail,
+        entered_at: stampIso,
+        modified_by: actorEmail,
+        modified_at: stampIso,
+        voided: false,
+        rev: 1
+      };
+      if (indCtx !== 'Manufacturing') {
+        record._industry = indCtx;
+        record.industry = indCtx;
+      }
+      STATE.customRecords[crKey].unshift(record);
+    }
+
+    applyCustomRecordsToSeed();
+    saveLocalAuthAndRecords();
+    const okMsg = (window.MFG_I18N && typeof window.MFG_I18N.t === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en')
+      ? window.MFG_I18N.t('WhatsApp number saved', window.MFG_I18N.getLang())
+      : 'WhatsApp number saved';
+    toast(okMsg, 'ok');
+
+    const postRes = await postRecordToLocalApi(crKey, record, { deferRender: true });
+    if (isServerRejectRes(postRes)) {
+      STATE.customRecords[crKey] = customSnap;
+      if (seedArr) {
+        if (seedIdx >= 0 && seedRowSnap) {
+          seedArr[seedIdx] = seedRowSnap;
+        } else if (!existingRow) {
+          const addedIdx = seedArr.findIndex(r => r && String(r.id) === String(record.id));
+          if (addedIdx >= 0) seedArr.splice(addedIdx, 1);
+        }
+      }
+      if (existingId && SEED_ORIG_ARCHIVE[crKey]) {
+        if (hadOrigEntry && prevOrigEntry) SEED_ORIG_ARCHIVE[crKey].set(existingId, prevOrigEntry);
+        else if (!hadOrigEntry) SEED_ORIG_ARCHIVE[crKey].delete(existingId);
+      }
+      applyCustomRecordsToSeed();
+      saveLocalAuthAndRecords();
+      const rejectMsg = await extractServerRejectMsg(postRes, 'Save was rejected by the server.');
+      toast(rejectMsg, 'err');
+      if (typeof opts.onRollback === 'function') {
+        try { opts.onRollback(rejectMsg); } catch (_) {}
+      }
+      return { ok: false, code: 'server_rejected', error: rejectMsg };
+    }
+    if (postRes && postRes.shellOutdated) {
+      setPendingCloudPush(true);
+    } else {
+      syncWithCloud(true);
+    }
+    return { ok: true, digits, formattedPhone, recordId: record.id };
+  }
+  window.__mfgSaveCounterpartyPhone = saveCounterpartyWhatsappPhone;
 
   function openSupplierStatementLeg(opts = {}) {
     if (STATE.kioskLocked || !canAccessRdlReport('16')) {
@@ -7768,9 +8117,9 @@
         sliced = upTo.length ? upTo.slice(-Math.min(6, maxCount)) : allM.slice(-maxCount);
       }
     }
-    // Month rows of another industry (buildIndustryMonthlyRows): the Manufacturing ticket overlays below would
-    // resolve to the Manufacturing group model in that scope and lay its sales over these rows.
-    if (monthlyList && monthlyList._industry && monthlyList._industry !== 'Manufacturing') {
+    // Month rows of another industry (buildIndustryMonthlyRows) or restricted cash months (buildRestrictedCashMonthlyRows):
+    // skip Manufacturing-wide overlays so blocked sales_tickets / receipts / expenses / official rewrites cannot leak.
+    if (monthlyList && ((monthlyList._industry && monthlyList._industry !== 'Manufacturing') || monthlyList._restrictedCash)) {
       return sliced.map(r => Object.assign({}, r));
     }
     let mk = '';
@@ -11517,6 +11866,13 @@
     const s = String(id == null ? '' : id);
     return isWorkbookRowId(s) && !/-i\d+$/.test(s);
   }
+  function isKnownSeedWorkbookRow(key, id) {
+    if (isWorkbookOwnRowId(id)) return true;
+    const sid = String(id == null ? '' : id);
+    if (!sid || isDemoScopeActive()) return false;
+    const ids = SEED._recordsReady && SEED._seedRowIds && SEED._seedRowIds[key];
+    return Boolean(ids instanceof Set && ids.has(sid));
+  }
   // Keyed in the app as a new entry (so it may be a second copy of a workbook row), not a workbook row saved in it.
   function isAppKeyedEntry(r) {
     return isAppRecord(r) && !isWorkbookRowId(r.id);
@@ -12083,6 +12439,28 @@
     return (zeroDays / recent.length) >= 0.75;
   }
 
+  const TIEOUT_CONF_KEYS = new Set(['salaries', 'attendance', 'external_movements', 'loans', 'loan_settlements']);
+  const TIEOUT_CAT_LABELS = {
+    sales_tickets: 'Cash Sale',
+    receipts: 'Customer Receipt',
+    expenses: 'Cash Expense',
+    settlements: 'Supplier Payment',
+    salaries: 'Salary',
+    attendance: 'Attendance Balance',
+    external_movements: 'External Treasury',
+    loans: 'Loan',
+    loan_settlements: 'Loan Repayment',
+    conversions: 'FX Conversion'
+  };
+
+  function isCashFlowFullFin(u) {
+    u = u || activeUser();
+    if (!u) return false;
+    if (isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full') return true;
+    const effPerms = typeof getEffectivePermissions === 'function' ? getEffectivePermissions(u) : null;
+    return Boolean(effPerms && effPerms.rights && (effPerms.rights.read_fin || (effPerms.dashboards && effPerms.dashboards.dash_financial_gl)));
+  }
+
   function computeCashTillCutoffSplit(opts = {}) {
     const u = opts.user || activeUser();
     const effCo = opts.company || STATE.company;
@@ -12101,12 +12479,10 @@
     }
     if (!cutoff) return null;
     const allowed = allowedCompanyNames(u);
-    const fullFin = Boolean(
-      isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' ||
-      ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) ||
-      Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin)
-    );
-    const memoKey = `${effCo}|${coKey}|${allowed.join(',')}|${fullFin ? 1 : 0}|${SEED._customRev || 0}|${STATE._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${genDay}|${cf.daily.length}`;
+    const fullFin = isCashFlowFullFin(u);
+    const permSig = CASH_TILL_DELTA_KEYS.map(tk => canAccessTable(tk, u) ? '1' : '0').join('') + (canAccessTable('jv_distributions', u) ? '1' : '0');
+    const allCashPermitted = Boolean(fullFin && !CASH_TILL_DELTA_KEYS.some(tk => !canAccessTable(tk, u)) && canAccessTable('jv_distributions', u));
+    const memoKey = `${effCo}|${coKey}|${allowed.join(',')}|${fullFin ? 1 : 0}|${permSig}|${String(u.id || u.role || '')}|${SEED._customRev || 0}|${STATE._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${genDay}|${cf.daily.length}`;
     if (_cashTillSplitMemo && _cashTillSplitMemo.key === memoKey) return _cashTillSplitMemo.val;
 
     const rate = Number(cf.rate_lbp || 89500);
@@ -12115,21 +12491,194 @@
     const confirmedUsd = Math.abs(rawConfU) < 0.005 ? 0 : rawConfU;
     const rawLiveU = round2(Number(cf.live_till.usd || 0) + (cd.liveInU - cd.liveOutU));
     const liveUsd = Math.abs(rawLiveU) < 0.005 ? 0 : rawLiveU;
-    const rawKeyedU = round2(liveUsd - confirmedUsd);
-    const keyedSinceUsd = Math.abs(rawKeyedU) < 0.005 ? 0 : rawKeyedU;
 
     const rawConfL = Math.round(Number(cf.live_till.lbp || 0));
     const confirmedLbp = Math.abs(rawConfL) <= CF_LBP_DUST ? 0 : rawConfL;
     const rawLiveL = Math.round(Number(cf.live_till.lbp || 0) + (cd.liveInL - cd.liveOutL));
     const liveLbp = Math.abs(rawLiveL) <= CF_LBP_DUST ? 0 : rawLiveL;
-    const rawKeyedL = Math.round(liveLbp - confirmedLbp);
-    const keyedSinceLbp = Math.abs(rawKeyedL) <= CF_LBP_DUST ? 0 : rawKeyedL;
+
+    const matchCo = r => matchesCashScopeCompany(r, coKey, allowed);
+    const scopedNet = (k, row) => {
+      if (!row || !matchCo(row)) return { iu: 0, ou: 0, il: 0, ol: 0, u: 0, l: 0, date: '' };
+      const d = evalCashCustomRowDelta(k, row);
+      if (!d) return { iu: 0, ou: 0, il: 0, ol: 0, u: 0, l: 0, date: '' };
+      return { iu: d.iu, ou: d.ou, il: d.il, ol: d.ol, u: d.iu - d.ou, l: d.il - d.ol, date: String(d.date || '').slice(0, 10) };
+    };
+    const buildTieOutItem = (k, rid, reason, deltaUsd, deltaLbp, origUsd, curUsd, origLbp, curLbp, row, origRow, dt) => {
+      const m = (row && matchCo(row)) ? row : (origRow || row || {});
+      const catLabel = (k === 'sales_tickets' && ticketSign(m) < 0) ? 'Cash Sale Return' : (TIEOUT_CAT_LABELS[k] || 'Cash Entry');
+      const party = String(m.customer || m.supplier || m.counterparty || m.staff || m.party || m.name || '').trim();
+      const rawRef = m.ticket_no ? ('#' + String(m.ticket_no).replace(/^#+/, '')) : String(m.invoice || m.reference || '').trim();
+      const ref = (rawRef && rawRef !== '-') ? rawRef : '';
+      const coName = String(m.company || (origRow && origRow.company) || 'WTC').trim() || 'WTC';
+      return {
+        rkey: k,
+        id: rid,
+        reason,
+        company: coName,
+        showCompany: coKey === 'manufacturing-group',
+        date: dt || String(m.date || m.start_date || '').slice(0, 10),
+        catLabel,
+        party,
+        ref,
+        deltaUsd,
+        deltaLbp,
+        origUsd,
+        curUsd,
+        origLbp,
+        curLbp,
+        voided: reason === 'workbook_voided',
+        confidential: TIEOUT_CONF_KEYS.has(k) || !canAccessTable(k, u)
+      };
+    };
+
+    let keyedInU = 0, keyedOutU = 0, keyedInL = 0, keyedOutL = 0;
+    const allDiscrepancies = [];
+    for (let ki = 0; ki < CASH_TILL_DELTA_KEYS.length; ki++) {
+      const tk = CASH_TILL_DELTA_KEYS[ki];
+      const arr = (STATE.customRecords && STATE.customRecords[tk]) || [];
+      if (!arr.length) continue;
+      const keptInfo = keptOverWorkbookVoidedIds(tk);
+      const released = keptInfo.released;
+      const wbRowsById = new Map();
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || !r.voided || r.id == null || isAppRecord(r)) continue;
+        const rid = String(r.id);
+        if (!released.has(rid)) wbRowsById.set(rid, r);
+      }
+      const keptAppToWb = new Map();
+      const keptWbIds = new Set();
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || r.voided || r._absorbedSeedTwin || !isAppRecord(r)) continue;
+        const wbCopyId = keptOverWorkbookId(r, keptInfo);
+        if (wbCopyId && wbRowsById.has(wbCopyId)) {
+          keptAppToWb.set(r, wbRowsById.get(wbCopyId));
+          keptWbIds.add(wbCopyId);
+        }
+      }
+      const seenActiveAppIds = new Set();
+      const seenWbCustomIds = new Set();
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        const rid = r.id != null ? String(r.id) : '';
+        if (r.voided && released.size && rid && released.has(rid)) continue;
+        if (isAppRecord(r)) {
+          if (r.voided || r._absorbedSeedTwin) continue;
+          const cur = scopedNet(tk, r);
+          if (keptAppToWb.has(r)) {
+            const wbRow = keptAppToWb.get(r);
+            const origRow = resolveSeedOrigRow(tk, wbRow);
+            const orig = scopedNet(tk, origRow);
+            const du = round2(cur.u - orig.u);
+            const dl = Math.round(cur.l - orig.l);
+            if (Math.abs(du) >= 0.005 || Math.abs(dl) > CF_LBP_DUST) {
+              allDiscrepancies.push(buildTieOutItem(tk, rid, 'kept_edited', du, dl, round2(orig.u), round2(cur.u), Math.round(orig.l), Math.round(cur.l), r, origRow, cur.date || orig.date));
+            }
+            continue;
+          }
+          const isCountedTwice = Boolean((rid && isKnownSeedWorkbookRow(tk, rid)) || (rid && seenActiveAppIds.has(rid)));
+          if (isCountedTwice) {
+            const du = round2(cur.u);
+            const dl = Math.round(cur.l);
+            if (Math.abs(du) >= 0.005 || Math.abs(dl) > CF_LBP_DUST) {
+              allDiscrepancies.push(buildTieOutItem(tk, rid, 'counted_twice', du, dl, 0, du, 0, dl, r, null, cur.date));
+            }
+            continue;
+          }
+          if (rid) seenActiveAppIds.add(rid);
+          keyedInU += cur.iu; keyedOutU += cur.ou; keyedInL += cur.il; keyedOutL += cur.ol;
+        } else if (r.voided) {
+          if (rid && keptWbIds.has(rid)) continue;
+          const origRow = resolveSeedOrigRow(tk, r);
+          const orig = scopedNet(tk, origRow);
+          const du = round2(-orig.u);
+          const dl = Math.round(-orig.l);
+          if (Math.abs(du) >= 0.005 || Math.abs(dl) > CF_LBP_DUST) {
+            allDiscrepancies.push(buildTieOutItem(tk, rid, 'workbook_voided', du, dl, round2(orig.u), 0, Math.round(orig.l), 0, r, origRow, orig.date));
+          }
+        } else {
+          const isDupWb = Boolean(rid && seenWbCustomIds.has(rid));
+          if (rid) seenWbCustomIds.add(rid);
+          const origRow = resolveSeedOrigRow(tk, r);
+          const orig = scopedNet(tk, origRow);
+          const cur = scopedNet(tk, r);
+          const du = round2(cur.u - orig.u);
+          const dl = Math.round(cur.l - orig.l);
+          if (Math.abs(du) >= 0.005 || Math.abs(dl) > CF_LBP_DUST) {
+            allDiscrepancies.push(buildTieOutItem(tk, rid, isDupWb ? 'counted_twice' : 'workbook_edited', du, dl, round2(orig.u), round2(cur.u), Math.round(orig.l), Math.round(cur.l), r, origRow, cur.date || orig.date));
+          }
+        }
+      }
+    }
+
+    const rawTrueKeyedU = round2(keyedInU - keyedOutU);
+    const trueKeyedU = Math.abs(rawTrueKeyedU) < 0.005 ? 0 : rawTrueKeyedU;
+    const rawTrueKeyedL = Math.round(keyedInL - keyedOutL);
+    const trueKeyedL = Math.abs(rawTrueKeyedL) <= CF_LBP_DUST ? 0 : rawTrueKeyedL;
+    const rawGapU = round2(liveUsd - round2(confirmedUsd + trueKeyedU));
+    const rawGapL = Math.round(liveLbp - Math.round(confirmedLbp + trueKeyedL));
+    const sumDiscU = round2(allDiscrepancies.reduce((s, x) => s + x.deltaUsd, 0));
+    const sumDiscL = Math.round(allDiscrepancies.reduce((s, x) => s + x.deltaLbp, 0));
+    const resU = round2(rawGapU - sumDiscU);
+    const resL = Math.round(rawGapL - sumDiscL);
+    if (Math.abs(resU) >= 0.02 || Math.abs(resL) > 2 * CF_LBP_DUST) {
+      allDiscrepancies.push({
+        rkey: '',
+        id: '',
+        reason: 'unexplained',
+        company: coKey === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[coKey] || 'WTC'),
+        showCompany: coKey === 'manufacturing-group',
+        date: cutoff,
+        catLabel: 'Cash Till',
+        party: '',
+        ref: '',
+        deltaUsd: resU,
+        deltaLbp: resL,
+        origUsd: 0,
+        curUsd: resU,
+        origLbp: 0,
+        curLbp: resL,
+        voided: false,
+        confidential: false
+      });
+    }
+
+    const isRowHiddenFromSeat = x => (!fullFin && x.confidential) || Boolean(x.rkey && !canAccessTable(x.rkey, u));
+    let hiddenGapU = 0, hiddenGapL = 0, hasHiddenRows = false;
+    for (let i = 0; i < allDiscrepancies.length; i++) {
+      if (isRowHiddenFromSeat(allDiscrepancies[i])) {
+        hasHiddenRows = true;
+        hiddenGapU += allDiscrepancies[i].deltaUsd;
+        hiddenGapL += allDiscrepancies[i].deltaLbp;
+      }
+    }
+    let keyedSinceUsd = trueKeyedU;
+    let keyedSinceLbp = trueKeyedL;
+    let tieOutRows = allDiscrepancies;
+    let tieOutGapUsd = Math.abs(rawGapU) < 0.005 ? 0 : rawGapU;
+    let tieOutGapLbp = Math.abs(rawGapL) <= CF_LBP_DUST ? 0 : rawGapL;
+    if (hasHiddenRows) {
+      const visRawKeyedU = round2(trueKeyedU + hiddenGapU);
+      const visRawKeyedL = Math.round(trueKeyedL + hiddenGapL);
+      keyedSinceUsd = Math.abs(visRawKeyedU) < 0.005 ? 0 : visRawKeyedU;
+      keyedSinceLbp = Math.abs(visRawKeyedL) <= CF_LBP_DUST ? 0 : visRawKeyedL;
+      tieOutRows = allDiscrepancies.filter(x => !isRowHiddenFromSeat(x));
+      const visGapU = round2(liveUsd - round2(confirmedUsd + keyedSinceUsd));
+      const visGapL = Math.round(liveLbp - Math.round(confirmedLbp + keyedSinceLbp));
+      tieOutGapUsd = Math.abs(visGapU) < 0.005 ? 0 : visGapU;
+      tieOutGapLbp = Math.abs(visGapL) <= CF_LBP_DUST ? 0 : visGapL;
+    }
+    tieOutRows.sort((a, b) => (a.date > b.date ? -1 : (a.date < b.date ? 1 : ((Math.abs(b.deltaUsd) + Math.abs(b.deltaLbp) / rate) - (Math.abs(a.deltaUsd) + Math.abs(a.deltaLbp) / rate)))));
+    const tieOutOk = tieOutRows.length === 0 && Math.abs(tieOutGapUsd) < 0.02 && Math.abs(tieOutGapLbp) <= 2 * CF_LBP_DUST;
 
     const postCutoffUsd = round2((cd.liveInU - cd.liveOutU) - cd.endNetU);
     const upToCutoffDeltaUsd = round2(cd.endNetU);
 
     const unclosedDays = [];
-    if (fullFin) {
+    if (allCashPermitted) {
       for (let wi = 0; wi < WORKBOOK_COMPANY_NAMES.length; wi++) {
         const coName = WORKBOOK_COMPANY_NAMES[wi];
         if (!matchesCashScopeCompany({ company: coName }, coKey, allowed)) continue;
@@ -12244,6 +12793,7 @@
 
     const val = {
       cutoff,
+      fullFin,
       confirmedUsd,
       keyedSinceUsd,
       liveUsd,
@@ -12252,10 +12802,91 @@
       liveLbp,
       postCutoffUsd,
       upToCutoffDeltaUsd,
-      unclosedDays
+      unclosedDays,
+      tieOutOk,
+      tieOutGapUsd,
+      tieOutGapLbp,
+      tieOutRows
     };
     _cashTillSplitMemo = { key: memoKey, val };
     return val;
+  }
+
+  function formatCfTieOutGapText(gapUsd, gapLbp) {
+    const parts = [];
+    if (Math.abs(gapUsd) >= 0.005) parts.push(fmtSignedUSD(gapUsd, 2));
+    if (Math.abs(gapLbp) > CF_LBP_DUST) parts.push(fmtSignedLBP(gapLbp));
+    return parts.join(' / ') || fmtUSD(0, 2);
+  }
+
+  function renderCfTillCutoffSplitHtml(split, tillTot, tillLbp, opts = {}) {
+    if (!split) return '';
+    const idAttr = opts.id ? ` id="${esc(opts.id)}"` : '';
+    const isPbi = Boolean(opts.isPbi);
+    const showCombined = !isPbi && Math.abs(tillLbp) > CF_LBP_DUST;
+    const gapText = formatCfTieOutGapText(split.tieOutGapUsd, split.tieOutGapLbp);
+    const gapBtn = !split.tieOutOk
+      ? (isPbi
+        ? `<button type="button" class="cockpit-pill-tag crit cf-tieout-pill" data-nav-jump="cashflow" data-ui-tip="Workbook till plus entries keyed since does not equal screen till"><span>Gap</span>: <b data-no-i18n="1" dir="ltr">${esc(gapText)}</b></button>`
+        : `<button type="button" class="cf-tieout-inline-pill" data-cf-tieout-jump="1"><span>Gap</span>: <b data-no-i18n="1" dir="ltr">${esc(gapText)}</b></button>`)
+      : '';
+    return `<span class="cf-till-split"${idAttr}><span class="cf-till-split-seg" data-cf-split="confirmed"><span>Confirmed to</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(split.cutoff))}</b>: <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(split.confirmedUsd, 2))}</b></span><span class="cf-till-sep" aria-hidden="true">+</span><span class="cf-till-split-seg" data-cf-split="keyed"><span>Keyed since</span>: <b class="${split.keyedSinceUsd > 0.005 ? 'good' : (split.keyedSinceUsd < -0.005 ? 'crit' : '')}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(split.keyedSinceUsd, 2))}</b></span><span class="cf-till-sep${split.tieOutOk ? '' : ' crit'}" aria-hidden="true">${split.tieOutOk ? '=' : '≠'}</span><span class="cf-till-split-seg" data-cf-split="screen"><span>Screen till</span>: <b class="${split.tieOutOk ? '' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(fmtUSD(split.liveUsd, 2))}</b></span>${gapBtn}${showCombined ? `<span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg"><span>Combined</span> <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(tillTot, 2))}</b></span>` : ''}${opts.extraHtml || ''}</span>`;
+  }
+
+  function renderCfTillLbpSplitHtml(split, opts = {}) {
+    if (!split) return '';
+    const isPbi = Boolean(opts.isPbi);
+    const idAttr = ` id="${esc(opts.id || 'cfTillCutoffSplitLbp')}"`;
+    const lbpOk = Math.abs(split.tieOutGapLbp) <= 2 * CF_LBP_DUST && !split.tieOutRows.some(r => Math.abs(r.deltaLbp) > CF_LBP_DUST);
+    const gapLbpText = Math.abs(split.tieOutGapLbp) > CF_LBP_DUST ? fmtSignedLBP(split.tieOutGapLbp) : fmtLBP(0);
+    const gapBtn = !lbpOk
+      ? (isPbi
+        ? `<button type="button" class="cockpit-pill-tag crit cf-tieout-pill" data-nav-jump="cashflow" data-ui-tip="Workbook till plus entries keyed since does not equal screen till"><span>Gap</span>: <b data-no-i18n="1" dir="ltr">${esc(gapLbpText)}</b></button>`
+        : `<button type="button" class="cf-tieout-inline-pill" data-cf-tieout-jump="1"><span>Gap</span>: <b data-no-i18n="1" dir="ltr">${esc(gapLbpText)}</b></button>`)
+      : '';
+    return `<span class="cf-till-split"${idAttr}><span class="cf-till-split-seg" data-cf-split="confirmed-lbp"><span>Confirmed to</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(split.cutoff))}</b>: <b data-no-i18n="1" dir="ltr">${esc(fmtLBP(split.confirmedLbp))}</b></span><span class="cf-till-sep" aria-hidden="true">+</span><span class="cf-till-split-seg" data-cf-split="keyed-lbp"><span>Keyed since</span>: <b class="${split.keyedSinceLbp > CF_LBP_DUST ? 'good' : (split.keyedSinceLbp < -CF_LBP_DUST ? 'crit' : '')}" data-no-i18n="1" dir="ltr">${esc(fmtSignedLBP(split.keyedSinceLbp))}</b></span><span class="cf-till-sep${lbpOk ? '' : ' crit'}" aria-hidden="true">${lbpOk ? '=' : '≠'}</span><span class="cf-till-split-seg" data-cf-split="screen-lbp"><span>Screen till</span>: <b class="${lbpOk ? '' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(fmtLBP(split.liveLbp))}</b></span>${gapBtn}</span>`;
+  }
+
+  function renderCfTillTieOutStripHtml(split) {
+    if (!split || split.tieOutOk || !Array.isArray(split.tieOutRows) || !split.tieOutRows.length) return '';
+    const rows = split.tieOutRows;
+    const isOffsetZero = Math.abs(split.tieOutGapUsd) < 0.005 && Math.abs(split.tieOutGapLbp) <= CF_LBP_DUST;
+    const gapText = formatCfTieOutGapText(split.tieOutGapUsd, split.tieOutGapLbp);
+    const reasonLabel = reason => {
+      if (reason === 'counted_twice') return 'Counted twice';
+      if (reason === 'workbook_edited') return 'Workbook row edited in app';
+      if (reason === 'workbook_voided') return 'Workbook row voided in app';
+      if (reason === 'kept_edited') return 'Kept entry edited after workbook match';
+      return 'Unexplained till difference';
+    };
+    const fmtChangePair = row => {
+      if (row.reason !== 'workbook_edited' && row.reason !== 'kept_edited') return '';
+      const hasU = Math.abs(row.deltaUsd) >= 0.005;
+      const hasL = Math.abs(row.deltaLbp) > CF_LBP_DUST;
+      const wasTxt = [hasU ? fmtSignedUSD(row.origUsd, 2) : '', hasL ? fmtSignedLBP(row.origLbp) : ''].filter(Boolean).join(' / ');
+      const nowTxt = [hasU ? fmtSignedUSD(row.curUsd, 2) : '', hasL ? fmtSignedLBP(row.curLbp) : ''].filter(Boolean).join(' / ');
+      return ` (<span>was</span> <b data-no-i18n="1" dir="ltr">${esc(wasTxt)}</b>, <span>now</span> <b data-no-i18n="1" dir="ltr">${esc(nowTxt)}</b>)`;
+    };
+    return `
+      <div class="cf-tieout-strip" id="cfTillTieOutStrip" role="status">
+        <div class="cf-tieout-head">
+          <span class="badge badge-crit cf-tieout-count"><b data-no-i18n="1">${fmtNum(rows.length)}</b> <span>${rows.length === 1 ? 'Till Tie-Out Difference' : 'Till Tie-Out Differences'}</span></span>
+          ${isOffsetZero
+            ? `<span class="cf-tieout-txt"><span>Workbook rows edited in the app offset to $0.00 across</span> <b data-no-i18n="1">${fmtNum(rows.length)}</b> <span>${rows.length === 1 ? 'row' : 'rows'}</span>:</span>`
+            : `<span class="cf-tieout-txt"><span>The screen till differs from workbook till plus entries keyed since by</span> <b class="crit" data-no-i18n="1" dir="ltr">${esc(gapText)}</b>:</span>`}
+        </div>
+        <div class="cf-tieout-list">
+          ${rows.map(row => {
+            const hasU = Math.abs(row.deltaUsd) >= 0.005;
+            const hasL = Math.abs(row.deltaLbp) > CF_LBP_DUST;
+            const amtHtml = (hasU && hasL)
+              ? `<span class="cf-tieout-amt ${row.deltaUsd > 0 ? 'good' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(row.deltaUsd, 2))}</span> <span class="cf-till-sep" aria-hidden="true">·</span> <span class="cf-tieout-amt ${row.deltaLbp > 0 ? 'good' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(fmtSignedLBP(row.deltaLbp))}</span>`
+              : `<span class="cf-tieout-amt ${(hasU ? row.deltaUsd : row.deltaLbp) > 0 ? 'good' : 'crit'}" data-no-i18n="1" dir="ltr">${esc(hasU ? fmtSignedUSD(row.deltaUsd, 2) : fmtSignedLBP(row.deltaLbp))}</span>`;
+            const partyRef = [row.party, row.ref].filter(Boolean).join(' ');
+            return `<button type="button" class="cf-tieout-row" data-cf-tieout-row="1" data-tieout-rkey="${esc(row.rkey)}" data-tieout-rid="${esc(row.id)}" data-tieout-date="${esc(row.date)}">${row.showCompany ? `<span class="cf-tieout-co" data-no-i18n="1">${esc(row.company)}</span>` : ''}${row.date ? `<b class="cf-tieout-date" data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(row.date))}</b>` : ''}<span class="cf-tieout-cat">${esc(row.catLabel)}</span>${partyRef ? `<span class="cf-tieout-party" data-no-i18n="1">${esc(partyRef)}</span>` : ''}<span class="cf-tieout-reason"><span>${esc(reasonLabel(row.reason))}</span>${fmtChangePair(row)}</span>${amtHtml}</button>`;
+          }).join('')}
+        </div>
+      </div>`;
   }
 
   // When an entry was keyed in the app, read from its own id (`se-<time in base 36>-<6 chars>`). A workbook row
@@ -12654,7 +13285,7 @@
     if (typeof getActiveIndustry === 'function' && getActiveIndustry(STATE.company) !== 'Manufacturing') return [];
     if (isOfficialScopeActive(u)) return [];
     const allowed = allowedCompanyNames(u);
-    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isCashFlowFullFin(u);
     return idx.rows.filter(x => {
       if (!matchesCashScopeCompany(x.r, STATE.company, allowed)) return false;
       if (!canAccessTable(x.key, u)) return false;
@@ -34673,10 +35304,10 @@
     return window.MFG_PBI.renderModuleAnalytics(moduleKey, {
       STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI,
       filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
-      canEnterForm, canAccessPbiPage, canViewPayrollDollarAmounts, allowedCompanyNames,
-      SEED_DATE, MIN_DATE, MAX_DATE, periodRange, todayISO, computeCashTillCutoffSplit, getDateGrainCatalog,
+      canEnterForm, canAccessPbiPage, canAccessTable, canViewPayrollDollarAmounts, isCashFlowFullFin, allowedCompanyNames,
+      SEED_DATE, MIN_DATE, MAX_DATE, periodRange, todayISO, computeCashTillCutoffSplit, renderCfTillCutoffSplitHtml, renderCfTillLbpSplitHtml, getDateGrainCatalog,
       getScopedMonthly, setDateFilter, ticketTons, ticketSign, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml,
-      buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic
+      buildCashTillMoves, buildDailyTillSheetRows, buildRestrictedCashMonthlyRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic
     });
   }
 
@@ -41546,6 +42177,15 @@
       });
       const coRows = Array.from(coRowsById.values());
       if (isWorkShiftGroupEnded(coRows)) return;
+      // The shift's own open row is stored but not in the working list yet (it is merged further down): it is
+      // the row, so no bridge copy is made beside it (the copy became a second "Day Shift" the form read while
+      // saves wrote the real one).
+      const hasOwnOpenCustomRow = customList.some(cr =>
+        cr && !cr.voided && !cr.end_date
+        && norm(cr.company || 'WTC') === norm(co)
+        && (norm(normalizeShiftCodeAlias(cr.shift_code || cr.shift_id || '')) === stCodeNorm || (st.name && norm(cr.name || '') === norm(st.name)))
+      );
+      if (hasOwnOpenCustomRow) return;
       const matchingSeed = rec.work_shifts.find(r =>
         r && !r.voided
         && norm(r.company || 'WTC') === norm(co)
@@ -41610,6 +42250,8 @@
     });
 
     rec.work_shifts.forEach(r => hydrateWorkShiftRowComputed(r));
+    // One row per shift, company and start date: a stored copy leaves the working list (workShiftSlotKey).
+    if (collapseWorkShiftSlotTwins(rec.work_shifts)) rec.work_shifts.forEach(r => hydrateWorkShiftRowComputed(r));
     SEED._workShiftsSeededRev = rev;
     return rec.work_shifts;
   }
@@ -41697,6 +42339,135 @@
     row.modified_by = u.full_name || u.email || 'admin';
     row.modified_by_email = u.email || '';
     return row;
+  }
+
+  // One row per shift, company and start date (owner report 2026-11-28, WTC Day Shift: weekday hours "did not
+  // save"). The shift type kept in work schedules used to be bridged into a row of its own (id ws_st_*) whenever
+  // its real row was not in the working list yet, and a save that set the company default then stored that copy.
+  // From then on the form read one row while every save wrote the other. The row saved last is the one every
+  // screen reads; its copies leave the working list here (nothing is written) and are voided for good by the
+  // next save of that shift (voidWorkShiftSlotTwins). Copies are rows of the same name, or a bridge row.
+  function workShiftSlotKey(r) {
+    if (!r || typeof r !== 'object') return '';
+    const code = norm(normalizeShiftCodeAlias(r.shift_code || r.shift_id || '') || '');
+    if (!code) return '';
+    return `${norm(r.company || 'WTC')}|${code}|${String(r.start_date || '').slice(0, 10)}`;
+  }
+
+  function isWorkShiftBridgeRowId(id) {
+    return /^ws_st_/.test(String(id || ''));
+  }
+
+  function workShiftRowStampMs(v) {
+    const ms = Date.parse(String(v || ''));
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  // Groups of copies (two rows or more) among the rows given. Rows of one slot are copies of each other when
+  // they carry the same name; a bridge row joins the rows of its name, or the slot's only name (a renamed shift
+  // leaves its bridge copy under the old name). Differently named rows of one slot are different shifts.
+  function groupWorkShiftSlotCopies(rows) {
+    const slots = new Map();
+    (rows || []).forEach(r => {
+      if (!r || r.voided) return;
+      const k = workShiftSlotKey(r);
+      if (!k) return;
+      const g = slots.get(k);
+      if (g) g.push(r);
+      else slots.set(k, [r]);
+    });
+    const out = [];
+    slots.forEach(list => {
+      if (list.length < 2) return;
+      const byName = new Map();
+      const bridges = [];
+      const nameOf = r => norm(r.name || r.shift_name || '');
+      list.forEach(r => {
+        if (isWorkShiftBridgeRowId(r.id)) { bridges.push(r); return; }
+        const n = nameOf(r);
+        if (byName.has(n)) byName.get(n).push(r);
+        else byName.set(n, [r]);
+      });
+      bridges.forEach(b => {
+        const n = nameOf(b);
+        if (byName.has(n)) byName.get(n).push(b);
+        else if (byName.size === 1) byName.values().next().value.push(b);
+        else if (!byName.size) byName.set(n, [b]);
+      });
+      byName.forEach(g => { if (g.length > 1) out.push(g); });
+    });
+    return out;
+  }
+
+  // The row someone saved hours on (entered_at, set by the shift form) beats a copy that never was: a copy
+  // only got a new modified_at when the company default or a calendar preset touched it, and that must not
+  // make its old hours win. Between two rows saved in the form, the later form save wins, then the later
+  // modified_at; on a tie the row that is not a bridge copy, then the first listed.
+  function pickWorkShiftSlotWinner(rows) {
+    let best = null;
+    const rank = r => [workShiftRowStampMs(r.entered_at), workShiftRowStampMs(r.modified_at), isWorkShiftBridgeRowId(r.id) ? 0 : 1];
+    let bestRank = null;
+    (rows || []).forEach(r => {
+      if (!r) return;
+      const rk = rank(r);
+      let better = !best;
+      for (let i = 0; !better && i < rk.length; i++) {
+        if (rk[i] === bestRank[i]) continue;
+        better = rk[i] > bestRank[i];
+        break;
+      }
+      if (better) {
+        best = r;
+        bestRank = rk;
+      }
+    });
+    return best;
+  }
+
+  function collapseWorkShiftSlotTwins(list) {
+    if (!Array.isArray(list) || list.length < 2) return 0;
+    const drop = new Set();
+    groupWorkShiftSlotCopies(list).forEach(rows => {
+      const keep = pickWorkShiftSlotWinner(rows);
+      rows.forEach(r => { if (r !== keep) drop.add(r); });
+    });
+    if (!drop.size) return 0;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (drop.has(list[i])) list.splice(i, 1);
+    }
+    return drop.size;
+  }
+
+  // Void the stored copies of the row a save just wrote (same shift, company and start date), so no device
+  // reads them again and the bridge never rebuilds them (a voided id is skipped there). Each gets a new
+  // modified_at and is posted with the save.
+  function voidWorkShiftSlotTwins(savedRow, stampIso, extraPosts) {
+    if (!savedRow || !savedRow.id || !Array.isArray(STATE.customRecords.work_shifts)) return [];
+    const nowIso = new Date().toISOString();
+    const u = (typeof activeUser === 'function' && activeUser()) || {};
+    const out = [];
+    const mine = groupWorkShiftSlotCopies(STATE.customRecords.work_shifts)
+      .find(g => g.some(t => String(t.id || '') === String(savedRow.id))) || [];
+    mine.forEach(t => {
+      if (!t || t.voided || String(t.id || '') === String(savedRow.id)) return;
+      t.voided = true;
+      t.voided_at = nowIso;
+      t.voided_by = u.full_name || u.email || 'admin';
+      t.void_reason = `Duplicate of ${savedRow.id} (one row per shift and start date)`;
+      t.twin_of = savedRow.id;
+      t.is_bu_default = false;
+      stampWorkShiftRowModified(t, stampIso);
+      out.push(t);
+      if (Array.isArray(extraPosts)) extraPosts.push(['work_shifts', Object.assign({}, t)]);
+    });
+    if (out.length && SEED && SEED.records && Array.isArray(SEED.records.work_shifts)) {
+      const gone = new Set(out.map(t => String(t.id)));
+      for (let i = SEED.records.work_shifts.length - 1; i >= 0; i--) {
+        const r = SEED.records.work_shifts[i];
+        if (r && gone.has(String(r.id || ''))) SEED.records.work_shifts.splice(i, 1);
+      }
+    }
+    return out;
   }
 
   function setBuDefaultShift(companyRaw, shiftIdOrCode, opts = {}) {
@@ -46752,7 +47523,7 @@
                   <td>${coBadge(pr.company)}${appCell(pr, 'price_rules')}</td>
                   <td><span class="badge ${pr.rule_type === 'Transport Price (Site)' ? 'badge-brass' : 'badge-info'}">${esc(pr.rule_type || '—')}</span></td>
                   <td>${pr.supplier ? relLink('suppliers', pr.supplier, pr.supplier, true) : (pr.site ? relLink('sites', pr.site, pr.site + ' (site)', true) : '—')}</td>
-                  <td>${pr.site ? relLink('sites', pr.site) : '—'}${isBundledRule ? ' <span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier\'s price includes delivery; no separate transport charge">Delivered</span>' : ''}</td>
+                  <td>${pr.site ? relLink('sites', pr.site) : (isBundledRule ? '' : '<span class="mu">—</span>')}${isBundledRule ? `${pr.site ? ' ' : ''}<span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier's price includes delivery; no separate transport charge">Delivered</span>` : ''}</td>
                   <td>${pr.product ? relLink('products', pr.product) : '(All Grades)'}</td>
                   <td class="mono">${esc(unitTxt)}${pr.truck_size ? ` <span class="badge badge-brass" title="Site Truck Size Override (${pr.truck || 'All trucks'})">${fmtNum(pr.truck_size, 1)} m³</span>` : ''}</td>
                   <td class="r">${restrictRawCost ? '<span class="muted">Restricted</span>' : (upVal != null ? `<strong>${fmtUSD(upVal, 2)}</strong>` : '—')}</td>
@@ -56197,6 +56968,7 @@
         const dec = (isMin || Math.abs((num * 10) - Math.round(num * 10)) > 0.01) ? 2 : 1;
         return fmtNum(num, dec);
       };
+      const fmtAttHrsCell = v => fmtNum(Number(v || 0), 2);
       const attColSpan = canShowAttDollars ? 16 : 13;
       const attSumColSpan = canShowAttDollars ? 14 : 9;
       // Reminder (owner 2026-11-13, after v19.6.343): staff who clock another shift but are timed against the
@@ -56252,7 +57024,7 @@
           </div>
           ${isGroupScope ? `
           <div class="sales-entity-recon">
-            <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
+            <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" data-ui-tip="Click to filter to WTC only">
               <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcAtt.n)} Attendance Logs</b><span class="sales-recon-act">Filter WTC Only →</span></div>
               <div class="sales-recon-metrics">
                 <span><small>Overtime Hrs</small><b class="brass">${fmtAttHrs(wtcAtt.ot)} hrs</b></span>
@@ -56263,7 +57035,7 @@
                 ${canShowAttDollars ? `<span><small>Net Impact</small><b>${fmtSignedImpact(wtcAtt.net || 0)}</b></span>` : ''}
               </div>
             </div>
-            <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
+            <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" data-ui-tip="Click to filter to BBConstruction only">
               <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcAtt.n)} Attendance Logs</b><span class="sales-recon-act">Filter BBC Only →</span></div>
               <div class="sales-recon-metrics">
                 <span><small>Overtime Hrs</small><b class="brass">${fmtAttHrs(bbcAtt.ot)} hrs</b></span>
@@ -56305,7 +57077,7 @@
                   const dispTp = String(a.display_type || tp);
                   const badgeCls = /Absence|Absent|Sick|Lateness|Half\s*Day|Unpaid/i.test(tp) ? 'badge-warn' : (/^Extra/i.test(tp) ? 'badge-brass' : (/^Config|Vac/i.test(tp) ? 'badge-info' : 'badge-ok'));
                   const dayPill = a.weekday ? `<span class="att-day-pill${a.is_sunday ? ' is-sun' : ''}">${esc(a.weekday)}</span>` : '';
-                  const outCell = a.out_time ? `${esc(a.out_time)}${a.is_overnight ? '<span class="att-nextday-tag" title="Overnight shift finishing next morning">+1d</span>' : ''}` : '—';
+                  const outCell = a.out_time ? `${esc(a.out_time)}${a.is_overnight ? '<span class="att-nextday-tag" data-ui-tip="Overnight shift finishing next morning">+1d</span>' : ''}` : '<span class="mu">—</span>';
                   const effDtDisp = a.eff_date || a.set_date || a.rep_date || a.date;
                   const txDtDisp = a.tx_date || a.date || effDtDisp;
                   const isPerMinRow = a.math_mode === 'per_minute';
@@ -56315,22 +57087,36 @@
                   const lateMinPill = (a.billable_late_min != null && Number(a.billable_late_min) > 0)
                     ? Math.round(Number(a.billable_late_min))
                     : (isPerMinRow && Number(a.late_hours || 0) > 0 ? Math.round(Number(a.late_hours) * 60) : 0);
+                  const showPerMinBasisTag = isPerMinRow
+                    && !(Number(a.leave_days || 0) > 0)
+                    && !/^(?:Half\s*Day|Absence|Absent|VacAbsence|Paid\s*Leave|Sick|Extra|Config|Site\s*(?:Present|Off))/i.test(tp);
+                  const basisInner = a.shift_basis_lbl && a.shift_basis_lbl !== '—'
+                    ? `<span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl)}</span>${showPerMinBasisTag ? ' <span class="att-math-pill">$/min</span>' : ''}`
+                    : '<span class="mu">—</span>';
+                  const otAuditHtml = renderRuleAuditPillsHtml(a, { kind: 'ot', inline: true });
+                  const lateAuditHtml = renderRuleAuditPillsHtml(a, { kind: 'late', inline: true });
+                  const otCellHtml = Number(a.overtime_hours || 0) > 0
+                    ? `<strong class="att-ot-val">${fmtAttHrsCell(a.overtime_hours)}</strong>${otAuditHtml ? otAuditHtml : (otMinPill > 0 ? ` <small class="att-min-sub">${otMinPill}m</small>` : '')}`
+                    : (otAuditHtml ? otAuditHtml.trim() : '<span class="mu">—</span>');
+                  const lateCellHtml = Number(a.late_hours || 0) > 0
+                    ? `<strong class="att-impact-neg">${fmtAttHrsCell(a.late_hours)}</strong>${lateAuditHtml ? lateAuditHtml : (lateMinPill > 0 ? ` <small class="att-min-sub">${lateMinPill}m</small>` : '')}`
+                    : (lateAuditHtml ? lateAuditHtml.trim() : '<span class="mu">—</span>');
                   return `
                   <tr class="rrow" data-rkey="attendance" data-rid="${esc(a.id)}">
-                    <td class="mono" title="Reporting / Set Date (actual attendance day)">${esc(fmtDateDMY(effDtDisp))}${dayPill}${appCell(a, 'attendance')}</td>
-                    <td class="mono${txDtDisp === effDtDisp ? ' mu' : ''}" title="Transaction Date (entry date)">${esc(fmtDateDMY(txDtDisp))}</td>
+                    <td class="mono">${esc(fmtDateDMY(effDtDisp))}${dayPill}${appCell(a, 'attendance')}</td>
+                    <td class="mono${txDtDisp === effDtDisp ? ' mu' : ''}">${esc(fmtDateDMY(txDtDisp))}</td>
                     <td>${coBadge(a.company)}</td>
                     <td>${relLink('employments', a.staff, a.staff, true)}</td>
                     <td><span class="badge ${badgeCls}">${esc(dispTp)}</span></td>
-                    <td class="mono">${esc(a.in_time || '—')}</td>
+                    <td class="mono">${a.in_time ? esc(a.in_time) : '<span class="mu">—</span>'}</td>
                     <td class="mono">${outCell}</td>
-                    <td class="r">${a.worked_hours ? `<strong>${fmtAttHrs(a.worked_hours, isPerMinRow)}</strong>` : '—'}</td>
-                    <td><span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl || '—')}</span>${isPerMinRow ? ' <span class="att-math-pill">$/min</span>' : ''}</td>
-                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtAttHrs(a.overtime_hours, isPerMinRow)}</strong>${otMinPill > 0 ? ` <span class="att-math-pill">${otMinPill}m</span>` : ''}` : '—'}${renderRuleAuditPillsHtml(a, { kind: 'ot', inline: true })}</td>
-                    <td class="r">${a.late_hours ? `<strong class="att-impact-neg">${fmtAttHrs(a.late_hours, isPerMinRow)}</strong>${lateMinPill > 0 ? ` <span class="att-math-pill">${lateMinPill}m</span>` : ''}` : '—'}${renderRuleAuditPillsHtml(a, { kind: 'late', inline: true })}</td>
-                    <td class="r">${a.leave_days ? fmtNum(a.leave_days, 1) : '—'}</td>
+                    <td class="r att-hrs-cell">${a.worked_hours ? `<strong>${fmtAttHrsCell(a.worked_hours)}</strong>` : '<span class="mu">—</span>'}</td>
+                    <td class="att-basis-cell"><div class="att-basis-wrap">${basisInner}</div></td>
+                    <td class="r att-hrs-cell">${otCellHtml}</td>
+                    <td class="r att-hrs-cell">${lateCellHtml}</td>
+                    <td class="r">${a.leave_days ? `<strong>${fmtNum(a.leave_days, 1)}</strong>` : '<span class="mu">—</span>'}</td>
                     ${canShowAttDollars ? `<td class="r">${fmtEarnedCell(a.earned_usd)}</td><td class="r">${fmtLostCell(a.lost_usd)}</td><td class="r">${fmtSignedImpact(a.payroll_impact_usd)}</td>` : ''}
-                    <td class="mu">${esc(a.notes || '—')}</td>
+                    <td class="mu att-notes-cell">${a.notes ? `<span class="att-notes-clamp">${esc(a.notes)}</span>` : '<span class="mu">—</span>'}</td>
                   </tr>`;
                 }).join('') || emptyRow(attColSpan, 'No attendance records match filter')}
                 ${showMoreRow('pay_att', filteredAtt.length, attColSpan)}
@@ -56383,15 +57169,15 @@
                     <td>${coBadge(r.company)}</td>
                     <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.contract_status)}</span></td>
                     <td class="r">${fmtNum(r.logs_cnt, 0)}</td>
-                    <td class="r">${r.ot_hrs ? `<strong>${fmtAttHrs(r.ot_hrs)}</strong>` : '-'}</td>
-                    ${canShowAttDollars ? `<td class="r">${r.att_ot_pay ? `<strong>${fmtUSD(r.att_ot_pay, 2)}</strong>` : '-'}</td>` : ''}
-                    <td class="r">${r.trip_ot_cnt ? fmtNum(r.trip_ot_cnt, 0) : '-'}</td>
-                    ${canShowAttDollars ? `<td class="r">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>` : ''}
-                    <td class="r">${r.late_hrs ? fmtAttHrs(r.late_hrs) : '-'}</td>
-                    ${canShowAttDollars ? `<td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>` : ''}
-                    <td class="r">${r.rec_absent_days ? fmtNum(r.rec_absent_days, 1) : '-'}</td>
-                    <td class="r">${(r.vac_days + r.sick_days) ? fmtNum(r.vac_days + r.sick_days, 1) : '-'}</td>
-                    ${canShowAttDollars ? `<td class="r">${r.extras ? fmtUSD(r.extras, 2) : '-'}</td>` : ''}
+                    <td class="r">${r.ot_hrs ? `<strong>${fmtAttHrsCell(r.ot_hrs)}</strong>` : '<span class="mu">—</span>'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.att_ot_pay ? `<strong>${fmtUSD(r.att_ot_pay, 2)}</strong>` : '<span class="mu">—</span>'}</td>` : ''}
+                    <td class="r">${r.trip_ot_cnt ? fmtNum(r.trip_ot_cnt, 0) : '<span class="mu">—</span>'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '<span class="mu">—</span>'}</td>` : ''}
+                    <td class="r">${r.late_hrs ? fmtAttHrsCell(r.late_hrs) : '<span class="mu">—</span>'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '<span class="mu">—</span>'}</td>` : ''}
+                    <td class="r">${r.rec_absent_days ? fmtNum(r.rec_absent_days, 1) : '<span class="mu">—</span>'}</td>
+                    <td class="r">${(r.vac_days + r.sick_days) ? fmtNum(r.vac_days + r.sick_days, 1) : '<span class="mu">—</span>'}</td>
+                    ${canShowAttDollars ? `<td class="r">${r.extras ? fmtUSD(r.extras, 2) : '<span class="mu">—</span>'}</td>` : ''}
                     ${canShowAttDollars ? `<td class="r ${r.net_att_impact < 0 ? 'pbi-neg' : ''}"><strong>${fmtUSD(r.net_att_impact, 2)}</strong></td>` : ''}
                   </tr>
                 `).join('') || emptyRow(attSumColSpan, 'No staff attendance summary rows match filter')}
@@ -59214,7 +60000,7 @@
     const m = getModel(effCo);
     const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500 };
     const rate = Number(cf.rate_lbp || 89500);
-    const fullFin = Boolean(opts.forceFullFin) || isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = Boolean(opts.forceFullFin) || isCashFlowFullFin(u);
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
@@ -59225,7 +60011,8 @@
       _cashMovesCacheKey = 'active';
     }
     const jvRights = Boolean(opts.forceFullFin || canAccessTable('jv_distributions', u));
-    const baseScopeKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${offScope ? 'OFF' : 'ALL'}|${fullFin ? 1 : 0}|${jvRights ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
+    const allTblSig = opts.forceFullFin ? '1'.repeat(CASH_TILL_DELTA_KEYS.length) : CASH_TILL_DELTA_KEYS.map(tk => canAccessTable(tk, u) ? '1' : '0').join('');
+    const baseScopeKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${offScope ? 'OFF' : 'ALL'}|${fullFin ? 1 : 0}|${allTblSig}|${jvRights ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
     const cacheKey = `${baseScopeKey}|${range ? (range.from + '..' + range.to) : 'ALL'}`;
     if (_cashMovesCacheMap.has(cacheKey)) return _cashMovesCacheMap.get(cacheKey);
     if (range && _cashMovesCacheMap.has(baseScopeKey + '|ALL')) {
@@ -59273,7 +60060,7 @@
 
     const baseFilterOpts = { company: effCo, ignoreSearch: true, ignorePeriod: true, basis: 'tx', user: u };
     // 1. Cash Sales & Cash Sale Returns
-    filterRecords(SEED.records.sales_tickets, baseFilterOpts).forEach(s => {
+    if (opts.forceFullFin || canAccessTable('sales_tickets', u)) filterRecords(SEED.records.sales_tickets, baseFilterOpts).forEach(s => {
       if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') {
         const sgn = ticketSign(s);
         if (!sgn) return;
@@ -59296,7 +60083,7 @@
     });
 
     // 2. Customer Receipts (AR Settlements + VAT Received in LBP + Sales Commissions Paid Out on BBConstruction)
-    filterRecords(SEED.records.receipts, baseFilterOpts).forEach(r => {
+    if (opts.forceFullFin || canAccessTable('receipts', u)) filterRecords(SEED.records.receipts, baseFilterOpts).forEach(r => {
       const mth = String(r.method || '').trim();
       const knd = receiptKind(r);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
@@ -59332,7 +60119,7 @@
     });
 
     // 3. Direct Cash Expenses & Cash Refunds
-    filterRecords(SEED.records.expenses, baseFilterOpts).forEach(x => {
+    if (opts.forceFullFin || canAccessTable('expenses', u)) filterRecords(SEED.records.expenses, baseFilterOpts).forEach(x => {
       const sgn = expenseSign(x);
       if (!sgn || !isCashExpense(x)) return;
       const lbp = -Math.round(Number(x.lbp_amount || 0) * sgn);
@@ -59349,7 +60136,7 @@
     });
 
     // 4. Supplier AP Settlements & VAT Paid
-    filterRecords(SEED.records.settlements, baseFilterOpts).forEach(s => {
+    if (opts.forceFullFin || canAccessTable('settlements', u)) filterRecords(SEED.records.settlements, baseFilterOpts).forEach(s => {
       const knd = settlementKind(s);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
       if (isCarriedBalanceMethod(s)) return;
@@ -59367,7 +60154,7 @@
 
     // 5–8. Confidential External, Extended, Salary (incl. Opening Config) & Borrowing/Loans (Owner / Supervisor / read_fin seats only)
     if (fullFin) {
-      filterRecords(SEED.records.external_movements, baseFilterOpts).forEach(ex => {
+      if (opts.forceFullFin || canAccessTable('external_movements', u)) filterRecords(SEED.records.external_movements, baseFilterOpts).forEach(ex => {
         const isExtd = false;
         const flowStr = String(ex.flow || ex.method || '').trim();
         const isCfg = /^config$/i.test(flowStr);
@@ -59402,7 +60189,7 @@
         });
       });
 
-      filterRecords(SEED.records.salaries, baseFilterOpts).forEach(sa => {
+      if (opts.forceFullFin || canAccessTable('salaries', u)) filterRecords(SEED.records.salaries, baseFilterOpts).forEach(sa => {
         const lbpRaw = Math.round(Number(sa.lbp_amount || 0));
         const usdRaw = Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0));
         const usd = round2(-usdRaw);
@@ -59419,7 +60206,7 @@
         });
       });
 
-      filterRecords(SEED.records.attendance, baseFilterOpts).forEach(at => {
+      if (opts.forceFullFin || canAccessTable('attendance', u)) filterRecords(SEED.records.attendance, baseFilterOpts).forEach(at => {
         const tp = String(at.type || '');
         if (!/^Config\s+(USD|LBP)$/i.test(tp)) return;
         const tally = Number(at.tally || 0);
@@ -59437,7 +60224,7 @@
         });
       });
 
-      filterRecords(SEED.records.loans, baseFilterOpts).forEach(ln => {
+      if (opts.forceFullFin || canAccessTable('loans', u)) filterRecords(SEED.records.loans, baseFilterOpts).forEach(ln => {
         const dt = String(ln.date || ln.start_date || '').slice(0, 10);
         if (!dt) return;
         const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
@@ -59457,7 +60244,7 @@
         });
       });
 
-      filterRecords(SEED.records.loan_settlements, baseFilterOpts).forEach(ls => {
+      if (opts.forceFullFin || canAccessTable('loan_settlements', u)) filterRecords(SEED.records.loan_settlements, baseFilterOpts).forEach(ls => {
         const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
         const lbpMag = Math.round(Math.abs(Number(ls.lbp_amount || 0)));
         const usdMag = Math.abs(ls.lbp_amount ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0));
@@ -59516,7 +60303,7 @@
       // loaded records, so app edits never move it) and the register shows it as one line, so register and till
       // agree from day one. Whole-register seats only, and never in the official-books scope (it trims the register,
       // so a difference taken against the full register would not hold there).
-      if (!offScope) {
+      if (!offScope && (opts.forceFullFin || (!CASH_TILL_DELTA_KEYS.some(tk => !canAccessTable(tk, u)) && jvRights))) {
         const otAllowed = allowedCompanyNames(u);
         ['WTC', 'BBConstruction'].forEach(coName => {
           if (!matchesCashScopeCompany({ company: coName }, effCo, otAllowed)) return;
@@ -59539,7 +60326,7 @@
     }
 
     // 9. Dual-Currency FX Conversions (USD ↔ LBP)
-    filterRecords(SEED.records.conversions, baseFilterOpts).forEach(cv => {
+    if (opts.forceFullFin || canAccessTable('conversions', u)) filterRecords(SEED.records.conversions, baseFilterOpts).forEach(cv => {
       const d = convSignedDeltas(cv, rate);
       const fxPair = d.u2l
         ? `${fmtUSD(d.usdMag, 2)} → ${fmtLBP(d.lbpMag)}`
@@ -59598,10 +60385,13 @@
     const rate = Number(cf.rate_lbp || 89500);
     const dailySrc = Array.isArray(cf.daily) ? cf.daily : [];
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
-    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isCashFlowFullFin(u);
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
-    const dailyCacheKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${isOfficialScopeActive(u) ? 'OFF' : 'ALL'}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${dailySrc.length}|${SEED._recordsReady ? 1 : 0}`;
+    const jvRights = canAccessTable('jv_distributions', u);
+    const allTblSig = CASH_TILL_DELTA_KEYS.map(tk => canAccessTable(tk, u) ? '1' : '0').join('');
+    const allCashPermitted = Boolean(fullFin && jvRights && !allTblSig.includes('0'));
+    const dailyCacheKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${isOfficialScopeActive(u) ? 'OFF' : 'ALL'}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${allTblSig}|${jvRights ? 1 : 0}|${String((u && (u.id || u.email || u.role)) || '')}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${dailySrc.length}|${SEED._recordsReady ? 1 : 0}`;
     if (_dailyTillCacheMap.has(dailyCacheKey)) {
       return _dailyTillCacheMap.get(dailyCacheKey);
     }
@@ -59630,18 +60420,18 @@
       }
     });
 
-    const cdAll = computeCustomCashDeltas(effCo, null);
+    const cdAll = computeCustomCashDeltas(effCo, null, null, u);
     const customNetUsdAll = round2(cdAll.liveInU - cdAll.liveOutU);
     const customNetLbpAll = Math.round(cdAll.liveInL - cdAll.liveOutL);
     // A sibling-industry model's stored days are its baseline cash moves, which may be none at all. Its till always
     // starts at $0 from those days plus the app entries (like its month rows): never from live_till, which for Bdeir
     // Holding is the whole group's till, Manufacturing included.
     const isSiblingCf = Boolean(m && m._industry && m._industry !== 'Manufacturing');
-    const targetFinalUsd = (!isSiblingCf && cf.live_till && cf.live_till.usd != null) ? round2(Number(cf.live_till.usd) + customNetUsdAll) : null;
-    const targetFinalLbp = (!isSiblingCf && cf.live_till && cf.live_till.lbp != null) ? Math.round(Number(cf.live_till.lbp) + customNetLbpAll) : null;
+    const targetFinalUsd = (allCashPermitted && !isSiblingCf && cf.live_till && cf.live_till.usd != null) ? round2(Number(cf.live_till.usd) + customNetUsdAll) : null;
+    const targetFinalLbp = (allCashPermitted && !isSiblingCf && cf.live_till && cf.live_till.lbp != null) ? Math.round(Number(cf.live_till.lbp) + customNetLbpAll) : null;
 
     const dayMap = new Map();
-    if (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf) {
+    if (!allCashPermitted || (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf)) {
       movesByDate.forEach((md, iso) => {
         dayMap.set(iso, { iu: round2(md.iu), ou: round2(md.ou), il: Math.round(md.il), ol: Math.round(md.ol) });
       });
@@ -59667,8 +60457,8 @@
     }
 
     const sortedDates = Array.from(dayMap.keys()).sort();
-    let runUsd = (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf && targetFinalUsd !== null) ? round2(targetFinalUsd - totalMovesNetU) : 0;
-    let runLbp = (SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf && targetFinalLbp !== null) ? Math.round(targetFinalLbp - totalMovesNetL) : 0;
+    let runUsd = (allCashPermitted && SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf && targetFinalUsd !== null) ? round2(targetFinalUsd - totalMovesNetU) : 0;
+    let runLbp = (allCashPermitted && SEED._recordsReady && fullFin && !dailySrc.length && !isSiblingCf && targetFinalLbp !== null) ? Math.round(targetFinalLbp - totalMovesNetL) : 0;
     const out = [];
     for (let i = 0; i < sortedDates.length; i++) {
       const iso = sortedDates[i];
@@ -59746,22 +60536,77 @@
 
   function buildLiveCashFlowTables(cf, coKey, rate) {
     const u = activeUser();
-    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isCashFlowFullFin(u);
+    const canSalesTbl = canAccessTable('sales_tickets', u);
+    const canRcptTbl = canAccessTable('receipts', u);
+    const canExpTbl = canAccessTable('expenses', u);
+    const canSetTbl = canAccessTable('settlements', u);
+    const canConvTbl = canAccessTable('conversions', u);
+    const canSalTbl = fullFin && canAccessTable('salaries', u);
+    const canLoanTbl = fullFin && canAccessTable('loans', u);
+    const canLoanSetTbl = fullFin && canAccessTable('loan_settlements', u);
+    const canBorTbl = canLoanTbl || canLoanSetTbl;
+    const canExtTbl = fullFin && canAccessTable('external_movements', u);
+    const canSalesPair = canSalesTbl && canRcptTbl;
+    const canExpPair = canExpTbl && canSetTbl;
+    const canBorPair = canLoanTbl && canLoanSetTbl;
     const src = (cf && cf.tables) || {};
     const cloneTbl = (t, defTotals) => ({
       rows: Array.isArray(t && t.rows) ? t.rows.map(r => Object.assign({}, r)) : [],
       totals: Object.assign({}, defTotals, (t && t.totals) || {})
     });
     const out = {
-      sales: cloneTbl(src.sales, { usd: 0, lbp: 0 }),
-      expenses: cloneTbl(src.expenses, { usd: 0, lbp: 0 }),
-      borrowing: fullFin ? cloneTbl(src.borrowing, { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 }) : { rows: [], totals: { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 } },
-      salary: fullFin ? cloneTbl(src.salary, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
-      external: fullFin ? cloneTbl(src.external, { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 }) : { rows: [], totals: { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 } },
-      extended: fullFin ? cloneTbl(src.extended, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
-      conversion: cloneTbl(src.conversion, { from_amt: 0, to_amt: 0 })
+      sales: canSalesPair ? cloneTbl(src.sales, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
+      expenses: canExpPair ? cloneTbl(src.expenses, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
+      borrowing: canBorPair ? cloneTbl(src.borrowing, { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 }) : { rows: [], totals: { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 } },
+      salary: canSalTbl ? cloneTbl(src.salary, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
+      external: canExtTbl ? cloneTbl(src.external, { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 }) : { rows: [], totals: { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 } },
+      extended: canExtTbl ? cloneTbl(src.extended, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
+      conversion: canConvTbl ? cloneTbl(src.conversion, { from_amt: 0, to_amt: 0 }) : { rows: [], totals: { from_amt: 0, to_amt: 0 } }
     };
-    if (fullFin) stripUnsplitBorrowLbp(out.borrowing);
+    if (canBorPair) stripUnsplitBorrowLbp(out.borrowing);
+    const needSplitMoves = (canSalesTbl !== canRcptTbl) || (canExpTbl !== canSetTbl) || (canLoanTbl !== canLoanSetTbl);
+    if (needSplitMoves && coKey !== 'lionstransport') {
+      const spUpsert = (tbl, rawName, applyFn) => {
+        const nm = String(rawName || 'Unspecified').trim() || 'Unspecified';
+        const nk = norm(nm);
+        let row = tbl.rows.find(x => x && norm(x.name) === nk);
+        if (!row) {
+          row = { name: nm, usd: 0, lbp: 0, rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0, exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 };
+          tbl.rows.push(row);
+        }
+        applyFn(row);
+      };
+      const spMoves = buildCashTillMoves({ user: u, company: coKey, ignorePeriod: true });
+      for (let i = 0; i < spMoves.length; i++) {
+        const mv = spMoves[i];
+        if (!mv || /^lions\s*transport$/i.test(String(mv.company || ''))) continue;
+        if (canSalesTbl !== canRcptTbl && mv.rkey === (canSalesTbl ? 'sales_tickets' : 'receipts')) {
+          spUpsert(out.sales, mv.party || 'Customer', row => { row.usd = round2(row.usd + mv.usd); row.lbp = Math.round(row.lbp + mv.lbp); });
+          out.sales.totals.usd = round2(out.sales.totals.usd + mv.usd);
+          out.sales.totals.lbp = Math.round(out.sales.totals.lbp + mv.lbp);
+        }
+        if (canExpTbl !== canSetTbl && mv.rkey === (canExpTbl ? 'expenses' : 'settlements')) {
+          const eu = round2(-mv.usd), el = Math.round(-mv.lbp);
+          spUpsert(out.expenses, mv.party || 'Supplier', row => { row.usd = round2(row.usd + eu); row.lbp = Math.round(row.lbp + el); });
+          out.expenses.totals.usd = round2(out.expenses.totals.usd + eu);
+          out.expenses.totals.lbp = Math.round(out.expenses.totals.lbp + el);
+        }
+        if (canLoanTbl !== canLoanSetTbl && mv.rkey === (canLoanTbl ? 'loans' : 'loan_settlements')) {
+          const isPaid = mv.usd > 0.004 || mv.lbp > 1;
+          const pu = isPaid ? mv.in_usd : 0, pl = isPaid ? Math.max(0, mv.lbp) : 0;
+          const ru = isPaid ? 0 : mv.out_usd, rl = isPaid ? 0 : Math.max(0, -mv.lbp);
+          spUpsert(out.borrowing, mv.party || 'Borrower', row => {
+            row.paid_usd = round2(row.paid_usd + pu); row.paid_lbp = Math.round(row.paid_lbp + pl);
+            row.rec_usd = round2(row.rec_usd + ru); row.rec_lbp = Math.round(row.rec_lbp + rl);
+          });
+          out.borrowing.totals.paid_usd = round2(out.borrowing.totals.paid_usd + pu);
+          out.borrowing.totals.paid_lbp = Math.round(out.borrowing.totals.paid_lbp + pl);
+          out.borrowing.totals.rec_usd = round2(out.borrowing.totals.rec_usd + ru);
+          out.borrowing.totals.rec_lbp = Math.round(out.borrowing.totals.rec_lbp + rl);
+        }
+      }
+    }
     if (!STATE.customRecords || coKey === 'lionstransport') return out;
     // Other industries build these tables from their full entry list (app edits, voids and app rows already in):
     // applying the app deltas again would count every edit twice.
@@ -59778,7 +60623,7 @@
       }
       applyFn(row);
     };
-    forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
+    if (canSalesPair) forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
       if (isRemovedTicket(t) || !isCashSaleTicket(t)) return;
       const sgn = ticketSign(t);
       if (!sgn) return;
@@ -59792,7 +60637,7 @@
       out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + amt);
       out.sales.totals.lbp = Math.round(Number(out.sales.totals.lbp || 0) + vatLbp);
     });
-    forEachCashCustomDelta('receipts', matchCo, (rc, mult) => {
+    if (canSalesPair) forEachCashCustomDelta('receipts', matchCo, (rc, mult) => {
       const mth = String(rc.method || '').trim();
       const knd = receiptKind(rc);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
@@ -59817,7 +60662,7 @@
       out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + u);
       out.sales.totals.lbp = Math.round(Number(out.sales.totals.lbp || 0) + l);
     });
-    forEachCashCustomDelta('expenses', matchCo, (e, mult) => {
+    if (canExpPair) forEachCashCustomDelta('expenses', matchCo, (e, mult) => {
       if (e.price_pending || isCreditExpense(e)) return;
       const sgn = expenseSign(e);
       if (sgn === 0) return;
@@ -59831,7 +60676,7 @@
       out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + u);
       out.expenses.totals.lbp = Math.round(Number(out.expenses.totals.lbp || 0) + l);
     });
-    forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
+    if (canExpPair) forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
       const knd = settlementKind(sp);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
       if (isCarriedBalanceMethod(sp)) return;
@@ -59846,8 +60691,7 @@
       out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + u);
       out.expenses.totals.lbp = Math.round(Number(out.expenses.totals.lbp || 0) + l);
     });
-    if (fullFin) {
-    forEachCashCustomDelta('salaries', matchCo, (sa, mult) => {
+    if (canSalTbl) forEachCashCustomDelta('salaries', matchCo, (sa, mult) => {
       const u = round2(mult * Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0)));
       const l = Math.round(mult * Number(sa.lbp_amount || 0));
       if (!u && !l) return;
@@ -59858,7 +60702,7 @@
       out.salary.totals.usd = round2(Number(out.salary.totals.usd || 0) + u);
       out.salary.totals.lbp = Math.round(Number(out.salary.totals.lbp || 0) + l);
     });
-    forEachCashCustomDelta('loans', matchCo, (ln, mult) => {
+    if (canBorPair) forEachCashCustomDelta('loans', matchCo, (ln, mult) => {
       const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
       const u = round2(mult * Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0)));
       const l = Math.round(mult * Math.abs(Number(ln.lbp_amount || 0)));
@@ -59880,7 +60724,7 @@
         out.borrowing.totals.rec_lbp = Math.round(Number(out.borrowing.totals.rec_lbp || 0) + l);
       }
     });
-    forEachCashCustomDelta('loan_settlements', matchCo, (ls, mult) => {
+    if (canBorPair) forEachCashCustomDelta('loan_settlements', matchCo, (ls, mult) => {
       const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
       const u = round2(mult * Math.abs(ls.lbp_amount ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0)));
       const l = Math.round(mult * Math.abs(Number(ls.lbp_amount || 0)));
@@ -59902,7 +60746,7 @@
         out.borrowing.totals.rec_lbp = Math.round(Number(out.borrowing.totals.rec_lbp || 0) + l);
       }
     });
-    forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
+    if (canExtTbl) forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
       const flowStr = String(ex.flow || ex.type || '');
       const isExtd = /extended/i.test(String(ex.kind || flowStr)) || /^Extended\./i.test(String(ex.notes || ''));
       const isCfg = /^config$/i.test(flowStr);
@@ -59943,8 +60787,7 @@
         }
       }
     });
-    }
-    forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
+    if (canConvTbl) forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
       const d = convSignedDeltas(cv, rate);
       const tp = d.u2l ? 'USD to LBP' : 'LBP to USD';
       let row = out.conversion.rows.find(r => r && new RegExp(tp, 'i').test(r.type || ''));
@@ -59960,6 +60803,76 @@
         row.to_amt = round2(Number(row.to_amt || 0) + mult * d.usdMag);
       }
     });
+    return out;
+  }
+
+  function buildRestrictedCashMonthlyRows(moves, range, rateLbp) {
+    const rate = Number(rateLbp || 89500) || 89500;
+    const byYm = new Map();
+    const list = Array.isArray(moves) ? moves : [];
+    for (let i = 0; i < list.length; i++) {
+      const mv = list[i];
+      if (!mv || !mv.date) continue;
+      if (range && ((range.from && mv.date < range.from) || (range.to && mv.date > range.to))) continue;
+      const ym = mv.ym || String(mv.date).slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+      let cur = byYm.get(ym);
+      if (!cur) {
+        cur = { ym, cash_sales: 0, receipts: 0, treasury_in: 0, cash_expenses: 0, settlements_paid: 0, salaries: 0, sweeps_out: 0, lbp_net: 0 };
+        byYm.set(ym, cur);
+      }
+      const inU = round2(Math.max(0, Number(mv.in_usd || 0)));
+      const outU = round2(Math.max(0, Number(mv.out_usd || 0)));
+      if (mv.rkey === 'sales_tickets') {
+        cur.cash_sales = round2(cur.cash_sales + inU);
+        cur.sweeps_out = round2(cur.sweeps_out + outU);
+      } else if (mv.rkey === 'receipts') {
+        cur.receipts = round2(cur.receipts + inU);
+        cur.sweeps_out = round2(cur.sweeps_out + outU);
+      } else if (mv.rkey === 'expenses') {
+        cur.cash_expenses = round2(cur.cash_expenses + outU);
+        cur.treasury_in = round2(cur.treasury_in + inU);
+      } else if (mv.rkey === 'settlements') {
+        cur.settlements_paid = round2(cur.settlements_paid + outU);
+        cur.treasury_in = round2(cur.treasury_in + inU);
+      } else if (mv.stream === 'sal') {
+        cur.salaries = round2(cur.salaries + outU);
+        cur.treasury_in = round2(cur.treasury_in + inU);
+      } else {
+        cur.treasury_in = round2(cur.treasury_in + inU);
+        cur.sweeps_out = round2(cur.sweeps_out + outU);
+      }
+      cur.lbp_net += Math.round(mv.lbp || 0);
+    }
+    const yms = Array.from(byYm.keys()).sort();
+    let runU = 0, runL = 0;
+    const out = yms.map(ym => {
+      const cur = byYm.get(ym);
+      const cashIn = round2(cur.cash_sales + cur.receipts + cur.treasury_in);
+      const cashOut = round2(cur.cash_expenses + cur.settlements_paid + cur.salaries + cur.sweeps_out);
+      const netCash = round2(cashIn - cashOut);
+      runU = round2(runU + netCash);
+      runL = Math.round(runL + cur.lbp_net);
+      const [yr, mo] = ym.split('-');
+      return {
+        YearMonthNo: yr + mo,
+        'Year Month': `${MONTH_SHORT[(Number(mo) || 1) - 1] || mo} ${yr}`,
+        cash_sales: cur.cash_sales,
+        receipts: cur.receipts,
+        treasury_in: cur.treasury_in,
+        cash_in: cashIn,
+        cash_expenses: cur.cash_expenses,
+        settlements_paid: cur.settlements_paid,
+        salaries: cur.salaries,
+        sweeps_out: cur.sweeps_out,
+        cash_out: cashOut,
+        net_cash: netCash,
+        till_usd: runU,
+        till_lbp: runL,
+        cash_till: round2(runU + runL / rate)
+      };
+    });
+    out._restrictedCash = true;
     return out;
   }
 
@@ -60288,7 +61201,22 @@
             tone: 'steel'
           })}` : '';
     const q = STATE.search.trim().toLowerCase();
-    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isCashFlowFullFin(u);
+    const cfCanSales = canAccessTable('sales_tickets', u) || canAccessTable('receipts', u);
+    const cfCanExpOnly = canAccessTable('expenses', u);
+    const cfCanSetOnly = canAccessTable('settlements', u);
+    const cfCanExp = cfCanExpOnly || cfCanSetOnly;
+    const cfCanBor = fullFin && (canAccessTable('loans', u) || canAccessTable('loan_settlements', u));
+    const cfCanSal = fullFin && canAccessTable('salaries', u);
+    const cfCanExt = fullFin && canAccessTable('external_movements', u);
+    const cfCanConv = canAccessTable('conversions', u);
+    const cfAnyTblHidden = CASH_TILL_DELTA_KEYS.some(tk => !canAccessTable(tk, u)) || !canAccessTable('jv_distributions', u);
+    const cfCanSalesPair = canAccessTable('sales_tickets', u) && canAccessTable('receipts', u);
+    const cfCanExpPair = cfCanExpOnly && cfCanSetOnly;
+    const cfCanBorPair = fullFin && canAccessTable('loans', u) && canAccessTable('loan_settlements', u);
+    const cfCanSalesOnly = canAccessTable('sales_tickets', u);
+    const cfCanReceiptsOnly = canAccessTable('receipts', u);
+    const cfAllCashPermitted = Boolean(fullFin && !cfAnyTblHidden);
 
     const allowedNames = allowedCompanyNames(u);
     const activeIndCf = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
@@ -60405,24 +61333,24 @@
     // A seat without JV rights does not see the JV rows the sheet counts: its line sums what it is shown.
     const cfJvHidden = cfHasTillSheet && !canAccessTable('jv_distributions', u)
       && (SEED.records.jv_distributions || []).some(r => r && !r.voided && matchesCashScopeCompany(r, STATE.company, allowedNames));
-    if (cfStripFromSheet && activeCfChip === 'all' && fullFin && !cfJvHidden && (isAllTimeWindow || cfHasTillSheet)) {
+    if (cfStripFromSheet && activeCfChip === 'all' && cfAllCashPermitted && (isAllTimeWindow || cfHasTillSheet)) {
       mvInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : mvInUsd));
       mvOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : mvOutUsd));
       mvUsdSum = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (mvInUsd - mvOutUsd)));
       mvLbpSum = Math.round(Number(k.net_cash_lbp != null ? k.net_cash_lbp : mvLbpSum));
     } else if (cfStripFromSheet && isAllTimeWindow) {
-      const cdCo = computeCustomCashDeltas(STATE.company, null);
+      const cdCo = computeCustomCashDeltas(STATE.company, null, null, u);
       const hasCoCustom = Math.abs(cdCo.liveInU) > 0.001 || Math.abs(cdCo.liveOutU) > 0.001 || Math.abs(cdCo.liveInL) > 1 || Math.abs(cdCo.liveOutL) > 1;
       if (!hasCoCustom) {
-        if (activeCfChip === 'cf_sales' && tSales.totals) {
+        if (activeCfChip === 'cf_sales' && cfCanSalesPair && tSales.totals) {
           mvUsdSum = round2(Number(tSales.totals.usd || 0));
           mvLbpSum = Math.round(Number(tSales.totals.lbp || 0));
-        } else if (activeCfChip === 'cf_exp' && tExps.totals) {
+        } else if (activeCfChip === 'cf_exp' && cfCanExpPair && tExps.totals) {
           mvOutUsd = round2(Number(tExps.totals.usd || 0));
           mvInUsd = 0;
           mvUsdSum = round2(-mvOutUsd);
           mvLbpSum = Math.round(-Number(tExps.totals.lbp || 0));
-        } else if (activeCfChip === 'cf_loan' && tBor.totals) {
+        } else if (activeCfChip === 'cf_loan' && cfCanBorPair && tBor.totals) {
           mvInUsd = round2(Number(tBor.totals.paid_usd || 0));
           mvOutUsd = round2(Number(tBor.totals.rec_usd || 0));
           mvUsdSum = round2(mvInUsd - mvOutUsd);
@@ -60452,7 +61380,7 @@
       dyOutUsd = round2(dyOutUsd);
     }
     let dyNetUsd = round2(dyInUsd - dyOutUsd);
-    if (isAllTimeWindow && !focusYm && !q && (STATE.chipFilter || 'all') === 'all' && !hasActiveColFilters('cf_daily') && fullFin && STATE.company !== 'lionstransport') {
+    if (isAllTimeWindow && !focusYm && !q && (STATE.chipFilter || 'all') === 'all' && !hasActiveColFilters('cf_daily') && fullFin && !cfAnyTblHidden && !cfJvHidden && STATE.company !== 'lionstransport') {
       dyInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : dyInUsd));
       dyOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : dyOutUsd));
       dyNetUsd = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (dyInUsd - dyOutUsd)));
@@ -60479,13 +61407,13 @@
     const l2uRow = (tConv.rows || []).find(r => /LBP to USD/i.test(r.type)) || { from_amt: 0, to_amt: 0 };
 
     const summaryRows = [
-      { cat: 'Sales & Customer Receipts', chipKey: 'cf_sales', inU: tSales.totals.usd, outU: 0, inL: tSales.totals.lbp, outL: 0 },
-      { cat: 'Expenses & Supplier Settlements', chipKey: 'cf_exp', inU: 0, outU: tExps.totals.usd, inL: 0, outL: tExps.totals.lbp },
-      { cat: 'Borrowing & Staff Advances', chipKey: fullFin ? 'cf_loan' : '', inU: tBor.totals.paid_usd, outU: tBor.totals.rec_usd, inL: tBor.totals.paid_lbp, outL: tBor.totals.rec_lbp },
-      { cat: 'Salary & Workforce Payments', chipKey: fullFin ? 'cf_sal' : '', inU: 0, outU: tSal.totals.usd, inL: 0, outL: tSal.totals.lbp },
-      { cat: 'External Treasury', chipKey: fullFin ? 'cf_ext' : '', inU: tExt.totals.rev_usd, outU: tExt.totals.exp_usd, inL: tExt.totals.rev_lbp, outL: tExt.totals.exp_lbp },
-      ...(isHoldingCf ? [{ cat: 'Extended Counterparties', chipKey: fullFin ? 'cf_extd' : '', inU: tExtd.totals.usd < 0 ? -tExtd.totals.usd : 0, outU: tExtd.totals.usd > 0 ? tExtd.totals.usd : 0, inL: tExtd.totals.lbp < 0 ? -tExtd.totals.lbp : 0, outL: tExtd.totals.lbp > 0 ? tExtd.totals.lbp : 0 }] : []),
-      { cat: 'Currency Conversions (USD ↔ LBP)', chipKey: 'cf_fx', inU: l2uRow.to_amt, outU: u2lRow.from_amt, inL: u2lRow.to_amt, outL: l2uRow.from_amt }
+      ...(cfCanSales ? [{ cat: 'Sales & Customer Receipts', chipKey: 'cf_sales', inU: tSales.totals.usd, outU: 0, inL: tSales.totals.lbp, outL: 0 }] : []),
+      ...(cfCanExp ? [{ cat: 'Expenses & Supplier Settlements', chipKey: 'cf_exp', inU: 0, outU: tExps.totals.usd, inL: 0, outL: tExps.totals.lbp }] : []),
+      ...(cfCanBor ? [{ cat: 'Borrowing & Staff Advances', chipKey: 'cf_loan', inU: tBor.totals.paid_usd, outU: tBor.totals.rec_usd, inL: tBor.totals.paid_lbp, outL: tBor.totals.rec_lbp }] : []),
+      ...(cfCanSal ? [{ cat: 'Salary & Workforce Payments', chipKey: 'cf_sal', inU: 0, outU: tSal.totals.usd, inL: 0, outL: tSal.totals.lbp }] : []),
+      ...(cfCanExt ? [{ cat: 'External Treasury', chipKey: 'cf_ext', inU: tExt.totals.rev_usd, outU: tExt.totals.exp_usd, inL: tExt.totals.rev_lbp, outL: tExt.totals.exp_lbp }] : []),
+      ...((isHoldingCf && cfCanExt) ? [{ cat: 'Extended Counterparties', chipKey: 'cf_extd', inU: tExtd.totals.usd < 0 ? -tExtd.totals.usd : 0, outU: tExtd.totals.usd > 0 ? tExtd.totals.usd : 0, inL: tExtd.totals.lbp < 0 ? -tExtd.totals.lbp : 0, outL: tExtd.totals.lbp > 0 ? tExtd.totals.lbp : 0 }] : []),
+      ...(cfCanConv ? [{ cat: 'Currency Conversions (USD ↔ LBP)', chipKey: 'cf_fx', inU: l2uRow.to_amt, outU: u2lRow.from_amt, inL: u2lRow.to_amt, outL: l2uRow.from_amt }] : [])
     ];
 
     const salesShown = sliceShown('cf_sales_t', filtName(tSales.rows || []));
@@ -60504,6 +61432,28 @@
       o.show = !q && (Math.abs(o.rec_usd) >= 1 || Math.abs(o.paid_usd) >= 1 || Math.abs(o.rec_lbp) >= 100000 || Math.abs(o.paid_lbp) >= 100000);
       return o;
     })();
+    let visPeriodInU = 0, visPeriodOutU = 0, visPeriodInL = 0, visPeriodOutL = 0;
+    for (let i = 0; i < allMoves.length; i++) {
+      const mv = allMoves[i];
+      visPeriodInU += Number(mv.in_usd || 0);
+      visPeriodOutU += Number(mv.out_usd || 0);
+      if (mv.lbp >= 0) visPeriodInL += Number(mv.lbp || 0);
+      else visPeriodOutL += Math.abs(Number(mv.lbp || 0));
+    }
+    visPeriodInU = round2(visPeriodInU);
+    visPeriodOutU = round2(visPeriodOutU);
+    const visPeriodNetU = round2(visPeriodInU - visPeriodOutU);
+    visPeriodInL = Math.round(visPeriodInL);
+    visPeriodOutL = Math.round(visPeriodOutL);
+    const visPeriodNetL = Math.round(visPeriodInL - visPeriodOutL);
+
+    const summaryTotInU = round2(summaryRows.reduce((s, r) => s + Number(r.inU || 0), 0));
+    const summaryTotOutU = round2(summaryRows.reduce((s, r) => s + Number(r.outU || 0), 0));
+    const summaryTotNetU = round2(summaryTotInU - summaryTotOutU);
+    const summaryTotInL = Math.round(summaryRows.reduce((s, r) => s + Number(r.inL || 0), 0));
+    const summaryTotOutL = Math.round(summaryRows.reduce((s, r) => s + Number(r.outL || 0), 0));
+    const summaryTotNetL = Math.round(summaryTotInL - summaryTotOutL);
+
     const salShown = sliceShown('cf_sal_t', filtName(tSal.rows || []));
     const extShown = sliceShown('cf_ext_t', filtName(tExt.rows || []));
     const extdShown = filtName(tExtd.rows || []);
@@ -60514,7 +61464,10 @@
       return `${MONTH_SHORT[(Number(mHit[2]) || 1) - 1]} ${mHit[1]}`;
     };
 
-    const scopedMonths = getScopedMonthly(m.monthly, 14);
+    const effMonthlySource = (cfAllCashPermitted || sibTillOff)
+      ? (m.monthly || [])
+      : buildRestrictedCashMonthlyRows(buildCashTillMoves({ user: u, ignorePeriod: true }), null, rate);
+    const scopedMonths = getScopedMonthly(effMonthlySource, 14);
     const cfVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderCashFlowVisualsSection === 'function')
       ? window.MFG_PBI.renderCashFlowVisualsSection({
           months: scopedMonths,
@@ -60531,7 +61484,7 @@
       const n = Number(v || 0);
       return Math.abs(n) < eps ? 0 : n;
     };
-    const progRows = [...(m.monthly || [])].reverse().map(r => {
+    const progRows = [...effMonthlySource].reverse().map(r => {
       const ymNo = String(r.YearMonthNo || '');
       const ymIso = /^\d{6}$/.test(ymNo) ? `${ymNo.slice(0, 4)}-${ymNo.slice(4, 6)}` : (monthLabelToYm(r['Year Month']) || '');
       const opIn = Number(r.cash_sales || 0) + Number(r.receipts || 0);
@@ -60574,46 +61527,67 @@
           <div class="cockpit-title">Cash Flow &amp; Till</div>
         </div>
         <div class="cockpit-pills insight-grid cols-3">
-          ${sibTillOff ? sibTillOffCardsHtml : `${insightCard({
-            label: 'USD Cash Till ($)',
-            badgeHtml: (!tillAsOf && unclosedDays.length > 0)
-              ? `<button type="button" class="cockpit-pill-tag warn cf-unclosed-pill" ${unclosedDays.length === 1 ? `data-cf-focus-date="${esc(unclosedDays[0].date)}"` : 'data-cf-unclosed-jump="1"'} data-ui-tip="Workbook days close to $0, while cash keyed since the last update has not closed to $0"><b data-no-i18n="1">${fmtNum(unclosedDays.length)}</b> <span>${unclosedDays.length === 1 ? 'Unclosed Day' : 'Unclosed Days'}</span></button>`
-              : tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald'),
-            val: `${fmtUSD(tillUsd, 2)} <small>USD</small>`,
-            valCls: 'emerald',
-            id: 'cfTillValUsd',
-            pct: 100,
-            subCls: tillSplit ? 'cf-till-split-sub' : '',
-            sub: tillSplit
-              ? `<span class="cf-till-split" id="cfTillCutoffSplit"><span class="cf-till-split-seg" data-cf-split="confirmed"><span>Confirmed to</span> <b data-no-i18n="1" dir="ltr">${esc(fmtDateDMY(tillSplit.cutoff))}</b>: <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(tillSplit.confirmedUsd, 2))}</b></span><span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg" data-cf-split="keyed"><span>Keyed since</span>: <b class="${tillSplit.keyedSinceUsd > 0.005 ? 'good' : (tillSplit.keyedSinceUsd < -0.005 ? 'crit' : '')}" data-no-i18n="1" dir="ltr">${esc(fmtSignedUSD(tillSplit.keyedSinceUsd, 2))}</b></span>${Math.abs(tillLbp) > CF_LBP_DUST ? `<span class="cf-till-sep" aria-hidden="true">·</span><span class="cf-till-split-seg"><span>Combined</span> <b data-no-i18n="1" dir="ltr">${esc(fmtUSD(tillTot, 2))}</b></span>` : ''}</span>`
-              : (Math.abs(tillLbp) > CF_LBP_DUST
-                ? `Combined <b data-no-i18n="1">${fmtUSD(tillTot, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
-                : `Reconciled @ ${fmtNum(rate, 0)} LL/$`),
-            tone: 'emerald'
-          })}
-          ${insightCard({
-            label: 'LBP Cash Till (LL)',
-            badgeHtml: tillBadgeHtml(Math.abs(tillLbp) <= CF_LBP_DUST ? 'Balanced 0 LL' : 'Pounds', 'emerald'),
-            val: `${fmtLBP(tillLbp)}`,
-            valCls: 'emerald',
-            id: 'cfTillValLbp',
-            pct: 100,
-            sub: Math.abs(tillLbp) > CF_LBP_DUST
-              ? `Eq. <b data-no-i18n="1">${fmtUSD(tillRateEq, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
-              : `In <b>${fmtLBPk(tillDated ? k.cash_in_lbp : (k.live_in_lbp != null ? k.live_in_lbp : k.cash_in_lbp))}</b> · Out <b>${fmtLBPk(tillDated ? k.cash_out_lbp : (k.live_out_lbp != null ? k.live_out_lbp : k.cash_out_lbp))}</b>`,
-            tone: 'emerald'
-          })}`}
+          ${sibTillOff ? sibTillOffCardsHtml : (() => {
+            const showLbpSplit = Boolean(tillSplit && (
+              Math.abs(tillSplit.confirmedLbp) > CF_LBP_DUST ||
+              Math.abs(tillSplit.keyedSinceLbp) > CF_LBP_DUST ||
+              Math.abs(tillSplit.liveLbp) > CF_LBP_DUST ||
+              Math.abs(tillSplit.tieOutGapLbp) > CF_LBP_DUST ||
+              tillSplit.tieOutRows.some(r => Math.abs(r.deltaLbp) > CF_LBP_DUST)
+            ));
+            return `${insightCard({
+              label: 'USD Cash Till ($)',
+              badgeHtml: (!tillAsOf && tillSplit && !tillSplit.tieOutOk)
+                ? `<button type="button" class="cockpit-pill-tag crit cf-tieout-pill" data-cf-tieout-jump="1" data-ui-tip="Workbook till plus entries keyed since does not equal screen till"><b data-no-i18n="1">${fmtNum(tillSplit.tieOutRows.length)}</b> <span>${tillSplit.tieOutRows.length === 1 ? 'Till Gap Row' : 'Till Gap Rows'}</span></button>`
+                : ((!tillAsOf && unclosedDays.length > 0)
+                  ? `<button type="button" class="cockpit-pill-tag warn cf-unclosed-pill" ${unclosedDays.length === 1 ? `data-cf-focus-date="${esc(unclosedDays[0].date)}"` : 'data-cf-unclosed-jump="1"'} data-ui-tip="Workbook days close to $0, while cash keyed since the last update has not closed to $0"><b data-no-i18n="1">${fmtNum(unclosedDays.length)}</b> <span>${unclosedDays.length === 1 ? 'Unclosed Day' : 'Unclosed Days'}</span></button>`
+                  : tillBadgeHtml(Math.abs(tillUsd) < 0.005 ? 'Balanced $0' : 'Live Drawer', 'emerald')),
+              val: `${fmtUSD(tillUsd, 2)} <small>USD</small>`,
+              valCls: 'emerald',
+              id: 'cfTillValUsd',
+              pct: 100,
+              subCls: tillSplit ? 'cf-till-split-sub' : '',
+              sub: tillSplit
+                ? renderCfTillCutoffSplitHtml(tillSplit, tillTot, tillLbp, { id: 'cfTillCutoffSplit' })
+                : (Math.abs(tillLbp) > CF_LBP_DUST
+                  ? `Combined <b data-no-i18n="1">${fmtUSD(tillTot, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
+                  : `Reconciled @ ${fmtNum(rate, 0)} LL/$`),
+              tone: (tillSplit && !tillSplit.tieOutOk) ? 'crit' : 'emerald'
+            })}
+            ${(() => {
+              const lbpTieOutRows = tillSplit ? tillSplit.tieOutRows.filter(r => Math.abs(r.deltaLbp) > CF_LBP_DUST) : [];
+              const lbpGapBad = Boolean(!tillAsOf && tillSplit && (Math.abs(tillSplit.tieOutGapLbp) > 2 * CF_LBP_DUST || lbpTieOutRows.length > 0));
+              const lbpGapCount = lbpTieOutRows.length || (tillSplit ? tillSplit.tieOutRows.length : 0);
+              return insightCard({
+                label: 'LBP Cash Till (LL)',
+                badgeHtml: lbpGapBad
+                  ? `<button type="button" class="cockpit-pill-tag crit cf-tieout-pill" data-cf-tieout-jump="1" data-ui-tip="Workbook till plus entries keyed since does not equal screen till"><b data-no-i18n="1">${fmtNum(lbpGapCount)}</b> <span>${lbpGapCount === 1 ? 'Till Gap Row' : 'Till Gap Rows'}</span></button>`
+                  : tillBadgeHtml(Math.abs(tillLbp) <= CF_LBP_DUST ? 'Balanced 0 LL' : 'Pounds', 'emerald'),
+                val: `${fmtLBP(tillLbp)}`,
+                valCls: 'emerald',
+                id: 'cfTillValLbp',
+                pct: 100,
+                subCls: showLbpSplit ? 'cf-till-split-sub' : '',
+                sub: showLbpSplit
+                  ? renderCfTillLbpSplitHtml(tillSplit)
+                  : (Math.abs(tillLbp) > CF_LBP_DUST
+                    ? `Eq. <b data-no-i18n="1">${fmtUSD(tillRateEq, 2)}</b> @ ${fmtNum(rate, 0)} LL/$`
+                    : `In <b>${fmtLBPk(cfAllCashPermitted ? (tillDated ? k.cash_in_lbp : (k.live_in_lbp != null ? k.live_in_lbp : k.cash_in_lbp)) : visPeriodInL)}</b> · Out <b>${fmtLBPk(cfAllCashPermitted ? (tillDated ? k.cash_out_lbp : (k.live_out_lbp != null ? k.live_out_lbp : k.cash_out_lbp)) : visPeriodOutL)}</b>`),
+                tone: lbpGapBad ? 'crit' : 'emerald'
+              });
+            })()}`;
+          })()}
           ${sibTillOff ? insightCard({
             label: 'Loaded Cash Movement',
             badge: esc(k.label || 'All-Time'),
-            val: `${fmtUSD(k.net_cash_flow, 2)} <small>TOTAL</small>`,
-            sub: `In <b>${fmtUSDk(k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_outflow)}</b>${Math.abs(Number(k.net_cash_lbp || 0)) > CF_LBP_DUST ? ` · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>` : ''}`,
+            val: `${fmtUSD(cfAllCashPermitted ? k.net_cash_flow : visPeriodNetU, 2)} <small>TOTAL</small>`,
+            sub: `In <b>${fmtUSDk(cfAllCashPermitted ? k.cash_inflow : visPeriodInU)}</b> · Out <b>${fmtUSDk(cfAllCashPermitted ? k.cash_outflow : visPeriodOutU)}</b>${Math.abs(Number((cfAllCashPermitted ? k.net_cash_lbp : visPeriodNetL) || 0)) > CF_LBP_DUST ? ` · LBP <b>${fmtLBPk(cfAllCashPermitted ? k.net_cash_lbp : visPeriodNetL)}</b>` : ''}`,
             tone: 'steel'
           }) : insightCard({
             label: 'Period Cash Flow',
             badge: esc(k.label || 'All-Time'),
-            val: `${fmtUSD(k.net_cash_usd != null ? k.net_cash_usd : k.net_cash_flow, 2)} <small>USD</small>`,
-            sub: `USD In <b>${fmtUSDk(k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow)}</b> · Out <b>${fmtUSDk(k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow)}</b>${Math.abs(Number(k.net_cash_lbp || 0)) > CF_LBP_DUST ? ` · LBP <b>${fmtLBPk(k.net_cash_lbp)}</b>` : ''}${tillStartSet && Number.isFinite(tillOpenUsd) ? ` · <span data-ui-tip="USD drawer at start of window; top till cards show the cumulative balance to the end date">Opening</span> <b>${fmtUSD(tillOpenUsd, 2)}</b>` : ''}`,
+            val: `${fmtUSD(cfAllCashPermitted ? (k.net_cash_usd != null ? k.net_cash_usd : k.net_cash_flow) : visPeriodNetU, 2)} <small>USD</small>`,
+            sub: `USD In <b>${fmtUSDk(cfAllCashPermitted ? (k.cash_in_usd != null ? k.cash_in_usd : k.cash_inflow) : visPeriodInU)}</b> · Out <b>${fmtUSDk(cfAllCashPermitted ? (k.cash_out_usd != null ? k.cash_out_usd : k.cash_outflow) : visPeriodOutU)}</b>${Math.abs(Number((cfAllCashPermitted ? k.net_cash_lbp : visPeriodNetL) || 0)) > CF_LBP_DUST ? ` · LBP <b>${fmtLBPk(cfAllCashPermitted ? k.net_cash_lbp : visPeriodNetL)}</b>` : ''}${(cfAllCashPermitted && tillStartSet && Number.isFinite(tillOpenUsd)) ? ` · <span data-ui-tip="USD drawer at start of window; top till cards show the cumulative balance to the end date">Opening</span> <b>${fmtUSD(tillOpenUsd, 2)}</b>` : ''}`,
             tone: 'steel'
           })}
         </div>
@@ -60642,14 +61616,14 @@
                 ${chip('all', 'All')}
                 ${chip('cf_in', '▲ Cash In')}
                 ${chip('cf_out', '▼ Cash Out')}
-                ${chip('cf_sales', 'Sales & AR')}
-                ${chip('cf_exp', 'Expenses & AP')}
-                ${fullFin ? chip('cf_loan', 'Borrowing') : ''}
-                ${fullFin ? chip('cf_sal', 'Salary') : ''}
-                ${fullFin ? chip('cf_ext', 'External') : ''}
-                ${fullFin && isHoldingCf ? chip('cf_extd', 'Extended') : ''}
+                ${cfCanSales ? chip('cf_sales', 'Sales & AR') : ''}
+                ${cfCanExp ? chip('cf_exp', 'Expenses & AP') : ''}
+                ${cfCanBor ? chip('cf_loan', 'Borrowing') : ''}
+                ${cfCanSal ? chip('cf_sal', 'Salary') : ''}
+                ${cfCanExt ? chip('cf_ext', 'External') : ''}
+                ${(isHoldingCf && cfCanExt) ? chip('cf_extd', 'Extended') : ''}
                 ${fullFin && streamCounts.jv ? chip('cf_jv', 'JV Partners') : ''}
-                ${chip('cf_fx', 'FX')}
+                ${cfCanConv ? chip('cf_fx', 'FX') : ''}
                 ${chip('cf_lbp', 'LBP (LL)')}
                 ${appOnlyMoves.length ? chip('cf_app_only', `Not in Workbooks (${fmtNum(appOnlyMoves.length)})`, 'warn') : ''}
               ` : `
@@ -60663,6 +61637,8 @@
         </div>
 
         ${renderCashflowBehindNoteHtml(getActiveCashflowBehindItems(u))}
+
+        ${renderCfTillTieOutStripHtml(tillSplit)}
 
         ${(tillSplit && unclosedDays.length > 0) ? (() => {
           const stripCutoff = unclosedDays.reduce((m, x) => (x.cutoff && x.cutoff > m ? x.cutoff : m), '') || tillSplit.cutoff;
@@ -60861,13 +61837,13 @@
             </tbody>
             <tfoot>
               <tr>
-                <td><b>${sibTillOff ? 'LOADED ENTRIES (NO TILL YET)' : 'CLOSING BOOK CASH TILL'}</b></td>
-                <td class="r"><b>${fmtUSD(k.live_in_usd != null ? k.live_in_usd : cf.live_till.in_usd, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(k.live_out_usd != null ? k.live_out_usd : cf.live_till.out_usd, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(sibTillOff ? round2(Number(k.live_in_usd || 0) - Number(k.live_out_usd || 0)) : liveUsd, 2)}</b></td>
-                <td class="r"><b>${fmtLBP(k.live_in_lbp != null ? k.live_in_lbp : cf.live_till.in_lbp)}</b></td>
-                <td class="r"><b>${fmtLBP(k.live_out_lbp != null ? k.live_out_lbp : cf.live_till.out_lbp)}</b></td>
-                <td class="r"><b>${fmtLBP(sibTillOff ? Math.round(Number(k.live_in_lbp || 0) - Number(k.live_out_lbp || 0)) : liveLbp)}</b></td>
+                <td><b>${sibTillOff ? 'LOADED ENTRIES (NO TILL YET)' : (cfAllCashPermitted ? 'CLOSING BOOK CASH TILL' : 'VISIBLE STREAMS TOTAL')}</b></td>
+                <td class="r"><b>${fmtUSD(cfAllCashPermitted ? (k.live_in_usd != null ? k.live_in_usd : cf.live_till.in_usd) : summaryTotInU, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(cfAllCashPermitted ? (k.live_out_usd != null ? k.live_out_usd : cf.live_till.out_usd) : summaryTotOutU, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(cfAllCashPermitted ? (sibTillOff ? round2(Number(k.live_in_usd || 0) - Number(k.live_out_usd || 0)) : liveUsd) : summaryTotNetU, 2)}</b></td>
+                <td class="r"><b>${fmtLBP(cfAllCashPermitted ? (k.live_in_lbp != null ? k.live_in_lbp : cf.live_till.in_lbp) : summaryTotInL)}</b></td>
+                <td class="r"><b>${fmtLBP(cfAllCashPermitted ? (k.live_out_lbp != null ? k.live_out_lbp : cf.live_till.out_lbp) : summaryTotOutL)}</b></td>
+                <td class="r"><b>${fmtLBP(cfAllCashPermitted ? (sibTillOff ? Math.round(Number(k.live_in_lbp || 0) - Number(k.live_out_lbp || 0)) : liveLbp) : summaryTotNetL)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -60878,17 +61854,17 @@
             <thead>
               <tr>
                 <th>Month</th>
-                <th class="r">Cash Sales ($)</th>
-                <th class="r">AR Receipts ($)</th>
+                ${cfCanSalesOnly ? '<th class="r">Cash Sales ($)</th>' : ''}
+                ${cfCanReceiptsOnly ? '<th class="r">AR Receipts ($)</th>' : ''}
                 <th class="r">Treasury &amp; FX In ($)</th>
                 <th class="r">Total Cash In ($)</th>
-                <th class="r">Cash Expenses ($)</th>
-                <th class="r">AP Settlements ($)</th>
-                ${fullFin ? '<th class="r">Salaries Paid ($)</th>' : ''}
+                ${cfCanExpOnly ? '<th class="r">Cash Expenses ($)</th>' : ''}
+                ${cfCanSetOnly ? '<th class="r">AP Settlements ($)</th>' : ''}
+                ${cfCanSal ? '<th class="r">Salaries Paid ($)</th>' : ''}
                 <th class="r">Sweeps &amp; FX Out ($)</th>
                 <th class="r">Total Cash Out ($)</th>
                 <th class="r">Net Cash Flow ($)</th>
-                <th class="r">Closing Till ($)</th>
+                ${cfAllCashPermitted ? '<th class="r">Closing Till ($)</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -60896,34 +61872,34 @@
                 return `
                 <tr>
                   <td>${pr.ymIso ? `<button type="button" class="cf-month-drill-btn${focusYm === pr.ymIso ? ' active' : ''}" data-cf-focus-ym="${esc(pr.ymIso)}" title="Inspect all cash till entries in ${esc(pr.monthLbl)}"><strong>${esc(pr.monthLbl)}</strong></button>` : `<strong>${esc(pr.monthLbl)}</strong>`}</td>
-                  <td class="r">${fmtUSD(pr.cash_sales, 0)}</td>
-                  <td class="r">${fmtUSD(pr.receipts, 0)}</td>
+                  ${cfCanSalesOnly ? `<td class="r">${fmtUSD(pr.cash_sales, 0)}</td>` : ''}
+                  ${cfCanReceiptsOnly ? `<td class="r">${fmtUSD(pr.receipts, 0)}</td>` : ''}
                   <td class="r">${fmtUSD(pr.treasury_in, 0)}</td>
                   <td class="r"><b>${fmtUSD(pr.cash_in, 0)}</b></td>
-                  <td class="r">${fmtUSD(pr.cash_expenses, 0)}</td>
-                  <td class="r">${fmtUSD(pr.settlements_paid, 0)}</td>
-                  ${fullFin ? `<td class="r">${fmtUSD(pr.salaries, 0)}</td>` : ''}
+                  ${cfCanExpOnly ? `<td class="r">${fmtUSD(pr.cash_expenses, 0)}</td>` : ''}
+                  ${cfCanSetOnly ? `<td class="r">${fmtUSD(pr.settlements_paid, 0)}</td>` : ''}
+                  ${cfCanSal ? `<td class="r">${fmtUSD(pr.salaries, 0)}</td>` : ''}
                   <td class="r">${fmtUSD(pr.sweeps_out, 0)}</td>
                   <td class="r"><b>${fmtUSD(pr.cash_out, 0)}</b></td>
                   <td class="r"><strong style="color:${pr.net_cash < -0.5 ? 'var(--crit)' : (pr.net_cash > 0.5 ? 'var(--good)' : 'inherit')}">${fmtUSD(pr.net_cash, 0)}</strong></td>
-                  <td class="r"><strong style="color:${pr.cash_till < -0.5 ? 'var(--crit)' : 'inherit'}">${fmtUSD(pr.cash_till, 0)}</strong></td>
+                  ${cfAllCashPermitted ? `<td class="r"><strong style="color:${pr.cash_till < -0.5 ? 'var(--crit)' : 'inherit'}">${fmtUSD(pr.cash_till, 0)}</strong></td>` : ''}
                 </tr>`;
-              }).join('') || emptyRow(fullFin ? 12 : 11, 'No monthly cash flow rows')}
+              }).join('') || emptyRow(6 + (cfCanSalesOnly ? 1 : 0) + (cfCanReceiptsOnly ? 1 : 0) + (cfCanExpOnly ? 1 : 0) + (cfCanSetOnly ? 1 : 0) + (cfCanSal ? 1 : 0) + (cfAllCashPermitted ? 1 : 0), 'No monthly cash flow rows')}
             </tbody>
             <tfoot>
               <tr>
                 <td><b>TOTAL (${fmtNum(progRows.length)} MONTHS)</b></td>
-                <td class="r"><b>${fmtUSD(progTotals.cash_sales, 0)}</b></td>
-                <td class="r"><b>${fmtUSD(progTotals.receipts, 0)}</b></td>
+                ${cfCanSalesOnly ? `<td class="r"><b>${fmtUSD(progTotals.cash_sales, 0)}</b></td>` : ''}
+                ${cfCanReceiptsOnly ? `<td class="r"><b>${fmtUSD(progTotals.receipts, 0)}</b></td>` : ''}
                 <td class="r"><b>${fmtUSD(progTotals.treasury_in, 0)}</b></td>
                 <td class="r"><b>${fmtUSD(progTotals.cash_in, 0)}</b></td>
-                <td class="r"><b>${fmtUSD(progTotals.cash_expenses, 0)}</b></td>
-                <td class="r"><b>${fmtUSD(progTotals.settlements_paid, 0)}</b></td>
-                ${fullFin ? `<td class="r"><b>${fmtUSD(progTotals.salaries, 0)}</b></td>` : ''}
+                ${cfCanExpOnly ? `<td class="r"><b>${fmtUSD(progTotals.cash_expenses, 0)}</b></td>` : ''}
+                ${cfCanSetOnly ? `<td class="r"><b>${fmtUSD(progTotals.settlements_paid, 0)}</b></td>` : ''}
+                ${cfCanSal ? `<td class="r"><b>${fmtUSD(progTotals.salaries, 0)}</b></td>` : ''}
                 <td class="r"><b>${fmtUSD(progTotals.sweeps_out, 0)}</b></td>
                 <td class="r"><b>${fmtUSD(progTotals.cash_out, 0)}</b></td>
                 <td class="r"><b style="color:${progTotals.net_cash < -0.5 ? 'var(--crit)' : (progTotals.net_cash > 0.5 ? 'var(--good)' : 'inherit')}">${fmtUSD(progTotals.net_cash, 0)}</b></td>
-                <td class="r"><b>${fmtUSD(latestProgTill, 0)}</b></td>
+                ${cfAllCashPermitted ? `<td class="r"><b>${fmtUSD(latestProgTill, 0)}</b></td>` : ''}
               </tr>
             </tfoot>
           </table>
@@ -60938,7 +61914,7 @@
         </summary>
         <div class="cf-party-fold-body">
       <div class="split-grid-2" style="margin-bottom:14px">
-        <div class="panel-card" id="cfSalesPanel">
+        ${cfCanSales ? `<div class="panel-card" id="cfSalesPanel">
           <div class="panel-head">
             <div class="panel-title"><span>SALES CASH FLOW (${fmtNum((tSales.rows || []).length)} CUSTOMERS)</span></div>
             <span class="panel-meta">${exportBtn('cfSalesPanel', 'Cash_Flow_Sales')}</span>
@@ -60964,9 +61940,9 @@
               </tfoot>
             </table>
           </div>
-        </div>
+        </div>` : ''}
 
-        <div class="panel-card" id="cfExpPanel">
+        ${cfCanExp ? `<div class="panel-card" id="cfExpPanel">
           <div class="panel-head">
             <div class="panel-title"><span>EXPENSES CASH FLOW (${fmtNum((tExps.rows || []).length)} SUPPLIERS)</span></div>
             <span class="panel-meta">${exportBtn('cfExpPanel', 'Cash_Flow_Expenses')}</span>
@@ -60992,12 +61968,12 @@
               </tfoot>
             </table>
           </div>
-        </div>
+        </div>` : ''}
       </div>
 
-      ${fullFin ? `
+      ${(cfCanBor || cfCanSal) ? `
       <div class="split-grid-2" style="margin-bottom:14px">
-        <div class="panel-card" id="cfBorPanel">
+        ${cfCanBor ? `<div class="panel-card" id="cfBorPanel">
           <div class="panel-head">
             <div class="panel-title"><span>BORROWING (${fmtNum((tBor.rows || []).length)} BORROWERS)</span></div>
             <span class="panel-meta">${exportBtn('cfBorPanel', 'Cash_Flow_Borrowing')}</span>
@@ -61035,9 +62011,9 @@
               </tfoot>
             </table>
           </div>
-        </div>
+        </div>` : ''}
 
-        <div class="panel-card" id="cfSalPanel">
+        ${cfCanSal ? `<div class="panel-card" id="cfSalPanel">
           <div class="panel-head">
             <div class="panel-title"><span>SALARY (${fmtNum((tSal.rows || []).length)} STAFF)</span></div>
             <span class="panel-meta">${exportBtn('cfSalPanel', 'Cash_Flow_Salary')}</span>
@@ -61063,11 +62039,12 @@
               </tfoot>
             </table>
           </div>
-        </div>
-      </div>
+        </div>` : ''}
+      </div>` : ''}
 
+      ${(cfCanExt || cfCanConv) ? `
       <div class="split-grid-2" style="margin-bottom:14px">
-        <div class="panel-card" id="cfExtPanel">
+        ${cfCanExt ? `<div class="panel-card" id="cfExtPanel">
           <div class="panel-head">
             <div class="panel-title"><span>EXTERNAL (${fmtNum((tExt.rows || []).length)} STAKEHOLDERS)</span></div>
             <span class="panel-meta">${exportBtn('cfExtPanel', 'Cash_Flow_External')}</span>
@@ -61097,17 +62074,17 @@
               </tfoot>
             </table>
           </div>
-        </div>
+        </div>` : ''}
 
-        <div class="panel-card" id="cfExtdConvPanel">
+        ${((isHoldingCf && cfCanExt) || cfCanConv) ? `<div class="panel-card" id="cfExtdConvPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${isHoldingCf ? 'EXTENDED STAKEHOLDERS &amp; CURRENCY CONVERSIONS' : 'CURRENCY CONVERSIONS (USD / LBP)'}</span></div>
+            <div class="panel-title"><span>${(isHoldingCf && cfCanExt) ? 'EXTENDED STAKEHOLDERS &amp; CURRENCY CONVERSIONS' : 'CURRENCY CONVERSIONS (USD / LBP)'}</span></div>
             <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
-              ${isHoldingCf ? `<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="hld_extended">${ic('external')} Open Extended Ledger</button>` : ''}
+              ${(isHoldingCf && cfCanExt) ? `<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="hld_extended">${ic('external')} Open Extended Ledger</button>` : ''}
               ${exportBtn('cfExtdConvPanel', 'Cash_Flow_Conversions')}
             </span>
           </div>
-          ${isHoldingCf ? (() => {
+          ${(isHoldingCf && cfCanExt) ? (() => {
             const extdSum = computeHoldingExtendedSummary({ ignoreSearch: false, basis: 'tx' });
             const shRowsCf = extdSum.partyRows || [];
             return `
@@ -61136,7 +62113,7 @@
             </table>
           </div>`;
           })() : ''}
-          <div class="table-wrap"${isHoldingCf ? ' style="border-top:1px solid var(--line)"' : ''}>
+          ${cfCanConv ? `<div class="table-wrap"${(isHoldingCf && cfCanExt) ? ' style="border-top:1px solid var(--line)"' : ''}>
             <table class="ledger-table">
               <thead><tr><th>Conversion Direction</th><th class="r">USD Change ($)</th><th class="r">LBP Change (LL)</th></tr></thead>
               <tbody>
@@ -61161,41 +62138,9 @@
                 </tr>
               </tfoot>` : ''}
             </table>
-          </div>
-        </div>
-      </div>` : `
-      <div class="panel-card" id="cfConvOnlyPanel" style="margin-bottom:0">
-        <div class="panel-head">
-          <div class="panel-title"><span>Currency Conversions (USD / LBP)</span></div>
-          <span class="panel-meta">${exportBtn('cfConvOnlyPanel', 'Cash_Flow_Conversions')}</span>
-        </div>
-        <div class="table-wrap">
-          <table class="ledger-table">
-            <thead><tr><th>Conversion Direction</th><th class="r">USD Change ($)</th><th class="r">LBP Change (LL)</th></tr></thead>
-            <tbody>
-              ${(tConv.rows || []).map(r => {
-                const isU2L = /USD to LBP/i.test(r.type);
-                const uDelta = isU2L ? -Number(r.from_amt || 0) : Number(r.to_amt || 0);
-                const lDelta = isU2L ? Math.round(Number(r.to_amt || 0)) : -Math.round(Number(r.from_amt || 0));
-                return `
-                <tr class="cf-bridge-row" data-cf-focus-stream="cf_fx" title="Click to filter Cash Till Register above to FX Conversions">
-                  <td><strong>${isU2L ? 'USD to LBP' : 'LBP to USD'}</strong></td>
-                  <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '-'}</strong></td>
-                  <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '-'}</strong></td>
-                </tr>`;
-              }).join('') || emptyRow(3, 'No currency conversions')}
-            </tbody>
-            ${(tConv.rows || []).length ? `
-            <tfoot>
-              <tr>
-                <td><b>NET FX CONVERSION IMPACT</b></td>
-                <td class="r mono"><b style="color:${round2(l2uRow.to_amt - u2lRow.from_amt) < -0.005 ? 'var(--crit)' : (round2(l2uRow.to_amt - u2lRow.from_amt) > 0.005 ? 'var(--good)' : 'inherit')}">${fmtSignedUSD(round2(l2uRow.to_amt - u2lRow.from_amt), 2)}</b></td>
-                <td class="r mono"><b style="color:${Math.round(u2lRow.to_amt - l2uRow.from_amt) < -1 ? 'var(--crit)' : (Math.round(u2lRow.to_amt - l2uRow.from_amt) > 1 ? 'var(--good)' : 'inherit')}">${fmtSignedLBP(Math.round(u2lRow.to_amt - l2uRow.from_amt))}</b></td>
-              </tr>
-            </tfoot>` : ''}
-          </table>
-        </div>
-      </div>`}
+          </div>` : ''}
+        </div>` : ''}
+      </div>` : ''}
         </div>
       </details>
     `;
@@ -81355,8 +82300,11 @@
 
   // Cache-key part for the active seat's finance rights (External / Extended / Salary / Borrowing rows shown or not).
   function activeSeatFullFinKey() {
-    const u = activeUser() || {};
-    return (isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin)) ? 'F1' : 'F0';
+    return isCashFlowFullFin(activeUser()) ? 'F1' : 'F0';
+  }
+  function activeSeatCashPermSig() {
+    const u = activeUser();
+    return CASH_TILL_DELTA_KEYS.map(tk => canAccessTable(tk, u) ? '1' : '0').join('') + (canAccessTable('jv_distributions', u) ? '1' : '0');
   }
 
   // A missing cash-book sheet name in the reader's language (the AR / FR sentences never carry English names).
@@ -81478,17 +82426,18 @@
     const allowed = effRawKey === DEMO_COMPANY_KEY ? null : allowedCompanyNames(opts.user);
     // External, Extended, Salary and Borrowing rows are for Owner / Supervisor / finance seats only, as in Manufacturing.
     const u = opts.user || activeUser();
-    const seatFullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const seatFullFin = isCashFlowFullFin(u);
     // forceFullFin: the whole cash book whatever the seat (tills, as buildCashTillMoves; the Daily Operations page lens).
     // A forced book carries salary rows unless forceSalaries is false (a seat that may not see payroll dollars).
     const fullFin = Boolean(opts.forceFullFin) || seatFullFin;
     const salaryFin = Boolean(seatFullFin || (fullFin && opts.forceSalaries !== false));
+    const tblSig = opts.forceFullFin ? 'FORCE' : CASH_TILL_DELTA_KEYS.map(tk => canAccessTable(tk, u) ? '1' : '0').join('');
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
-    const cacheKey = `${ind}|${effScopeKey}|${(allowed || []).join(',')}|${fullFin ? 1 : 0}${salaryFin ? 1 : 0}|${isDemoScopeActive() ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${SEED._industryRev || 0}|${STATE._indCustomRev || 0}|${crCount}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|${indCashStrHash(JSON.stringify(STATE.industryCustomRows || {}))}|${((SEED.records && SEED.records.sales_tickets) || []).length}`;
+    const cacheKey = `${ind}|${effScopeKey}|${(allowed || []).join(',')}|${fullFin ? 1 : 0}${salaryFin ? 1 : 0}|${tblSig}|${isDemoScopeActive() ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${SEED._industryRev || 0}|${STATE._indCustomRev || 0}|${crCount}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|${indCashStrHash(JSON.stringify(STATE.industryCustomRows || {}))}|${((SEED.records && SEED.records.sales_tickets) || []).length}`;
     const _indCashMovesCache = buildIndustryCashMoves._cache || (buildIndustryCashMoves._cache = new Map());
     let all = _indCashMovesCache.get(cacheKey);
     if (!all) {
-      all = buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin, salaryFin);
+      all = buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin, salaryFin, opts.forceFullFin ? null : u);
       if (_indCashMovesCache.size > 24) _indCashMovesCache.clear();
       _indCashMovesCache.set(cacheKey, all);
     }
@@ -81500,7 +82449,12 @@
     return rows;
   }
 
-  function buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin, salaryFin = fullFin) {
+  function buildIndustryCashMovesAll(ind, effRawKey, effScopeKey, allowed, fullFin, salaryFin = fullFin, tblUser = null) {
+    const indCanTbl = tk => !tblUser || canAccessTable(tk, tblUser);
+    const canSalInd = salaryFin && indCanTbl('salaries');
+    const canLoanInd = fullFin && indCanTbl('loans');
+    const canLoanSetInd = fullFin && indCanTbl('loan_settlements');
+    const canExtInd = fullFin && indCanTbl('external_movements');
     const rows = [];
     let forceRow = false;
     const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
@@ -81634,13 +82588,13 @@
     }
 
     // ---- Shared tables (Expenses & Payables, Payroll, Treasury), every industry ----
-    effectiveRows('sales_tickets', scopedSeed('sales_tickets'), null).forEach(t => {
+    if (indCanTbl('sales_tickets')) effectiveRows('sales_tickets', scopedSeed('sales_tickets'), null).forEach(t => {
       if (!matchCo(t) || isRemovedTicket(t) || !isCashSaleTicket(t)) return;
       const sgn = ticketSign(t);
       if (!sgn) return;
       addMv(t.id, t.date, t.company, 'sales', 'Cash Sale', t.customer || 'Cash Customer', t.product || t.notes || 'Cash sale', String(t.ticket_no || t.id || ''), t.method || 'Cash', salesCashMoveAmount(t), sgn * Number(t.vat || 0) * 89500, 'sales_tickets', t);
     });
-    effectiveRows('receipts', scopedSeed('receipts'), null).forEach(rc => {
+    if (indCanTbl('receipts')) effectiveRows('receipts', scopedSeed('receipts'), null).forEach(rc => {
       const mth = String(rc.method || '').trim();
       const knd = receiptKind(rc);
       if (knd !== 'Settlement' && knd !== 'VAT received' && mth !== 'Rent' && mth !== 'VATRent') return;
@@ -81652,7 +82606,7 @@
         : (knd === 'VAT received' ? Math.round(lRaw || (Number(rc.amount || 0) * 89500)) : Math.round(lRaw));
       addMv(rc.id, rc.date, rc.company, 'sales', 'Customer Receipt', rc.customer || 'Customer', cleanLedgerNote(rc.notes) || 'Customer settlement', shortVoucherRef(rc.reference || rc.name || rc.id), mth || 'Cash', u, l, 'receipts', rc);
     });
-    effectiveRows('expenses', scopedSeed('expenses'), null).forEach(e => {
+    if (indCanTbl('expenses')) effectiveRows('expenses', scopedSeed('expenses'), null).forEach(e => {
       if (e.price_pending || isCreditExpense(e)) return;
       const sgn = expenseSign(e);
       if (!sgn) return;
@@ -81660,7 +82614,7 @@
       const u = -round2(sgn * (lRaw ? Number(e.usd_amount || 0) : Number(e.usd_amount != null ? e.usd_amount : e.amount || 0)));
       addMv(e.id, e.date, e.company, 'exp', e.category || 'Cash Expense', e.supplier || e.subcategory || 'Expense', cleanLedgerNote(e.notes) || e.item_summary || 'Operating expense', shortVoucherRef(e.reference || e.name || e.id), e.method || 'Cash', u, -Math.round(sgn * lRaw), 'expenses', e);
     });
-    effectiveRows('settlements', scopedSeed('settlements'), null).forEach(sp => {
+    if (indCanTbl('settlements')) effectiveRows('settlements', scopedSeed('settlements'), null).forEach(sp => {
       const knd = settlementKind(sp);
       if (knd !== 'Payment' && knd !== 'VAT paid') return;
       if (isCarriedBalanceMethod(sp)) return;
@@ -81669,20 +82623,20 @@
       const l = knd === 'Payment' ? -Math.round(lRaw) : -Math.round(lRaw || Math.round(Number(sp.amount || 0) * 89500));
       addMv(sp.id, sp.date, sp.company, 'exp', 'Supplier Settlement', sp.supplier || 'Supplier', cleanLedgerNote(sp.notes) || 'Supplier payment', shortVoucherRef(sp.reference || sp.name || sp.id), sp.method || 'Payment', u, l, 'settlements', sp);
     });
-    if (salaryFin) effectiveRows('salaries', scopedSeed('salaries'), null).forEach(sa => {
+    if (canSalInd) effectiveRows('salaries', scopedSeed('salaries'), null).forEach(sa => {
       const lRaw = Math.round(Number(sa.lbp_amount || 0));
       const uRaw = Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0));
       const det = [sa.payroll_month ? `Payroll ${sa.payroll_month}` : '', cleanLedgerNote(sa.notes)].filter(Boolean).join(' · ');
       addMv(sa.id, sa.date, sa.company, 'sal', (-uRaw > 0.004 || -lRaw > 1) ? 'Salary Refund' : 'Salary Paid', sa.staff || '—', det || 'Staff wage disbursement', shortVoucherRef(sa.reference || sa.name || sa.id), sa.method || 'Cash', -uRaw, -lRaw, 'salaries', sa);
     });
-    if (fullFin) effectiveRows('loans', scopedSeed('loans'), null).forEach(ln => {
+    if (canLoanInd) effectiveRows('loans', scopedSeed('loans'), null).forEach(ln => {
       const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
       const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
       const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
       const lbl = loanRegisterLabels(ln, ln.opening_balance ? lbpMag : 0);
       addMv(ln.id, ln.date || ln.start_date, ln.company, 'loan', lbl.cat, ln.lender || ln.counterparty || ln.borrower || '—', lbl.detail || 'Borrowing principal', shortVoucherRef(ln.name || ln.id), lbl.method, isBorrowIn ? usdMag : -usdMag, isBorrowIn ? lbpMag : -lbpMag, 'loans', ln);
     });
-    if (fullFin) effectiveRows('loan_settlements', scopedSeed('loan_settlements'), null).forEach(ls => {
+    if (canLoanSetInd) effectiveRows('loan_settlements', scopedSeed('loan_settlements'), null).forEach(ls => {
       const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
       const lbpMag = Math.round(Math.abs(Number(ls.lbp_amount || 0)));
       const usdMag = Math.abs(ls.lbp_amount ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0));
@@ -81693,7 +82647,7 @@
     const extSeen = new Set();
     const sisterLegs = (SEED && SEED.industryLive && SEED.industryLive.holding && Array.isArray(SEED.industryLive.holding.sisterExternalLegs))
       ? SEED.industryLive.holding.sisterExternalLegs.filter(r => r && matchCo(r)) : [];
-    const extRows = fullFin ? effectiveRows('external_movements', scopedSeed('external_movements').concat(sisterLegs), extSeen) : [];
+    const extRows = canExtInd ? effectiveRows('external_movements', scopedSeed('external_movements').concat(sisterLegs), extSeen) : [];
     extRows.forEach(ex => {
       const flowStr = String(ex.flow || ex.type || ex.method || '').trim();
       const isExtd = /extended/i.test(String(ex.kind || '')) || /^Extended\./i.test(String(ex.notes || ''));
@@ -81717,7 +82671,7 @@
       }
       addMv(ex.id, ex.date, ex.company, isExtd ? 'extd' : 'ext', cat, ex.counterparty || ex.party || (isExtd ? 'Extended Stakeholder' : 'External Treasury'), cleanLedgerNote(ex.notes) || cat, shortVoucherRef(ex.reference || ex.name || ex.id), methodLbl, usd, lbp, 'external_movements', ex);
     });
-    effectiveRows('conversions', scopedSeed('conversions'), null).forEach(cv => {
+    if (indCanTbl('conversions')) effectiveRows('conversions', scopedSeed('conversions'), null).forEach(cv => {
       const d = convSignedDeltas(cv, 89500);
       addMv(cv.id, cv.date, cv.company, 'fx', d.dirLabel || 'FX Conversion', 'FX Desk', cleanLedgerNote(cv.notes) || d.dirLabel || 'Currency exchange', shortVoucherRef(cv.reference || cv.name || cv.id), d.dirLabel || 'FX', d.usd, d.lbp, 'conversions', cv);
     });
@@ -82957,7 +83911,7 @@
     });
     const scopeKey = rawKey || ('industry:' + ind);
     const recOpts = { company: scopeKey, ignorePeriod: true, ignoreSearch: true };
-    filterRecords((SEED.records && SEED.records.expenses) || [], recOpts).forEach(x => {
+    if (canAccessTable('expenses')) filterRecords((SEED.records && SEED.records.expenses) || [], recOpts).forEach(x => {
       if (!x || x.voided || x.price_pending || expenseKind(x) === 'VAT') return;
       const sgn = expenseSign(x);
       if (!sgn) return;
@@ -82967,7 +83921,7 @@
       b.expenses += amt;
       if (isApCreditExpense(x)) b.credit_expenses += amt;
     });
-    filterRecords((SEED.records && SEED.records.settlements) || [], recOpts).forEach(sp => {
+    if (canAccessTable('settlements')) filterRecords((SEED.records && SEED.records.settlements) || [], recOpts).forEach(sp => {
       if (!sp || sp.voided || settlementKind(sp) !== 'Payment') return;
       const b = bucket(sp.date);
       if (b) b.settlements_paid += Number(sp.amount || 0);
@@ -83032,7 +83986,7 @@
     // Holding reads its partner and facility schedules for the period picked, so the period is part of its key
     const hldGlPr = ind === 'Holding & Treasury' ? periodRange() : null;
     const hldGlPrKey = hldGlPr && hldGlPr.from && hldGlPr.to ? `${hldGlPr.from}~${hldGlPr.to}` : '';
-    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|pr:${hldGlPrKey}|ph:${typeof computePartyHygieneSig === 'function' ? computePartyHygieneSig(ind) : '0'}|wm:${typeof computeWatermarkSig === 'function' ? computeWatermarkSig(ind) : '0'}`;
+    const cacheKey = `${ind}|${rawKey}|${demoGl ? 1 : 0}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${allowedCompanyNames().join(',')}|own:${isOwner() ? 1 : 0}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${activeSeatFullFinKey()}|${activeSeatCashPermSig()}|${STATE._indCustomRev || 0}|${SEED._industryRev || 0}|${indCashStrHash(JSON.stringify(STATE.industryRowEdits || {}))}|pr:${hldGlPrKey}|ph:${typeof computePartyHygieneSig === 'function' ? computePartyHygieneSig(ind) : '0'}|wm:${typeof computeWatermarkSig === 'function' ? computeWatermarkSig(ind) : '0'}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
     if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
     _indGlInFlight.add(cacheKey);
@@ -120524,8 +121478,11 @@
     const doc = parsedResp && parsedResp.docs && parsedResp.docs[CLOUD_DOC_KEY];
     if (!doc || typeof doc !== 'object' || doc._scopedForSession) return;
     const prevFlagged = Boolean(_cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
-    const bytes = _utf8ByteLen(rawTxt);
-    _cloudStoreHealthSnap = computeCloudStoreHealthSnap(doc, bytes, String(rawTxt || '').length);
+    // `storeChars`: the size of the document as stored. The answer itself is lighter once the cloud stops sending
+    // the edit history of live entries, and the capacity warning is about what is stored.
+    const storedChars = Math.max(0, Math.floor(Number(parsedResp.storeChars) || 0));
+    const bytes = Math.max(_utf8ByteLen(rawTxt), storedChars);
+    _cloudStoreHealthSnap = computeCloudStoreHealthSnap(doc, bytes, Math.max(String(rawTxt || '').length, storedChars));
     const nowFlagged = Boolean(_cloudStoreHealthSnap && _cloudStoreHealthSnap.bytes >= CLOUD_STORE_WARN_BYTES);
     if ((prevFlagged !== nowFlagged || nowFlagged) && typeof _sentinelRawItemsCache !== 'undefined' && _sentinelRawItemsCache instanceof Map) {
       _sentinelRawItemsCache.clear();
@@ -130914,8 +131871,9 @@
     }
     if (crKey === 'expense_subcategories') return norm(r.category) + '|' + m;
     if (crKey === 'fx_rates') return norm(r.currency || 'LBP') + '|' + m;
-    if ((crKey === 'sites' || crKey === 'regions') && r._industry && r._industry !== 'Manufacturing') {
-      return norm(r._industry) + '|' + m;
+    if (crKey === 'sites' || crKey === 'regions' || crKey === 'customers' || crKey === 'suppliers') {
+      const rInd = inferUnivRowIndustry(r);
+      if (rInd && rInd !== 'Manufacturing') return norm(rInd) + '|' + m;
     }
     return m;
   }
@@ -130928,8 +131886,8 @@
     const qCurr = opts.currency ? norm(opts.currency) : '';
     if (!q && !qPlate) return null;
     const excludeId = opts.excludeId != null ? String(opts.excludeId) : '';
-    const isIndPartitioned = crKey === 'sites' || crKey === 'regions';
-    const targetInd = isIndPartitioned ? (opts.industry || getActiveIndustry() || 'Manufacturing') : '';
+    const isIndPartitioned = crKey === 'sites' || crKey === 'regions' || crKey === 'customers' || crKey === 'suppliers';
+    const targetInd = isIndPartitioned ? normGeoIndustryName(opts.industry || getActiveIndustry() || 'Manufacturing') : '';
     const isTargetMfg = !targetInd || targetInd === 'Manufacturing';
     const pool = [].concat(
       (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [],
@@ -130940,9 +131898,10 @@
       if (excludeId && r.id != null && String(r.id) === excludeId) continue;
       if (!opts.includeSelf && isSelfEditingRow(r, crKey)) continue;
       if (isIndPartitioned) {
+        const rInd = inferUnivRowIndustry(r);
         const inPart = isTargetMfg
-          ? (!r._multiIndustrySeed && (!r._industry || r._industry === 'Manufacturing'))
-          : r._industry === targetInd;
+          ? (!r._multiIndustrySeed && rInd === 'Manufacturing')
+          : rInd === targetInd;
         if (!inPart) continue;
       }
       if (crKey === 'staff_members') {
@@ -134986,10 +135945,13 @@
         }
       }
     }
-    if (record && (crKey === 'sites' || crKey === 'regions')) {
-      const origInd = editCtx && editCtx.crKey === crKey && editCtx.orig && editCtx.orig._industry;
+    if (record && (crKey === 'sites' || crKey === 'regions' || crKey === 'customers' || crKey === 'suppliers')) {
+      const origInd = editCtx && editCtx.crKey === crKey && editCtx.orig && (editCtx.orig._industry || editCtx.orig.industry);
       const curInd = origInd || getActiveIndustry();
-      if (curInd && curInd !== 'Manufacturing') record._industry = curInd;
+      if (curInd && curInd !== 'Manufacturing') {
+        record._industry = curInd;
+        if (crKey === 'customers' || crKey === 'suppliers') record.industry = curInd;
+      }
     }
     if (record && /^bdeir\s*holding$/i.test(String(record.company || '').trim())) {
       record._industry = 'Holding & Treasury';
@@ -146765,7 +147727,16 @@
     if (!hit) {
       hit = list.find(r => r && isInspRowInInd(r) && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
     }
-    if (hit) return hit;
+    if (hit) {
+      if (hit.voided) {
+        const arch = (SEED_VOIDED_ARCHIVE[key] && SEED_VOIDED_ARCHIVE[key].get(String(hit.id)))
+          || (SEED_ORIG_ARCHIVE[key] && SEED_ORIG_ARCHIVE[key].get(String(hit.id)))
+          || hit._seed_orig
+          || null;
+        if (arch && typeof arch === 'object') return Object.assign({}, arch, hit);
+      }
+      return hit;
+    }
 
     // Synthesize a rich 360° master record if a lookup name exists in transactions or semantic summaries
     if (key === 'customers') {
@@ -152722,8 +153693,19 @@
       navigateToRecordOrDomainRow(key, idOrName, idOrName, opts && opts.company);
       return;
     }
+    if (key && !canAccessTable(key)) { toast('Access restricted for this seat', 'err'); return; }
+    if (key && !isCashFlowFullFin() && TIEOUT_CONF_KEYS.has(key) && key !== 'attendance') { toast('Access restricted for this seat', 'err'); return; }
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
+    if (key === 'attendance' && !isCashFlowFullFin() && /^Config\s+(USD|LBP)$/i.test(String(row.type || ''))) { toast('Access restricted for this seat', 'err'); return; }
+    if (row.company && !isDemoScopeActive()) {
+      const seatCos = allowedCompanyNames();
+      const rowCo = String(row.company || '').trim();
+      if (rowCo && Array.isArray(seatCos) && seatCos.length > 0 && !seatCos.includes(rowCo)) {
+        toast('Access restricted for this seat', 'err');
+        return;
+      }
+    }
     if (!STATE.inspectorHistory) STATE.inspectorHistory = [];
 
     const existingPanel = $('recordInspector');
@@ -153125,9 +154107,9 @@
           <span class="share-action-group">${renderShareLangQuickToggleHtml()}<button type="button" class="pa-cmd-btn insp-share-summary-btn" id="inspShareSummaryBtn" data-insp-share-summary="1" data-ui-tip="Share or copy summary">${ic('copy')} <span class="insp-share-lbl">${isMobPhoneViewport() ? 'Share Summary' : 'Copy Summary'}</span></button></span>
           ${tc ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspOpenFull360Btn">Open Full 360° Profile ↗</button>` : ''}
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
-          ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
-          ${(key === 'employments' && isPendingSalaryEmployment(row) && canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
-          ${(!isInspGlobalRateLocked && (canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver()))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
+          ${(!row.voided && ((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw'))))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
+          ${(!row.voided && (key === 'employments' && isPendingSalaryEmployment(row) && canViewPayrollDollarAmounts() && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
+          ${(!row.voided && !isInspGlobalRateLocked && (canModifyRecord() || allowInspInitialSitePinFill || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver()))) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
           ${isEquipInspect && canEnterForm('oillog') ? `<button type="button" class="pa-cmd-btn" id="inspLogOilBtn">${ic('oillog')} + Log Oil</button>` : ''}
@@ -157848,6 +158830,7 @@
     if (!remote || typeof remote !== 'object') return false;
     const canPruneRetiredSysTopup = Boolean(opts && opts.pruneRetiredSysTopup);
     const canPruneRowFn = (opts && typeof opts.canPruneRow === 'function') ? opts.canPruneRow : null;
+    const trailsOnDemand = Boolean(opts && opts.trailsOnDemand);
     ensureUniversalCanonicalIndex();
     STATE._purgedOverrideIds = normalizePurgedOverrideList(STATE._purgedOverrideIds);
     const purgeLookup = buildPurgeLookup(STATE._purgedOverrideIds);
@@ -157948,6 +158931,36 @@
             _mergePreVoidAuditMeta(cur, preMergeCur, r);
             if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
             changed = true;
+          }
+        }
+        // The cloud keeps the edit history of live entries and sends it only with a voided entry (trailsOnDemand).
+        if (cur && cur.voided && r.voided) {
+          // Voided on both sides: this device may hold none of the history (it never had the live entry's), or
+          // lines the cloud replaced with its own. The Void Log reads the entry here, so take the cloud's.
+          if (trailsOnDemand && _adoptCloudTrail(cur, r)) changed = true;
+        } else if (cur && !cur.voided && !r.voided) {
+          const curHasTrail = cur._pre_void_orig !== undefined || cur._pre_void_edits !== undefined;
+          const remHasTrail = r._pre_void_orig !== undefined || r._pre_void_edits !== undefined;
+          if (curHasTrail !== remHasTrail) {
+            // Live on both sides, history on one side only, and this copy is no newer than the cloud's (nothing of
+            // ours is left to send): hold the entry the way the cloud sent it.
+            const curTs = _recModTs(cur);
+            const remTs = _recModTs(r);
+            if (!curTs || (remTs && curTs <= remTs)) {
+              if (remHasTrail) {
+                // The cloud sent this live entry's history: an attendance entry this device tells apart by it
+                // (isShiftBackfillBloatedSeedAttRow), or a cloud that sends all history (an older server, the
+                // lighter entries switched off). Without it here the entry would be judged, and compared with
+                // the cloud's, as a different one.
+                if (_adoptCloudTrail(cur, r)) changed = true;
+              } else if (trailsOnDemand) {
+                // The cloud sent it without: nothing here reads the history of this live entry. Let it go; the
+                // cloud returns it if the entry is voided.
+                delete cur._pre_void_orig;
+                delete cur._pre_void_edits;
+                changed = true;
+              }
+            }
           }
         }
       });
@@ -158507,6 +159520,8 @@
     });
     if (fleetTouched) _FLEET_IDX = null;
     if (_FREQ_IDX && _FREQ_IDX._partyTypoPools) _FREQ_IDX._partyTypoPools.clear();
+    // Stored copies of a shift row were just merged back in: one row per shift, company and start date.
+    if (SEED.records && Array.isArray(SEED.records.work_shifts)) collapseWorkShiftSlotTwins(SEED.records.work_shifts);
     } finally {
       _applyingCustomRecords = prevApplying;
     }
@@ -158896,6 +159911,282 @@
     return payload;
   }
 
+  // <row-sync-client>
+  // Row sync, device side (store-size plan step 2; server half: isabi functions/_lib/row_sync.js). The device keeps
+  // the cloud store it last read as text, one line per entry, and asks the cloud only for what changed since that
+  // read. From a partial answer it rebuilds the same whole document the cloud would have sent, so everything after
+  // the read (merge, unsent count, push) works on a whole document exactly as before.
+  // Pure on purpose: no STATE, no DOM, no network. isabi build/verify_row_sync_edge.mjs runs this block in node
+  // against the real Edge code, so keep it free of anything defined outside it.
+  const RowSyncClient = (() => {
+    const KP_SET = 'kp';
+    const isRowKey = k => k === 'customRecords' || k === 'kioskPunches';
+    const rowId = r => (r && typeof r === 'object' && !Array.isArray(r) && r.id !== undefined && r.id !== null) ? String(r.id).trim() : '';
+    const isObj = v => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+    // Two 32-bit hashes of a text in one pass. The cloud runs the same function over the same text (isabi
+    // functions/_lib/row_sync.js hashPair): change one and the other must change with it.
+    function hashPair(str) {
+      let h1 = 0xdeadbeef;
+      let h2 = 0x41c6ce57;
+      for (let i = 0; i < str.length; i++) {
+        const ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+      }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+      return [h1 >>> 0, h2 >>> 0];
+    }
+    // The digest of a row set: the XOR of hashPair over its entries' texts, kept in step as entries come and go.
+    function xorInto(x, json) {
+      const p = hashPair(json);
+      x[0] = (x[0] ^ p[0]) >>> 0;
+      x[1] = (x[1] ^ p[1]) >>> 0;
+    }
+    function digestsOf(sets) {
+      const out = new Map();
+      sets.forEach((s, name) => {
+        const x = [0, 0];
+        s.forEach(json => { xorInto(x, json); });
+        out.set(name, x);
+      });
+      return out;
+    }
+
+    function setsFromDoc(doc) {
+      const sets = new Map();
+      const addList = (name, list) => {
+        const m = new Map();
+        for (let i = 0; i < list.length; i++) {
+          const id = rowId(list[i]);
+          if (id) m.set(id, JSON.stringify(list[i]));
+        }
+        sets.set(name, m);
+      };
+      if (isObj(doc.customRecords)) {
+        Object.keys(doc.customRecords).forEach(k => {
+          if (Array.isArray(doc.customRecords[k])) addList('cr:' + k, doc.customRecords[k]);
+        });
+      }
+      if (Array.isArray(doc.kioskPunches)) addList(KP_SET, doc.kioskPunches);
+      return sets;
+    }
+
+    function topFromDoc(doc) {
+      const top = {};
+      Object.keys(doc).forEach(k => {
+        if (isRowKey(k) || doc[k] === undefined) return;
+        top[k] = JSON.stringify(doc[k]);
+      });
+      return top;
+    }
+
+    // The cloud sends, per row set, "<entries>.<digest>.<digest>" of the entries as it sent them (`sums`). The copy
+    // must hold exactly those sets, each with that many entries and that digest: a copy that agrees holds, entry for
+    // entry, what the whole document would have held.
+    function sumsMatch(sets, digests, sums) {
+      if (!isObj(sums)) return false;
+      const names = Object.keys(sums);
+      if (names.length !== sets.size) return false;
+      for (let i = 0; i < names.length; i++) {
+        const m = sets.get(names[i]);
+        const x = digests.get(names[i]);
+        if (!m || !x) return false;
+        if (m.size + '.' + x[0].toString(36) + '.' + x[1].toString(36) !== String(sums[names[i]])) return false;
+      }
+      return true;
+    }
+
+    const validSync = rs => Boolean(isObj(rs) && rs.epoch && typeof rs.epoch === 'string' && typeof rs.scope === 'string' && Number.isInteger(rs.rev) && rs.rev >= 0);
+
+    // A copy of the whole document the cloud just sent, or null when the answer cannot anchor one (also when this
+    // browser's reading of the entries does not give the cloud's digests: it then simply keeps no copy).
+    function seed(fullDoc, rs, scopeKey, nowMs) {
+      if (!isObj(fullDoc) || !validSync(rs) || !isObj(rs.topEtags)) return null;
+      const sets = setsFromDoc(fullDoc);
+      const digests = digestsOf(sets);
+      if (!sumsMatch(sets, digests, rs.sums)) return null;
+      return {
+        scopeKey: String(scopeKey || ''),
+        epoch: rs.epoch,
+        scope: rs.scope,
+        rev: rs.rev,
+        topEtags: rs.topEtags,
+        top: topFromDoc(fullDoc),
+        sets,
+        digests,
+        hasCr: isObj(fullDoc.customRecords),
+        hasKp: Array.isArray(fullDoc.kioskPunches),
+        etag: '',
+        deltas: 0,
+        seededAt: Number(nowMs) || 0,
+        auditAfter: Number(rs.auditAfter) || 0,
+        audited: false
+      };
+    }
+
+    // Applies a partial answer in place. { ok: false } means the copy can no longer be trusted: drop it.
+    function apply(m, d, rs) {
+      if (!m || !isObj(d) || !validSync(rs) || !isObj(rs.topEtags)) return { ok: false, reason: 'shape' };
+      if (rs.epoch !== m.epoch || rs.scope !== m.scope) return { ok: false, reason: 'anchor' };
+      if (Number(d.base) !== m.rev || rs.rev < m.rev) return { ok: false, reason: 'base' };
+      const rows = isObj(d.rows) ? d.rows : {};
+      const gone = isObj(d.gone) ? d.gone : {};
+      const setFor = name => {
+        let s = m.sets.get(name);
+        if (!s) { s = new Map(); m.sets.set(name, s); m.digests.set(name, [0, 0]); }
+        return s;
+      };
+      const digestFor = name => {
+        let x = m.digests.get(name);
+        if (!x) { x = [0, 0]; m.digests.set(name, x); }
+        return x;
+      };
+      const putRows = (name, list) => {
+        if (!Array.isArray(list) || !list.length) return;
+        const s = setFor(name);
+        const x = digestFor(name);
+        for (let i = 0; i < list.length; i++) {
+          const id = rowId(list[i]);
+          if (!id) continue;
+          const had = s.get(id);
+          if (had !== undefined) xorInto(x, had);
+          const json = JSON.stringify(list[i]);
+          s.set(id, json);
+          xorInto(x, json);
+        }
+      };
+      const dropRows = (name, ids) => {
+        if (!Array.isArray(ids) || !ids.length) return;
+        const s = m.sets.get(name);
+        if (!s) return;
+        const x = digestFor(name);
+        for (let i = 0; i < ids.length; i++) {
+          const id = String(ids[i] === undefined || ids[i] === null ? '' : ids[i]).trim();
+          const had = s.get(id);
+          if (had === undefined) continue;
+          xorInto(x, had);
+          s.delete(id);
+        }
+      };
+      // Gone first: an id can be both gone at one revision and back at a later one; the row wins.
+      if (isObj(gone.customRecords)) Object.keys(gone.customRecords).forEach(k => dropRows('cr:' + k, gone.customRecords[k]));
+      dropRows(KP_SET, gone.kioskPunches);
+      if (isObj(rows.customRecords)) Object.keys(rows.customRecords).forEach(k => putRows('cr:' + k, rows.customRecords[k]));
+      putRows(KP_SET, rows.kioskPunches);
+      if (Array.isArray(d.sets)) {
+        const keep = new Set(d.sets.map(String));
+        Array.from(m.sets.keys()).forEach(name => { if (!keep.has(name)) { m.sets.delete(name); m.digests.delete(name); } });
+        keep.forEach(name => { setFor(name); });
+      }
+      if (isObj(d.has)) {
+        m.hasCr = Boolean(d.has.customRecords);
+        m.hasKp = Boolean(d.has.kioskPunches);
+      }
+      // A top-level part that arrives must hash to what the cloud says that part hashes to (rs.topEtags, the cloud's
+      // hashText of the same text): length, then the two halves of hashPair.
+      let topBad = false;
+      if (isObj(d.top)) {
+        Object.keys(d.top).forEach(k => {
+          if (isRowKey(k) || d.top[k] === undefined) return;
+          const json = JSON.stringify(d.top[k]);
+          m.top[k] = json;
+          const p = hashPair(json);
+          if (rs.topEtags[k] !== json.length.toString(36) + '.' + p[0].toString(36) + '.' + p[1].toString(36)) topBad = true;
+        });
+      }
+      if (Array.isArray(d.topGone)) d.topGone.forEach(k => { delete m.top[String(k)]; });
+      if (topBad) return { ok: false, reason: 'top' };
+      if (!sumsMatch(m.sets, m.digests, rs.sums)) return { ok: false, reason: 'sums' };
+      m.topEtags = rs.topEtags;
+      m.rev = rs.rev;
+      m.auditAfter = Number(rs.auditAfter) || 0;
+      m.deltas += 1;
+      return { ok: true };
+    }
+
+    // The whole document the copy stands for, every entry a fresh object (the merge keeps what it is handed).
+    function toDoc(m) {
+      const doc = {};
+      Object.keys(m.top).forEach(k => { doc[k] = JSON.parse(m.top[k]); });
+      if (m.hasCr) doc.customRecords = {};
+      m.sets.forEach((s, name) => {
+        const list = [];
+        s.forEach(json => { list.push(JSON.parse(json)); });
+        if (name === KP_SET) {
+          if (m.hasKp) doc.kioskPunches = list;
+        } else if (name.indexOf('cr:') === 0) {
+          if (!doc.customRecords) doc.customRecords = {};
+          doc.customRecords[name.slice(3)] = list;
+        }
+      });
+      if (m.hasKp && !doc.kioskPunches) doc.kioskPunches = [];
+      return doc;
+    }
+
+    // Nothing this seat can see changed since the read the copy was last settled against: keep asking from the
+    // cloud's present revision.
+    function advance(m, rs, etag) {
+      if (!m || !validSync(rs) || rs.epoch !== m.epoch || rs.scope !== m.scope) return false;
+      if (!etag || !m.etag || String(etag) !== m.etag || rs.rev <= m.rev) return false;
+      m.rev = rs.rev;
+      return true;
+    }
+
+    // Compares the copy with a whole document from the same answer. Reported to the cloud, which stops handing out
+    // partial answers the moment one comparison fails.
+    function audit(m, fullDoc) {
+      const out = { ok: true, rows: 0, bad: 0, sample: '' };
+      const note = what => { out.ok = false; out.bad += 1; if (!out.sample) out.sample = String(what).slice(0, 160); };
+      if (!m || !isObj(fullDoc)) { note('no copy'); return out; }
+      const want = setsFromDoc(fullDoc);
+      want.forEach((ws, name) => {
+        const have = m.sets.get(name);
+        if (!have) { note('set missing ' + name); return; }
+        ws.forEach((json, id) => {
+          out.rows += 1;
+          if (have.get(id) !== json) note((have.has(id) ? 'differs ' : 'missing ') + name + '/' + id);
+        });
+        if (have.size !== ws.size) have.forEach((_, id) => { if (!ws.has(id)) note('extra ' + name + '/' + id); });
+      });
+      m.sets.forEach((_, name) => { if (!want.has(name)) note('set extra ' + name); });
+      const wantTop = topFromDoc(fullDoc);
+      Object.keys(wantTop).forEach(k => { if (m.top[k] !== wantTop[k]) note('top ' + k); });
+      Object.keys(m.top).forEach(k => { if (!Object.prototype.hasOwnProperty.call(wantTop, k)) note('top extra ' + k); });
+      return out;
+    }
+
+    function request(m, opts) {
+      const out = { v: 1 };
+      if (m) {
+        out.epoch = m.epoch;
+        out.rev = m.rev;
+        out.scope = m.scope;
+        out.topEtags = m.topEtags;
+        if (opts && opts.audit) out.audit = true;
+      }
+      if (opts && opts.auditResult) out.auditResult = opts.auditResult;
+      return out;
+    }
+
+    return { seed, apply, toDoc, advance, audit, request, hashPair };
+  })();
+  // </row-sync-client>
+
+  // The cloud keeps the edit history of live entries and no longer sends it (`trailsOnDemand` on its answers), so a
+  // difference in that history alone is never a change to push: the cloud writes the history itself.
+  let _cloudTrailsOnDemand = false;
+  function _deltaCmpJson(r) {
+    if (!_cloudTrailsOnDemand || !r || typeof r !== 'object' || (r._pre_void_orig === undefined && r._pre_void_edits === undefined)) {
+      return JSON.stringify(r);
+    }
+    const c = Object.assign({}, r);
+    delete c._pre_void_orig;
+    delete c._pre_void_edits;
+    return JSON.stringify(c);
+  }
+
   const DELTA_SYNC_TOP_KEYS = [
     'users', 'sessions', 'stepUpAudits', '_purgedOverrideIds',
     'workSchedules', 'alertRules', 'roleTabPolicies', 'faceSettings',
@@ -158939,7 +160230,7 @@
         if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) continue;
         const rid = String(r.id).trim();
         if (!rid) continue;
-        try { m.set(rid, { json: JSON.stringify(_slimRecordForCloud(r)), row: r }); } catch (_) {}
+        try { m.set(rid, { json: _deltaCmpJson(_slimRecordForCloud(r)), row: r }); } catch (_) {}
       }
       cr[k] = m;
     });
@@ -159048,7 +160339,7 @@
           continue;
         }
         let curJson = '';
-        try { curJson = JSON.stringify(r); } catch (_) {}
+        try { curJson = _deltaCmpJson(r); } catch (_) {}
         if (curJson !== baseEntry.json) modRows.push(r);
       }
       if (modRows.length) changedCr[k] = modRows;
@@ -159503,6 +160794,10 @@
     if (STATE.saving || isEntryModalDirty() || (STATE.view === 'users' && STATE.userFormDirty)) return true;
     if (isAnyCameraOrAuthFlowActive()) return true;
     if (($('stepUpAuthModal') && !$('stepUpAuthModal').hidden) || ($('voidReasonPromptModal') && !$('voidReasonPromptModal').hidden) || ($('docCameraModal') && !$('docCameraModal').hidden)) {
+      return true;
+    }
+    const sharePhoneInp = document.querySelector('#stmt14ShareModal:not([hidden]) #stmt14PhoneInput, #stmt16ShareModal:not([hidden]) #stmt16PhoneInput');
+    if (sharePhoneInp && String(sharePhoneInp.value || '').trim()) {
       return true;
     }
     if (_auxModalDirty && document.querySelector('#indDomainEntryModal:not([hidden]), #inspModifyDrawer:not([hidden]), #recordInspector:not([hidden]) #indDomainModifyForm, #staffFaceEnrolModal:not([hidden]), #staffScheduleModal:not([hidden]), #shiftTypeModal:not([hidden]), #policyGroupModal:not([hidden]), #fatherBackfillModal:not([hidden]), #backfillModal:not([hidden]), #rateImpactModal:not([hidden]), #stepUpAuthModal:not([hidden]), #voidReasonPromptModal:not([hidden]), #policySimDiffDrawer:not([hidden]), #punchDriftModal:not([hidden]), #aiBatchIntakeModal:not([hidden]), #docPreviewModal:not([hidden]), #docCameraModal:not([hidden])')) {
@@ -161644,6 +162939,102 @@
     _lastSyncedMfgScopeKey = '';
     _lastVerifiedPushSeq = -1;
   }
+
+  // Row sync (RowSyncClient above): the cloud store as this seat last read it, kept for the life of the page. With
+  // it a read asks only for what changed; without it (a new page, another seat, a server that does not offer row
+  // sync, `?rowsync=0`) a read takes the whole document as before.
+  const ROW_SYNC_CLIENT_ON = PARAMS.get('rowsync') !== '0';
+  const ROW_MIRROR_MAX_AGE_MS = 12 * 60 * 60 * 1000;   // then one whole read starts a fresh copy
+  const ROW_MIRROR_MAX_DELTAS = 400;
+  // A copy that could not follow the cloud's answer, or could not be started from a whole one, is a strike. After
+  // this many the page stops asking for partial answers until it is reloaded or the seat signs out.
+  const ROW_SYNC_MAX_STRIKES = 2;
+  let _rowMirror = null;
+  let _rowAuditReport = null;        // the last copy-against-whole comparison, sent with the next read
+  let _rowSyncStrikes = 0;
+  // <row-sync-glue> (isabi build/verify_row_sync_edge.mjs runs these three functions in node with the names they use
+  // from outside handed in: RowSyncClient, CLOUD_DOC_KEY, the ROW_ constants, _rowMirror, _rowAuditReport,
+  // _rowSyncStrikes, _cloudTrailsOnDemand. Use nothing else from outside.)
+  function rowMirrorFor(scopeKey) {
+    const m = _rowMirror;
+    if (!m) return null;
+    if (m.scopeKey !== scopeKey || (Date.now() - m.seededAt) > ROW_MIRROR_MAX_AGE_MS || m.deltas >= ROW_MIRROR_MAX_DELTAS) {
+      _rowMirror = null;
+      return null;
+    }
+    return m;
+  }
+  // Adds the row sync fields to a /api/sync request. opts.cursor: ask from the copy's revision (else the whole
+  // document); opts.audit: this read may carry the comparison the cloud asked for; opts.report: hand in the last
+  // comparison's result. Returns the report it attached, if any.
+  function attachRowSyncRequest(reqBody, scopeKey, opts) {
+    if (!ROW_SYNC_CLIENT_ON) return null;
+    reqBody.noTrails = true;
+    const report = (opts && opts.report && _rowAuditReport) ? _rowAuditReport : null;
+    // Struck out: whole documents from here on, and nothing asked of the index (a report still goes in).
+    if (_rowSyncStrikes >= ROW_SYNC_MAX_STRIKES) {
+      _rowMirror = null;
+      if (report) reqBody.rowSync = RowSyncClient.request(null, { audit: false, auditResult: report });
+      return report;
+    }
+    const m = (opts && opts.cursor) ? rowMirrorFor(scopeKey) : null;
+    const wantAudit = Boolean(m && opts && opts.audit && m.auditAfter > 0 && !m.audited && m.deltas >= m.auditAfter);
+    reqBody.rowSync = RowSyncClient.request(m, { audit: wantAudit, auditResult: report });
+    return report;
+  }
+  // Settles a /api/sync answer against the copy. After it, `resp.docs[CLOUD_DOC_KEY]` holds a whole document whenever
+  // the answer described one (rebuilt from the copy for a partial answer). False: the partial answer could not be
+  // applied, the copy is dropped and the caller must read the whole document.
+  function settleRowSyncAnswer(resp, scopeKey, sentReport) {
+    if (!resp || typeof resp !== 'object' || resp._authDenied) return true;
+    // The comparison result stays with the page until the cloud says it has it (`rowAuditNoted`).
+    if (sentReport && sentReport === _rowAuditReport && resp.rowAuditNoted === true) _rowAuditReport = null;
+    const hasDoc = Boolean(resp.docs && resp.docs[CLOUD_DOC_KEY] && typeof resp.docs[CLOUD_DOC_KEY] === 'object');
+    const hasDelta = Boolean(resp.rowDelta && typeof resp.rowDelta === 'object');
+    if (hasDoc || hasDelta || resp.notModified === true) _cloudTrailsOnDemand = resp.trailsOnDemand === true;
+    const rs = (resp.rowSyncV1 === true && resp.rowSync && typeof resp.rowSync === 'object') ? resp.rowSync : null;
+    if (resp.notModified === true) {
+      if (_rowMirror && rs && _rowMirror.scopeKey === scopeKey) RowSyncClient.advance(_rowMirror, rs, resp.etag);
+      return true;
+    }
+    if (hasDelta) {
+      const m = (_rowMirror && _rowMirror.scopeKey === scopeKey) ? _rowMirror : null;
+      const res = (m && rs) ? RowSyncClient.apply(m, resp.rowDelta, rs) : null;
+      const applied = Boolean(res && res.ok);
+      if (applied && !hasDoc) {
+        m.etag = String(resp.etag || '');
+        resp.docs = { [CLOUD_DOC_KEY]: RowSyncClient.toDoc(m) };
+        return true;
+      }
+      if (applied) {
+        // The cloud sent the whole document with the partial answer: compare, report, and start again from the whole.
+        const a = RowSyncClient.audit(m, resp.docs[CLOUD_DOC_KEY]);
+        _rowAuditReport = { epoch: rs.epoch, rev: rs.rev, ok: a.ok, rows: a.rows, bad: a.bad, sample: a.sample };
+      } else if (res && rs) {
+        // A partial answer this copy asked for and could not follow: told to the cloud as such (`apply`). The cloud
+        // notes it and does not count it as a failed comparison: the whole document is read next, which is the
+        // fallback working (a copy held through a database restore ends here).
+        _rowAuditReport = { epoch: String(rs.epoch || ''), rev: Number(rs.rev) || 0, ok: false, apply: true, rows: 0, bad: 1, sample: 'apply ' + String(res.reason || '') };
+      }
+      if (!applied) _rowSyncStrikes += 1;
+      _rowMirror = null;
+      if (!hasDoc) return false;
+    }
+    if (hasDoc) {
+      const canSeed = Boolean(rs && !resp.storeUnreadable && _rowSyncStrikes < ROW_SYNC_MAX_STRIKES);
+      const fresh = canSeed ? RowSyncClient.seed(resp.docs[CLOUD_DOC_KEY], rs, scopeKey, Date.now()) : null;
+      if (fresh) {
+        fresh.etag = String(resp.etag || '');
+        if (hasDelta) fresh.audited = true;
+      } else if (canSeed) {
+        // The cloud offered an anchor and this page could not start a copy from the document it came with.
+        _rowSyncStrikes += 1;
+      }
+      _rowMirror = fresh;
+    }
+    return true;
+  }
+  // </row-sync-glue>
   try {
     if ((!IS_AUTOMATED_TEST || allowSwReloadInTest()) && appStoreGetRaw(CLOUD_PENDING_PUSH_KEY) === '1') {
       STATE.pendingCloudPush = true;
@@ -162216,7 +163607,7 @@
     const co = String(r.company || r.resort || r.entity || '').trim();
     const shared = _unsentSharedCo(co);
     if (!shared && !allowed.has(_unsentCanonCo(co))) return false;
-    if (key !== 'sites' && key !== 'regions') return true;
+    if (key !== 'sites' && key !== 'regions' && key !== 'customers' && key !== 'suppliers') return true;
     const indRaw = String(r._industry || r.industry || r.ind || '').trim() || (shared ? '' : _unsentCoInd(co));
     const ind = _unsentGeoInd(indRaw);
     return _unsentSeatIndustryKeys(allowed).has('ind:' + ind);
@@ -162235,14 +163626,14 @@
     });
     return out;
   }
-  // Under which key a sync confirms that the cloud holds a row: its company, or for a shared site or region with no
-  // company of its own, its industry (as unsentCrRowInScope judges it). Other shared rows are every seat's to send.
+  // Under which key a sync confirms that the cloud holds a row: its company, or for a shared row in an
+  // industry-partitioned register (sites, regions, customers, suppliers) with no company of its own, its industry.
   function unsentClearKey(key, r) {
     if (!r) return '';
     if (isGlobalRateCrKey(key)) return 'global:rates';
     if (!UNSENT_SHARED_CR_RE.test(key)) return _unsentCanonCo(r.company || '');
     const co = String(r.company || r.resort || r.entity || '').trim();
-    if ((key === 'sites' || key === 'regions') && _unsentSharedCo(co)) {
+    if ((key === 'sites' || key === 'regions' || key === 'customers' || key === 'suppliers') && _unsentSharedCo(co)) {
       return 'ind:' + _unsentGeoInd(String(r._industry || r.industry || r.ind || '').trim());
     }
     return _unsentSharedCo(co) ? '' : _unsentCanonCo(co);
@@ -163346,7 +164737,8 @@
       : null;
     const mergedCr = Boolean(remote.customRecords && mergeCustomRecords(remote.customRecords, {
       pruneRetiredSysTopup: Boolean(remote.updatedAt),
-      canPruneRow: allowedRemSet ? (k, r) => unsentCrRowInScope(k, r, allowedRemSet) : null
+      canPruneRow: allowedRemSet ? (k, r) => unsentCrRowInScope(k, r, allowedRemSet) : null,
+      trailsOnDemand: _cloudTrailsOnDemand
     }));
     const purgedClean = Boolean(purgedAdded && sanitizeUniversalCustomRecords());
     if (mergedCr || purgedClean) { changed = true; applyCustomRecordsToSeed(); }
@@ -163726,11 +165118,13 @@
         !(Number(STATE._legacyPosUpgrades) > 0) &&
         seqAtSyncStart === _lastVerifiedPushSeq
       );
-      const fetchGetMfg = async useEtag => {
+      // wholeOnly: ask for the whole document even when a row copy is held (the copy could not follow an answer).
+      const fetchGetMfg = async (useEtag, wholeOnly) => {
         const ctrlE = new AbortController();
         const timerE = setTimeout(() => ctrlE.abort(), 15000);
         const reqBody = { op: 'get_mfg', doc: CLOUD_DOC_KEY };
         if (useEtag && _lastSyncedMfgEtag) reqBody.ifNoneMatchEtag = _lastSyncedMfgEtag;
+        const sentRowReport = attachRowSyncRequest(reqBody, curSyncScopeKey, { cursor: !wholeOnly, audit: !wholeOnly, report: true });
         try {
           const rE = await edgeApiFetch('./api/sync', {
             method: 'POST',
@@ -163743,6 +165137,10 @@
             const rawTxt = await rE.text();
             const parsed = JSON.parse(rawTxt);
             noteCloudStoreHealthFromSync(rawTxt, parsed);
+            if (!settleRowSyncAnswer(parsed, curSyncScopeKey, sentRowReport)) {
+              if (wholeOnly) throw new Error('edge sync row answer');
+              return fetchGetMfg(false, true);
+            }
             return parsed;
           }
           if (rE.status === 401 || rE.status === 403) {
@@ -164026,6 +165424,8 @@
           const timer2 = setTimeout(() => ctrl2.abort(), 25000);
           const putBody = { key: '', op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } };
           if (expectedUpdatedAt) putBody.ifMatchUpdatedAt = expectedUpdatedAt;
+          // Lets a "someone saved before you" answer come back as the changed entries only.
+          attachRowSyncRequest(putBody, curSyncScopeKey, { cursor: true, audit: false, report: false });
           const putRes = await edgeApiFetch('./api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -164067,8 +165467,21 @@
             scheduleCloudPushRetry(6000);
             break;
           }
-          const putJson = await putRes.json().catch(() => null);
+          const putJsonRaw = await putRes.json().catch(() => null);
           if (abortedByAuthChange()) return;
+          let putJson = putJsonRaw;
+          if (putJson && putJson.conflict && !settleRowSyncAnswer(putJson, curSyncScopeKey, null)) {
+            // The changed-entries answer could not be applied to the copy held here: read the whole document, and
+            // carry on from it exactly as from a whole "someone saved before you" answer.
+            const wholeAfterConflict = await fetchGetMfg(false, true);
+            if (abortedByAuthChange()) return;
+            if (!wholeAfterConflict || wholeAfterConflict._authDenied || !(wholeAfterConflict.docs && wholeAfterConflict.docs[CLOUD_DOC_KEY])) {
+              STATE.cloudStatus = '● Cloud read-only (409)';
+              scheduleCloudPushRetry(6000);
+              break;
+            }
+            putJson = Object.assign({}, wholeAfterConflict, { conflict: true });
+          }
           if (putJson && putJson.conflict) {
             if (typeof putJson.deltaSyncV1 === 'boolean') _serverDeltaSyncCapable = putJson.deltaSyncV1;
             const cDocs = (putJson.docs && typeof putJson.docs === 'object') ? putJson.docs : {};
@@ -168615,12 +170028,14 @@
       Object.keys(SEED_ORIG_ARCHIVE).forEach(k => {
         origArchiveSnap[k] = SEED_ORIG_ARCHIVE[k];
       });
+      const seedRowIdsSnap = Object.assign({}, SEED._seedRowIds || {});
       _demoCompanyLiveSnap = {
         models: SEED.models || {},
         records: SEED.records || {},
         sentinels: Array.isArray(SEED.sentinels) ? JSON.parse(JSON.stringify(SEED.sentinels)) : [],
         voidedSnap,
         origArchiveSnap,
+        seedRowIdsSnap,
         coreReady: Boolean(SEED._coreReady),
         recordsReady: Boolean(SEED._recordsReady),
         rawIndustryPayload: SEED._rawIndustryPayload || null,
@@ -168642,6 +170057,7 @@
 
       Object.keys(SEED_VOIDED_ARCHIVE).forEach(k => { delete SEED_VOIDED_ARCHIVE[k]; });
       Object.keys(SEED_ORIG_ARCHIVE).forEach(k => { delete SEED_ORIG_ARCHIVE[k]; });
+      SEED._seedRowIds = {};
       STATE.customRecords = _demoCompanySandboxStores.customRecords || {};
       STATE.industryCustomRows = _demoCompanySandboxStores.industryCustomRows || {};
       STATE.industryRowEdits = _demoCompanySandboxStores.industryRowEdits || {};
@@ -168723,6 +170139,7 @@
       Object.keys(_demoCompanyLiveSnap.origArchiveSnap || {}).forEach(k => {
         SEED_ORIG_ARCHIVE[k] = _demoCompanyLiveSnap.origArchiveSnap[k];
       });
+      SEED._seedRowIds = Object.assign({}, _demoCompanyLiveSnap.seedRowIdsSnap || {});
 
       SEED.industryLive = _demoCompanyLiveSnap.industryLive;
       SEED._industryRev = (SEED._industryRev || 0) + 1;
@@ -170544,6 +171961,11 @@
     _cashflowBehindGen++;
     _authSessionEpoch++;
     resetCloudSyncEtagCache();
+    // The row copy of the cloud store is the seat's own view of it: gone with the seat.
+    _rowMirror = null;
+    _rowAuditReport = null;
+    _rowSyncStrikes = 0;
+    _cloudTrailsOnDemand = false;
     _savedLocalAfterSyncOnce = false;
     _serverDeltaSyncCapable = false;
     if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
@@ -170787,6 +172209,11 @@
     _cashflowBehindGen++;
     _authSessionEpoch++;
     resetCloudSyncEtagCache();
+    // The row copy of the cloud store is the seat's own view of it: gone with the seat.
+    _rowMirror = null;
+    _rowAuditReport = null;
+    _rowSyncStrikes = 0;
+    _cloudTrailsOnDemand = false;
     _savedLocalAfterSyncOnce = false;
     _serverDeltaSyncCapable = false;
     if (typeof cancelIdleHubPrewarm === 'function') cancelIdleHubPrewarm();
@@ -170824,6 +172251,7 @@
       _demoCompanyIndPromise = null;
       _demoCompanySandboxActive = false;
       _demoSanitizedActive = false;
+      SEED._seedRowIds = {};
       _demoCompanySandboxStores.customRecords = {};
       _demoCompanySandboxStores.industryCustomRows = {};
       _demoCompanySandboxStores.industryRowEdits = {};
@@ -177694,24 +179122,28 @@
                 ${buShiftOpts.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)}</option>`).join('')}
               </select>
             </div>
-            <button type="button" class="att-co-def-tile" data-tone="${esc((curShiftObj && curShiftObj.tone) || 'amber')}" data-edit-shift-type="${esc(curDefCode)}" data-edit-co="${esc(bu)}" data-ui-tip="Edit default shift hours &amp; workdays"${canWriteCo ? '' : ' disabled'}>
-              <div class="att-co-def-tile-top">
-                <span class="att-co-def-tile-kicker">Active Shift · Click to Edit</span>
-                <span class="att-co-def-tile-end">
-                  <span class="stc-hrs-pill">${fmtNum((curShiftObj && curShiftObj.hours) != null ? curShiftObj.hours : 8, 1)}h</span>
-                  <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
-                </span>
-              </div>
-              <div class="att-co-def-tile-main">
-                <strong>${esc((curShiftObj && curShiftObj.name) || curDefCode)}</strong>
-                <span class="att-co-def-tile-win mono">${esc(curShiftWin)}</span>
-              </div>
-              <div class="att-co-def-tile-meta">
-                <span class="att-meta-pill">${esc(formatWorkdaysCompact(curShiftDays))}</span>
-                <span class="att-meta-pill">${fmtNum((curShiftObj && curShiftObj.grace_min) != null ? curShiftObj.grace_min : 10, 0)}m grace</span>
-                ${hasShiftExc ? `<span class="att-meta-pill is-exc">${esc(curShiftExc)}</span>` : ''}
-              </div>
-            </button>
+            <div class="att-co-def-tile-slot" data-tone="${esc((curShiftObj && curShiftObj.tone) || 'amber')}">
+              <button type="button" class="att-co-def-tile" data-tone="${esc((curShiftObj && curShiftObj.tone) || 'amber')}" data-edit-shift-type="${esc(curDefCode)}" data-edit-co="${esc(bu)}" data-ui-tip="${canWriteCo ? 'Edit default shift hours &amp; workdays' : 'Default shift hours (view-only)'}"${canWriteCo ? '' : ' disabled'}>
+                <div class="att-co-def-tile-top">
+                  <span class="att-co-def-tile-kicker">${canWriteCo ? 'Active Shift · Click to Edit' : 'Active Shift · View Only'}</span>
+                  <span class="att-co-def-tile-end">
+                    <span class="stc-hrs-pill">${fmtNum((curShiftObj && curShiftObj.hours) != null ? curShiftObj.hours : 8, 1)}h</span>
+                    <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
+                  </span>
+                </div>
+                <div class="att-co-def-tile-main">
+                  <strong>${esc((curShiftObj && curShiftObj.name) || curDefCode)}</strong>
+                  <span class="att-co-def-tile-win mono">${esc(curShiftWin)}</span>
+                </div>
+                <div class="att-co-def-tile-meta">
+                  <span class="att-meta-pill">${esc(formatWorkdaysCompact(curShiftDays))}</span>
+                  <span class="att-meta-pill">${fmtNum((curShiftObj && curShiftObj.grace_min) != null ? curShiftObj.grace_min : 10, 0)}m grace</span>
+                  ${hasShiftExc ? `<span class="att-meta-pill is-exc">${esc(curShiftExc)}</span>` : ''}
+                  ${!isLocked ? '<span class="att-card-act-spacer is-co-def" aria-hidden="true"></span>' : ''}
+                </div>
+              </button>
+              ${!isLocked ? `<button type="button" class="stc-share-btn att-card-act-btn att-co-def-share-btn no-print" data-share-shift-type="${esc(curDefCode)}" data-edit-co="${esc(bu)}" data-ui-tip="Share Shift Hours" aria-label="Share Shift Hours">${ic('send_msg')}</button>` : ''}
+            </div>
           </div>
           <div class="ssm-field att-co-def-field">
             <div class="att-co-def-head-bar">
@@ -183165,6 +184597,8 @@
     if (cIdx >= 0) Object.assign(STATE.customRecords.work_shifts[cIdx], wsRow);
     else STATE.customRecords.work_shifts.unshift(Object.assign({}, wsRow));
     const extraPosts = [];
+    // Stored copies of this row (same shift, company and start date) are voided with the save.
+    voidWorkShiftSlotTwins(wsRow, modStamp, extraPosts);
     if (wantBuDef && co && norm(co) !== norm('All BUs') && norm(co) !== norm('All Companies')) {
       pool.forEach(r => {
         if (r && !r.voided && String(r.id) !== String(wsRow.id) && norm(r.company || 'WTC') === norm(co) && r.is_bu_default) {
@@ -194644,6 +196078,14 @@
           });
         });
       });
+      modal.querySelectorAll('#ssmBuDefaultBar [data-share-shift-type]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          if (STATE.kioskLocked) return;
+          const shareCo = btn.getAttribute('data-edit-co') || entry.company;
+          openShiftShareModal(btn.getAttribute('data-share-shift-type') || '', shareCo ? { company: shareCo } : {});
+        });
+      });
       modal.querySelectorAll('#ssmBuDefaultBar [data-edit-policy-group]').forEach(btn => {
         btn.addEventListener('click', e => {
           e.stopPropagation();
@@ -204331,10 +205773,13 @@
                                 <span class="att-meta-pill">${fmtNum(st.grace_min != null ? st.grace_min : 10, 0)}m grace</span>
                                 ${hasExc ? `<span class="att-meta-pill is-exc">${esc(excSum)}</span>` : ''}
                               </div>
-                              <span class="att-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
+                              <span class="att-card-foot-end" aria-hidden="true">
+                                <span class="att-card-act-spacer"></span>
+                                <span class="att-card-chev">${ic('chevron_right')}</span>
+                              </span>
                             </div>
                           </button>
-                          <button type="button" class="stc-share-btn no-print" data-share-shift-type="${esc(st.id)}"${editCoAttr} data-ui-tip="Share Shift Hours" aria-label="Share Shift Hours">${ic('send_msg')}</button>
+                          <button type="button" class="stc-share-btn att-card-act-btn no-print" data-share-shift-type="${esc(st.id)}"${editCoAttr} data-ui-tip="Share Shift Hours" aria-label="Share Shift Hours">${ic('send_msg')}</button>
                         </div>
                       `;
                     }).join('')}
@@ -207724,7 +209169,7 @@
       case 'ins_claims': wsHtml = renderInsuranceClaims('main'); break;
       case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
       case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
-      case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, activeUser, seatLens, canViewPayrollDollarAmounts, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, todayISO, computeCashTillCutoffSplit, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketSign, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, recordSliceMeta, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
+      case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, activeUser, seatLens, canViewPayrollDollarAmounts, canEnterForm, canAccessPbiPage, canAccessTable, isCashFlowFullFin, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, todayISO, computeCashTillCutoffSplit, renderCfTillCutoffSplitHtml, renderCfTillLbpSplitHtml, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketSign, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildRestrictedCashMonthlyRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, recordSliceMeta, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, activeUser, seatLens, filterRecords, sortRows, th, renderColFilterBar, shownCount, recordSliceMeta, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, canAccessRdlReport, canViewPayrollDollarAmounts, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
@@ -209657,6 +211102,34 @@
         STATE.cfFocusByChip = false;
         STATE.shown = {};
         renderApp();
+        return;
+      }
+
+      const cfTieOutJumpBtn = t.closest('[data-cf-tieout-jump]');
+      if (cfTieOutJumpBtn && container.contains(cfTieOutJumpBtn)) {
+        e.stopPropagation();
+        const strip = $('cfTillTieOutStrip') || $('tillRecentPanel');
+        if (strip) scrollWorkspaceTo(strip, 10);
+        const firstRow = strip ? strip.querySelector('.cf-tieout-row') : null;
+        if (firstRow && typeof firstRow.focus === 'function') firstRow.focus({ preventScroll: true });
+        return;
+      }
+
+      const cfTieOutRowBtn = t.closest('[data-cf-tieout-row]');
+      if (cfTieOutRowBtn && container.contains(cfTieOutRowBtn)) {
+        e.stopPropagation();
+        const rkey = cfTieOutRowBtn.getAttribute('data-tieout-rkey') || '';
+        const rid = cfTieOutRowBtn.getAttribute('data-tieout-rid') || '';
+        const dt = cfTieOutRowBtn.getAttribute('data-tieout-date') || '';
+        if (rkey && rid) {
+          showRecordInspector(rkey, rid);
+        } else if (dt) {
+          STATE.cfFocusDate = STATE.cfFocusDate === dt ? '' : dt;
+          STATE.cfEntryMode = 'entries';
+          STATE.chipFilter = 'all';
+          STATE.shown = {};
+          renderApp();
+        }
         return;
       }
 
@@ -217764,6 +219237,7 @@
       const [k, t] = entries[ei];
       const curTgt = resolveTgt();
       if (!curTgt.records) curTgt.records = {};
+      if (!curTgt._seedRowIds) curTgt._seedRowIds = {};
       if (curTgt === SEED) {
         delete SEED_ORIG_ARCHIVE[k];
         delete SEED_VOIDED_ARCHIVE[k];
@@ -217771,13 +219245,21 @@
         if (curTgt.voidedSnap) delete curTgt.voidedSnap[k];
       }
       if (!t || !t.c) {
-        curTgt.records[k] = Array.isArray(t) ? t : [];
+        const arr = Array.isArray(t) ? t : [];
+        curTgt.records[k] = arr;
+        const idSet = new Set();
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (r && r.id != null && String(r.id) !== '') idSet.add(String(r.id));
+        }
+        curTgt._seedRowIds[k] = idSet;
         continue;
       }
       const cols = t.c, sc = t.sc, pf = t.p, hr = t.hr;
       const isSales = k === 'sales_tickets', isRaw = k === 'raw_purchases';
       const rows = t.r || [];
       const out = new Array(rows.length);
+      const idSet = new Set();
       for (let idx = 0; idx < rows.length; idx++) {
         const row = rows[idx];
         const o = pf ? { id: pf + idx } : {};
@@ -217806,6 +219288,7 @@
             o.name = pf.toUpperCase() + '-' + (usIdx > 0 ? idStr.slice(usIdx + 1, usIdx + 9).toUpperCase() : idx);
           }
         }
+        if (o.id != null && String(o.id) !== '') idSet.add(String(o.id));
         out[idx] = o;
         if (shouldYield) {
           const mask = STATE.authed ? 4095 : 1023;
@@ -217818,7 +219301,9 @@
       }
       const endTgt = resolveTgt();
       if (!endTgt.records) endTgt.records = {};
+      if (!endTgt._seedRowIds) endTgt._seedRowIds = {};
       endTgt.records[k] = out;
+      endTgt._seedRowIds[k] = idSet;
       if (shouldYield && (performance.now() - sliceStart) > (STATE.authed ? 12 : 4)) {
         await new Promise(r => setTimeout(r, STATE.authed ? 0 : 12));
         sliceStart = performance.now();
@@ -218855,6 +220340,10 @@
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     appOnlyCash: { index: getAppOnlyCashIndex, scoped: getScopedAppOnlyCashRows, badge: getCashAppOnlyExceptionBadge, cutoff: getWorkbookUpdateCutoff, createdMs: appRecordCreatedMs, candidate: (rkey, id) => (getAppOnlyCashIndex().candByKey.get(`${rkey}:${id}`) || null), tableToCsv },
     cashTillSplit: computeCashTillCutoffSplit,
+    buildCashTillMoves: typeof buildCashTillMoves === 'function' ? buildCashTillMoves : null,
+    buildLiveCashFlowTables: typeof buildLiveCashFlowTables === 'function' ? buildLiveCashFlowTables : null,
+    getModel: typeof getModel === 'function' ? getModel : null,
+    getKPI: typeof getKPI === 'function' ? getKPI : null,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
     state: STATE,
@@ -218979,6 +220468,17 @@
     cloudPayload: typeof cloudPayload === 'function' ? cloudPayload : null,
     snapshotRemoteForDelta: typeof snapshotRemoteForDelta === 'function' ? snapshotRemoteForDelta : null,
     buildDeltaCloudPayload: typeof buildDeltaCloudPayload === 'function' ? buildDeltaCloudPayload : null,
+    // Row sync, for build/verify_row_sync_e2e.mjs: what the page holds of the cloud store, never the entries themselves.
+    rowSyncState: () => ({
+      on: ROW_SYNC_CLIENT_ON,
+      held: Boolean(_rowMirror),
+      rev: _rowMirror ? _rowMirror.rev : null,
+      deltas: _rowMirror ? _rowMirror.deltas : 0,
+      audited: Boolean(_rowMirror && _rowMirror.audited),
+      strikes: _rowSyncStrikes,
+      report: _rowAuditReport ? { ok: _rowAuditReport.ok, bad: _rowAuditReport.bad } : null,
+      trailsOnDemand: _cloudTrailsOnDemand
+    }),
     waitForSyncIdle: async () => {
       for (let i = 0; i < 12 && syncInFlight; i++) {
         try { await syncInFlight; } catch (_) {}
@@ -219431,7 +220931,7 @@
           // Signed out while the core was being unpacked (it yields): drop what it wrote behind the sign-in screen.
           if (hydrationGen !== _seedHydrationGen || (useAuthedApi && seedEpoch !== _authSessionEpoch)) {
             if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
-            if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+            if (!STATE.authed) { SEED.records = {}; SEED.models = {}; SEED._seedRowIds = {}; setPrivateNameBook(null); }
             return SEED;
           }
           if (useAuthedApi && !isDemoSbx && !(corePayload && corePayload.namebook)) armNameBookRefetch(coreUrl);
@@ -219528,7 +221028,7 @@
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
         if (hydrationGen !== _seedHydrationGen || (useAuthedApi && (!STATE.authed || seedEpoch !== _authSessionEpoch))) {
           if (_seedHydrationPromise === myHydratePromise) _seedHydrationPromise = null;
-          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; setPrivateNameBook(null); }
+          if (!STATE.authed) { SEED.records = {}; SEED.models = {}; SEED._seedRowIds = {}; setPrivateNameBook(null); }
           return SEED;
         }
         if (indPayload) unpackIndustrySeedPayload(indPayload);
