@@ -16753,7 +16753,17 @@
       "ISABI Booked": "المسجل في ISABI",
       "Apply Vendor Amount": "اعتماد مبلغ المورد",
       "Open Price Agreement": "فتح اتفاقية السعر",
-      "Your seat cannot inspect or adjust this Statement 16 voucher": "لا يملك مقعدك صلاحية معاينة أو تعديل هذا السند في كشف 16"
+      "Your seat cannot inspect or adjust this Statement 16 voucher": "لا يملك مقعدك صلاحية معاينة أو تعديل هذا السند في كشف 16",
+      "Leaving Grace (min)": "فترة سماح الانصراف (دقيقة)",
+      "Clock-IN Tolerance Minutes": "دقائق سماح الدخول",
+      "Clock-OUT Tol. (min)": "سماح الخروج (دقيقة)",
+      "IN (def)": "دخول (افتراضي)",
+      "OUT (def)": "خروج (افتراضي)",
+      "Blank keeps the regular hours or grace; days off are not listed": "الحقل الفارغ يبقي الدوام أو السماح العادي؛ أيام العطلة غير مدرجة",
+      "IN (m):": "الحضور (د):",
+      "OUT (m):": "الانصراف (د):",
+      "Enter both Start and End time, or leave both blank for grace-only": "أدخل وقتي البدء والانتهاء معاً، أو اتركهما فارغين للسماح فقط",
+      "Enter weekday hours or arrival/leaving grace first": "أدخل ساعات يوم العمل أو سماح الحضور/الانصراف أولاً"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -33488,7 +33498,17 @@
       "ISABI Booked": "Comptabilisé ISABI",
       "Apply Vendor Amount": "Appliquer le montant fournisseur",
       "Open Price Agreement": "Ouvrir l'accord tarifaire",
-      "Your seat cannot inspect or adjust this Statement 16 voucher": "Votre poste ne peut pas inspecter ou ajuster cette pièce du relevé 16"
+      "Your seat cannot inspect or adjust this Statement 16 voucher": "Votre poste ne peut pas inspecter ou ajuster cette pièce du relevé 16",
+      "Leaving Grace (min)": "Tolérance de Départ (min)",
+      "Clock-IN Tolerance Minutes": "Minutes de Tolérance Entrée",
+      "Clock-OUT Tol. (min)": "Tol. Sortie (min)",
+      "IN (def)": "Entrée (déf.)",
+      "OUT (def)": "Sortie (déf.)",
+      "Blank keeps the regular hours or grace; days off are not listed": "Vide = horaire ou tolérance habituelle ; les jours de repos ne sont pas listés",
+      "IN (m):": "Entrée (m) :",
+      "OUT (m):": "Sortie (m) :",
+      "Enter both Start and End time, or leave both blank for grace-only": "Saisissez les heures de début et de fin, ou laissez-les vides pour la tolérance seule",
+      "Enter weekday hours or arrival/leaving grace first": "Saisissez d'abord les heures du jour ou la tolérance d'arrivée/départ"
     }
   };
 
@@ -34326,19 +34346,25 @@
       if (r) return lang === 'ar' ? 'مغلق' : 'fermé';
       r = sfx.match(/^([\d.]+)h shorter$/);
       if (r) return lang === 'ar' ? `أقصر بـ ${r[1]} س` : `${r[1]} h plus court`;
-      r = sfx.match(/^(?:start ([+-]\d+) min)?(?:, )?(?:end ([+-]\d+) min)?(?:, )?(?:grace (\d+) min)?$/);
+      r = sfx.match(/^(?:start ([+-]\d+) min)?(?:, )?(?:end ([+-]\d+) min)?(?:, )?(?:(grace IN (\d+)m \/ OUT (\d+)m|grace (\d+) min|OUT grace (\d+) min))?$/);
       if (r && (r[1] || r[2] || r[3])) {
         const parts = [];
         if (r[1]) parts.push(lang === 'ar' ? `البداية ${r[1]} د` : `début ${r[1]} min`);
         if (r[2]) parts.push(lang === 'ar' ? `النهاية ${r[2]} د` : `fin ${r[2]} min`);
-        if (r[3]) parts.push(lang === 'ar' ? `السماح ${r[3]} د` : `tolérance ${r[3]} min`);
+        if (r[4] && r[5]) {
+          parts.push(lang === 'ar' ? `سماح الحضور ${r[4]} د / الانصراف ${r[5]} د` : `tolérance entrée ${r[4]} min / sortie ${r[5]} min`);
+        } else if (r[6]) {
+          parts.push(lang === 'ar' ? `السماح ${r[6]} د` : `tolérance ${r[6]} min`);
+        } else if (r[7]) {
+          parts.push(lang === 'ar' ? `سماح الانصراف ${r[7]} د` : `tolérance sortie ${r[7]} min`);
+        }
         return parts.join(lang === 'ar' ? '، ' : ', ');
       }
       return null;
     };
     const relOnly = relSuffix(trimmed);
     if (relOnly) return relOnly;
-    m = trimmed.match(/^(?:(.{1,60}?):\s+)?(\d{2}-\d{2}-\d{4})(?:\s+to\s+(\d{2}-\d{2}-\d{4}))?\s+(Closed|[\d.]+h shorter|(?:start [+-]\d+ min)?(?:, )?(?:end [+-]\d+ min)?(?:, )?(?:grace \d+ min)?)$/);
+    m = trimmed.match(/^(?:(.{1,60}?):\s+)?(\d{2}-\d{2}-\d{4})(?:\s+to\s+(\d{2}-\d{2}-\d{4}))?\s+(Closed|[\d.]+h shorter|(?:start [+-]\d+ min)?(?:, )?(?:end [+-]\d+ min)?(?:, )?(?:(?:grace IN \d+m \/ OUT \d+m|grace \d+ min|OUT grace \d+ min))?)$/);
     if (m && m[4]) {
       const sfx = relSuffix(m[4]);
       if (sfx) {
@@ -34480,13 +34506,18 @@
       return `${pfx}${frBase}`;
     }
 
-    // 0b. Shift timing exception segments (formatShiftExceptionsSummary): "Fri, Sat 07:00-14:00 (7.0h)" and
+    // 0b. Shift timing exception segments (formatShiftExceptionsSummary): "Fri, Sat 07:00-14:00 (7.0h) [IN 20m / OUT 10m]" and
     //     "<label>: 01-12-2026 to 05-12-2026 09:00-15:00 (6.0h)". Day names go through the dictionary; a label the
     //     user typed is kept as typed; clock times and hours stay as they are.
-    m = trimmed.match(/^((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:,\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun))*)\s+(\d{2}:\d{2}-\d{2}:\d{2})(\s*\([\d.]+h\))?$/);
-    if (m) {
+    m = trimmed.match(/^((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:,\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun))*)(?:\s+(\d{2}:\d{2}-\d{2}:\d{2})(\s*\([\d.]+h\))?)?(?:\s+\[(?:(\d+)m\s+grace|IN\s+(\d+)m\s+\/\s+OUT\s+(\d+)m|IN\s+(\d+)m|OUT\s+(\d+)m)\])?$/);
+    if (m && (m[2] || m[4] || m[5] || m[7] || m[8])) {
       const days = m[1].split(/,\s*/).map(d => translateCore(d, lang, depth + 1)).join(lang === 'ar' ? '، ' : ', ');
-      return `${days} ${m[2]}${m[3] || ''}`;
+      let grSfx = '';
+      if (m[4]) grSfx = lang === 'ar' ? ` [سماح ${m[4]}د]` : ` [Tol. ${m[4]}m]`;
+      else if (m[5] && m[6]) grSfx = lang === 'ar' ? ` [دخول ${m[5]}د / خروج ${m[6]}د]` : ` [Entrée ${m[5]}m / Sortie ${m[6]}m]`;
+      else if (m[7]) grSfx = lang === 'ar' ? ` [دخول ${m[7]}د]` : ` [Entrée ${m[7]}m]`;
+      else if (m[8]) grSfx = lang === 'ar' ? ` [خروج ${m[8]}د]` : ` [Sortie ${m[8]}m]`;
+      return `${days}${m[2] ? ` ${m[2]}${m[3] || ''}` : ''}${grSfx}`;
     }
     m = trimmed.match(/^(?:(.+?):\s+)?(\d{2}-\d{2}-\d{4})(?:\s+to\s+(\d{2}-\d{2}-\d{4}))?\s+(\d{2}:\d{2}-\d{2}:\d{2})(\s*\([\d.]+h\))?$/);
     if (m) {
@@ -39079,6 +39110,41 @@
     // Standalone Shift & Policy Card chips
     m = trimmed.match(/^(\d+)m\s+grace$/i);
     if (m) return lang === 'ar' ? `${m[1]} د سماح` : `Tol. ${m[1]} min`;
+
+    m = trimmed.match(/^IN\s+(\d+)m\s+\/\s+OUT\s+(\d+)m$/i);
+    if (m) return lang === 'ar' ? `دخول ${m[1]}د / خروج ${m[2]}د` : `Entrée ${m[1]}m / Sortie ${m[2]}m`;
+
+    m = trimmed.match(/^\[((\d+)m\s+grace|IN\s+(\d+)m\s+\/\s+OUT\s+(\d+)m|IN\s+(\d+)m|OUT\s+(\d+)m)\]$/i);
+    if (m) {
+      if (m[2]) return lang === 'ar' ? `[سماح ${m[2]}د]` : `[Tol. ${m[2]}m]`;
+      if (m[3] && m[4]) return lang === 'ar' ? `[دخول ${m[3]}د / خروج ${m[4]}د]` : `[Entrée ${m[3]}m / Sortie ${m[4]}m]`;
+      if (m[5]) return lang === 'ar' ? `[دخول ${m[5]}د]` : `[Entrée ${m[5]}m]`;
+      if (m[6]) return lang === 'ar' ? `[خروج ${m[6]}د]` : `[Sortie ${m[6]}m]`;
+    }
+
+    m = trimmed.match(/^(\d{2}:\d{2}-\d{2}:\d{2})\s+\[((\d+)m\s+grace|IN\s+(\d+)m\s+\/\s+OUT\s+(\d+)m|IN\s+(\d+)m|OUT\s+(\d+)m)\]$/i);
+    if (m) {
+      const inner = translateCore(`[${m[2]}]`, lang, depth + 1);
+      return `${m[1]} ${inner}`;
+    }
+
+    m = trimmed.match(/^e\.g\.\s+(\d+)\s+\(default\)$/i);
+    if (m) return lang === 'ar' ? `مثلاً ${m[1]} (افتراضي)` : `ex. ${m[1]} (défaut)`;
+
+    m = trimmed.match(/^(IN|OUT)\s+(\d+)m$/);
+    if (m) {
+      if (m[1] === 'IN') return lang === 'ar' ? `دخول ${m[2]}د` : `Entrée ${m[2]}m`;
+      return lang === 'ar' ? `خروج ${m[2]}د` : `Sortie ${m[2]}m`;
+    }
+
+    m = trimmed.match(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Arrival|Leaving)\s+Grace\s+\(min\)$/i);
+    if (m) {
+      const dayLoc = translateCore(m[1], lang, depth + 1);
+      const isArr = /^Arrival$/i.test(m[2]);
+      return lang === 'ar'
+        ? `${isArr ? 'فترة سماح الحضور' : 'فترة سماح الانصراف'} ${dayLoc} (دقيقة)`
+        : `Tolérance ${isArr ? "d'arrivée" : 'de départ'} ${dayLoc} (min)`;
+    }
 
     m = trimmed.match(/^Late\s+(1h\s+Round|0\.5d|\$0|[\d.]+x)$/i);
     if (m) {

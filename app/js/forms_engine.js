@@ -2271,6 +2271,11 @@
                     <span style="font-size:10px;color:var(--muted)">to</span>
                     <input type="text" data-time24="1" data-optional-time="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="f_day_out_${d.idx}" data-ws-day-out="${d.idx}" style="font-size:11px;padding:3px 4px;width:100%" title="${d.lbl} End Time (24h)">
                   </div>
+                  <div style="display:flex;align-items:center;gap:4px">
+                    <input type="number" min="0" max="180" step="5" id="f_day_grace_${d.idx}" data-ws-day-grace="${d.idx}" placeholder="IN (def)" class="mono" style="font-size:11px;padding:3px 4px;width:100%" title="${d.lbl} Arrival Grace (min)">
+                    <span style="font-size:10px;color:var(--muted)">/</span>
+                    <input type="number" min="0" max="180" step="5" id="f_day_early_grace_${d.idx}" data-ws-day-early-grace="${d.idx}" placeholder="OUT (def)" class="mono" style="font-size:11px;padding:3px 4px;width:100%" title="${d.lbl} Leaving Grace (min)">
+                  </div>
                 </div>
               `).join('')}
             </div>

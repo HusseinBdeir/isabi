@@ -1168,6 +1168,191 @@
       try { appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords)); } catch (_) {}
     }
   }
+  const ATT_RENDER_TRANSIENT_KEYS = [
+    'display_type', 'shift_basis_lbl', 'shift_str', 'eff_date', 'tx_date',
+    'weekday', 'is_sunday', 'is_overnight', '_render_is_callout',
+    'ot_pay_usd', 'late_ded_usd', 'abs_ded_usd', 'earned_usd', 'lost_usd', 'payroll_impact_usd'
+  ];
+  const ATT_RENDER_TRANSIENT_KEY_SET = new Set(ATT_RENDER_TRANSIENT_KEYS);
+  const _ATT_PRE_RENDER_HYDRATED = new WeakMap();
+  const _ATT_RENDER_HYDRATABLE_KEYS = ['type', 'status', 'in_time', 'out_time', 'worked_hours', 'regular_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd'];
+  const _ATT_SYNC_ABSENT_PRUNE_KEYS = [
+    'tab_sig', 'is_callout', 'att_preset', 'manual_override',
+    'late_cutoff', 'early_out_cutoff', 'penalty_summary',
+    'approved_ot_min', 'billable_late_min', 'raw_late_min', 'raw_ot_min', 'unapproved_ot_hours'
+  ];
+  function stripAttRenderTransientFields(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    for (let i = 0; i < ATT_RENDER_TRANSIENT_KEYS.length; i++) {
+      delete obj[ATT_RENDER_TRANSIENT_KEYS[i]];
+    }
+    return obj;
+  }
+  function _syncAssignAttendanceRecord(target, incoming) {
+    if (!target || typeof target !== 'object' || !incoming || typeof incoming !== 'object') return target;
+    if (target === incoming) return target;
+    const preHyd = _ATT_PRE_RENDER_HYDRATED.get(target);
+    if (preHyd) {
+      for (let hi = 0; hi < _ATT_RENDER_HYDRATABLE_KEYS.length; hi++) {
+        const hk = _ATT_RENDER_HYDRATABLE_KEYS[hi];
+        if (preHyd.vals['has_' + hk]) target[hk] = preHyd.vals[hk];
+        else delete target[hk];
+      }
+    }
+    const cleanInc = _ATT_PRE_RENDER_HYDRATED.has(incoming) ? _cleanAttRowForStorageOrCloud(incoming, incoming) : incoming;
+    _ATT_PRE_RENDER_HYDRATED.delete(target);
+    Object.assign(target, cleanInc);
+    stripAttRenderTransientFields(target);
+    for (let i = 0; i < _ATT_SYNC_ABSENT_PRUNE_KEYS.length; i++) {
+      const ak = _ATT_SYNC_ABSENT_PRUNE_KEYS[i];
+      if (!(ak in cleanInc)) delete target[ak];
+    }
+    for (let hi = 0; hi < _ATT_RENDER_HYDRATABLE_KEYS.length; hi++) {
+      const hk = _ATT_RENDER_HYDRATABLE_KEYS[hi];
+      if (!(hk in cleanInc)) delete target[hk];
+    }
+    return target;
+  }
+  function _lastPreVoidEditTs(r) {
+    const eds = r && Array.isArray(r._pre_void_edits) ? r._pre_void_edits : null;
+    if (!eds || !eds.length) return '';
+    const last = eds[eds.length - 1];
+    return (last && typeof last === 'object' && last.at) ? String(last.at) : '';
+  }
+  function healBackfillDamagedAttendanceRows(list) {
+    if (!Array.isArray(list) || !list.length) return 0;
+    const parseIsoMs = s => {
+      const v = String(s || '').trim();
+      if (!v) return 0;
+      const ms = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v) ? v.replace(' ', 'T') + 'Z' : v);
+      return Number.isFinite(ms) ? ms : 0;
+    };
+    const r2 = n => Math.round(Number(n || 0) * 100) / 100;
+    const canonLegacyShift = sid => {
+      const s = String(sid || '').trim().toLowerCase();
+      if (s === 'ws_seed_wtc_day' || s === 'ws_seed_bbc_day') return 'day_8_4';
+      if (s === 'ws_seed_wtc_night') return 'night_7_3';
+      if (s === 'ws_seed_wtc_ext' || s === 'ws_seed_lions_ext') return 'ext_7_4';
+      return sid;
+    };
+    let healed = 0;
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (!r || typeof r !== 'object' || r.voided) continue;
+      const inT = String(r.in_time || r.check_in || '').trim();
+      const outT = String(r.out_time || r.check_out || '').trim();
+      const typ = String(r.type || r.status || '').trim();
+      const orig = (r._pre_void_orig && typeof r._pre_void_orig === 'object') ? r._pre_void_orig : null;
+      const isApp = isAppRecord(r);
+      const isKioskRow = /^Kiosk\b/i.test(String(r.notes || '')) || r.origin === 'wall_kiosk';
+      const baseMs = Math.max(_stampMs(_recModTs(r)), parseIsoMs(_lastPreVoidEditTs(r)));
+      const healIso = new Date((baseMs > 0 ? baseMs : Date.parse('2026-11-28T00:00:00.000Z')) + 1).toISOString();
+      let didHeal = false;
+
+      // Case 1: clockless leave/absence/no-clock row had shift metadata stamped onto it
+      const isClocklessLeaveOrTally = /^(?:vacabsence|paid\s*leave|sick(?:\s*leave)?|absence|absent|half\s*day|unpaid)/i.test(typ)
+        || r.is_callout === true
+        || r.att_preset === 'noclock'
+        || Boolean(orig && orig.is_callout === true);
+      if (!inT && !outT && isClocklessLeaveOrTally && (Boolean(r.shift_id) || Number(r.scheduled_hours || 0) > 0)) {
+        r.shift_id = '';
+        r.shift_label = '';
+        r.scheduled_start = '';
+        r.scheduled_end = '';
+        r.scheduled_hours = 0;
+        stripAttRenderTransientFields(r);
+        didHeal = true;
+      }
+
+      // Case 2: unedited Smart Entry Call-Out row corrupted by shift backfill
+      if (isApp && !r.origin && !isKioskRow && !r.modified_by && orig && orig.is_callout === true && (
+        Number(r.late_hours || 0) > 0
+        || Math.abs(Number(r.overtime_hours || 0) - Number(orig.overtime_hours || 0)) > 1e-4
+        || Boolean(r.shift_id)
+        || Number(r.scheduled_hours || 0) > 0
+        || !r.is_callout
+        || !r.manual_override
+      )) {
+        const origOt = Number(orig.overtime_hours || 0);
+        const origWk = Number(orig.worked_hours || 0);
+        r.type = 'Overtime';
+        r.status = 'Overtime';
+        r.is_callout = true;
+        r.att_preset = (!inT && !outT) ? 'noclock' : 'callout';
+        r.manual_override = true;
+        r.shift_id = '';
+        r.shift_label = '';
+        r.scheduled_start = '';
+        r.scheduled_end = '';
+        r.scheduled_hours = 0;
+        r.worked_hours = origWk;
+        r.regular_hours = 0;
+        r.overtime_hours = origOt;
+        r.tally = origOt;
+        r.approved_ot_min = Math.round(origOt * 60);
+        r.raw_ot_min = Math.round(origOt * 60);
+        r.exact_ot_min = Math.round(origOt * 60);
+        r.unapproved_ot_hours = 0;
+        r.unapproved_ot_min = 0;
+        r.late_hours = 0;
+        r.raw_late_hours = 0;
+        r.raw_late_min = 0;
+        r.billable_late_min = 0;
+        r.leave_days = 0;
+        r.penalty_summary = '';
+        r.rule_audit_late = '';
+        r.rule_audit_ot = '';
+        delete r.tab_sig;
+        stripAttRenderTransientFields(r);
+        didHeal = true;
+      }
+
+      // Case 3: unedited pre-tab_sig hand-keyed Approved-OT row zeroed or shifted by shift/holiday backfill
+      if (isApp && !r.origin && !isKioskRow && r.manual_override !== false && !r.modified_by && !r.tab_sig && orig && orig.type === 'Overtime' && Number(orig.overtime_hours || 0) > 0 && (
+        Math.abs(Number(r.overtime_hours || 0) - Number(orig.overtime_hours || 0)) > 1e-4
+        || Number(r.unapproved_ot_hours || 0) > 0
+        || String(r.type || r.status || '') !== 'Overtime'
+      )) {
+        const origOt = Number(orig.overtime_hours || 0);
+        const origWk = Number(orig.worked_hours || r.worked_hours || 0);
+        const origLt = Number(orig.late_hours || 0);
+        r.type = 'Overtime';
+        r.status = 'Overtime';
+        r.manual_override = true;
+        r.worked_hours = origWk;
+        r.regular_hours = r2(Math.max(0, origWk - origOt));
+        r.overtime_hours = origOt;
+        r.tally = origOt;
+        r.approved_ot_min = Math.round(origOt * 60);
+        r.raw_ot_min = Math.round(origOt * 60);
+        r.exact_ot_min = Math.round(origOt * 60);
+        r.unapproved_ot_hours = 0;
+        r.unapproved_ot_min = 0;
+        r.late_hours = origLt;
+        r.raw_late_hours = origLt;
+        r.raw_late_min = Math.round(origLt * 60);
+        r.billable_late_min = Math.round(origLt * 60);
+        r.penalty_summary = '';
+        r.rule_audit_late = '';
+        r.rule_audit_ot = '';
+        if (r.shift_id) r.shift_id = canonLegacyShift(r.shift_id);
+        stripAttRenderTransientFields(r);
+        didHeal = true;
+      }
+
+      if (didHeal) {
+        _ATT_PRE_RENDER_HYDRATED.delete(r);
+        r.modified_at = healIso;
+        healed++;
+      }
+    }
+    return healed;
+  }
+  if (Array.isArray(STATE.customRecords.attendance) && healBackfillDamagedAttendanceRows(STATE.customRecords.attendance) > 0) {
+    if (!IS_AUTOMATED_TEST || allowSwReloadInTest()) {
+      try { appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords)); } catch (_) {}
+    }
+  }
   if (!Array.isArray(STATE.users) || (!STATE.users.length && !rosterIsServerHeld())) {
     STATE.users = (isDemoSandboxSession() ? DEMO_SANDBOX_USERS : DEFAULT_USERS).map(seedRosterSeat);
   }
@@ -1241,7 +1426,9 @@
     'restored_at', 'restored_by', 'restored_by_email', 'modified_at', 'modified_by', 'entered_at', 'entered_by',
     'entered_by_email', 'created_at', 'updated_at', 'updatedAt', 'client_updated_at', 'same_person_confirmed',
     'twin_of', 'twin_difference', 'latitude', 'longitude', 'adj_windows', 'driver_rows', 'cells', 'headers',
-    'attachments', 'removedDocIds', 'backfill_status', 'settled_amount', 'has_paired_return', 'data_url'
+    'attachments', 'removedDocIds', 'backfill_status', 'settled_amount', 'has_paired_return', 'data_url',
+    'late_cutoff', 'early_out_cutoff', 'penalty_summary',
+    ...ATT_RENDER_TRANSIENT_KEYS
   ]);
   function _asStrictBoolOrNullPreVoid(v) {
     if (typeof v === 'boolean') return v;
@@ -1374,27 +1561,65 @@
     return true;
   }
   let _lastMonotonicMs = 0;
+  let _lastRecordSkewMs = 0;
   function nextMonotonicIso() {
     const now = Date.now();
     _lastMonotonicMs = now > _lastMonotonicMs ? now : (_lastMonotonicMs + 1);
     return new Date(_lastMonotonicMs).toISOString();
   }
+  function nextMonotonicIsoForRecord(...recs) {
+    const now = Date.now();
+    _lastMonotonicMs = now > _lastMonotonicMs ? now : (_lastMonotonicMs + 1);
+    let targetMs = _lastMonotonicMs;
+    let hadAheadFloor = false;
+    for (let i = 0; i < recs.length; i++) {
+      const r = recs[i];
+      if (!r || typeof r !== 'object') continue;
+      const rMs = Math.max(
+        _stampMs(_recModTs(r)),
+        _stampMs(r.updatedAt || ''),
+        _stampMs(_lastPreVoidEditTs(r))
+      );
+      if (rMs >= targetMs) {
+        targetMs = rMs + 1;
+        hadAheadFloor = true;
+      }
+    }
+    if (hadAheadFloor) {
+      if (targetMs <= _lastRecordSkewMs) targetMs = _lastRecordSkewMs + 1;
+      _lastRecordSkewMs = targetMs;
+    }
+    return new Date(targetMs).toISOString();
+  }
   function stampBatchModifiedAt(pairs, crKey, primaryRow) {
-    const stampIso = nextMonotonicIso();
-    const syncCustomStamp = (tk, rec) => {
+    const targets = [];
+    const seen = new Set();
+    const collectTarget = (tk, rec) => {
       if (!tk || !rec || typeof rec !== 'object') return;
-      rec.modified_at = stampIso;
+      if (!seen.has(rec)) {
+        seen.add(rec);
+        targets.push([tk, rec]);
+      }
       const cList = STATE && STATE.customRecords && STATE.customRecords[tk];
       if (Array.isArray(cList) && rec.id != null) {
         const hit = cList.find(x => x && String(x.id) === String(rec.id));
-        if (hit) hit.modified_at = stampIso;
+        if (hit && !seen.has(hit)) {
+          seen.add(hit);
+          targets.push([tk, hit]);
+        }
       }
     };
-    if (crKey && primaryRow) syncCustomStamp(crKey, primaryRow);
+    if (crKey && primaryRow) collectTarget(crKey, primaryRow);
     if (Array.isArray(pairs)) {
       pairs.forEach(pair => {
-        if (Array.isArray(pair) && pair.length >= 2) syncCustomStamp(pair[0], pair[1]);
+        if (Array.isArray(pair) && pair.length >= 2) collectTarget(pair[0], pair[1]);
       });
+    }
+    const stampIso = nextMonotonicIsoForRecord(...targets.map(t => t[1]));
+    for (let i = 0; i < targets.length; i++) {
+      const [tk, obj] = targets[i];
+      obj.modified_at = stampIso;
+      if (tk === 'attendance') _ATT_PRE_RENDER_HYDRATED.delete(obj);
     }
     return stampIso;
   }
@@ -23115,9 +23340,17 @@
     }
 
     const peerStampIso = nextMonotonicIso();
+    const clampRowStampIso = (row, floorIso) => {
+      const floorMs = _stampMs(floorIso);
+      const prevMs = Math.max(_stampMs(_recModTs(row)), _stampMs(_lastPreVoidEditTs(row)));
+      let targetMs = Number.isFinite(floorMs) && floorMs > 0 ? floorMs : Date.now();
+      if (prevMs > 0 && targetMs <= prevMs) targetMs = prevMs + 1;
+      if (targetMs > _lastMonotonicMs) _lastMonotonicMs = targetMs;
+      return new Date(targetMs).toISOString();
+    };
     const syncPeerToCustom = (tk, peerRow) => {
       if (!peerRow || !peerRow.id) return;
-      peerRow.modified_at = peerStampIso;
+      peerRow.modified_at = clampRowStampIso(peerRow, peerStampIso);
       if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
       const cIdx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === String(peerRow.id));
       if (cIdx >= 0) {
@@ -23204,7 +23437,7 @@
       if (w && w.paidDays > 0) savedRow.amount = round2(Number(savedRow.daily_usd) * w.paidDays);
     }
     if (crKey === 'fx_rates' || crKey === 'vat_rates') enrichGlobalRateTables();
-    savedRow.modified_at = peerStampIso;
+    savedRow.modified_at = clampRowStampIso(savedRow, peerStampIso);
     syncSelfToCustom();
     return touchedPeers;
   }
@@ -23261,7 +23494,11 @@
           const w = countPaidDaysInWindow(r.start_date, _rowEndIso(r), r);
           if (w && w.paidDays > 0) r.amount = round2(Number(r.daily_usd) * w.paidDays);
         }
-        r.modified_at = reopenStampIso;
+        const reopenBaseMs = _stampMs(reopenStampIso);
+        const rPrevMs = Math.max(_stampMs(_recModTs(r)), _stampMs(_lastPreVoidEditTs(r)));
+        const rNextMs = rPrevMs > 0 && rPrevMs >= reopenBaseMs ? rPrevMs + 1 : reopenBaseMs;
+        if (rNextMs > _lastMonotonicMs) _lastMonotonicMs = rNextMs;
+        r.modified_at = new Date(rNextMs).toISOString();
         reopened.push(r);
         if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         const cIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === String(r.id));
@@ -25105,18 +25342,34 @@
       .filter(e => e && !e.voided && norm(e.staff || '') === stN && e.start_date)
       .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
     const attRows = (SEED.records && SEED.records.attendance) || [];
+    if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+    const customAttIds = new Set(STATE.customRecords.attendance.map(x => x && String(x.id || '').trim()).filter(Boolean));
+    const empBfStamp = nextMonotonicIso();
     let attUpdated = 0;
     for (let i = 0; i < attRows.length; i++) {
       const a = attRows[i];
       if (!a || a.voided || norm(a.staff || '') !== stN) continue;
       const d = String(a.date || '').slice(0, 10);
       if (!d || d < rangeFrom || d > rangeTo) continue;
+      const protReason = isAttendanceProtectedFromShiftBackfill(a, customAttIds, a.company || ref.company || 'WTC', d);
+      if (protReason) continue;
       const activeEmp = emps.find(e => String(e.start_date).slice(0, 10) <= d && (!e.end_date || String(e.end_date).slice(0, 10) >= d)) || null;
       const targetHrs = activeEmp && Number(activeEmp.working_hours || activeEmp.daily_hours) > 0 ? Number(activeEmp.working_hours || activeEmp.daily_hours) : 12;
       if (Number(a.scheduled_hours || 0) !== targetHrs) {
         a.scheduled_hours = targetHrs;
+        if (a.manual_override == null) a.manual_override = false;
+        stampAttendanceBackfillModified(a, empBfStamp);
+        if (a.origin === 'door_tablet' || a.tab_sig) a.tab_sig = attendanceFigureSig(a);
+        const cleanAtt = stripAttRenderTransientFields(Object.assign({}, a));
+        const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id) === String(a.id));
+        if (cIdx >= 0) {
+          _ATT_PRE_RENDER_HYDRATED.delete(STATE.customRecords.attendance[cIdx]);
+          Object.assign(STATE.customRecords.attendance[cIdx], cleanAtt);
+          stripAttRenderTransientFields(STATE.customRecords.attendance[cIdx]);
+        }
+        else STATE.customRecords.attendance.unshift(cleanAtt);
         attUpdated++;
-        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['attendance', a]);
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['attendance', cleanAtt]);
       }
     }
     return { attUpdated };
@@ -25127,6 +25380,8 @@
     const cN = norm(ctRow.customer);
     const activeCt = creditTermsForCustomer(ctRow.customer, ctRow.company, todayISO()) || ctRow;
     const custs = (SEED.records && SEED.records.customers) || [];
+    if (!Array.isArray(STATE.customRecords.customers)) STATE.customRecords.customers = [];
+    const ctBfStamp = nextMonotonicIso();
     let custUpdated = 0;
     custs.forEach(c => {
       if (!c || c.voided || norm(c.name || '') !== cN) return;
@@ -25145,6 +25400,10 @@
         changed = true;
       }
       if (changed) {
+        stampAttendanceBackfillModified(c, ctBfStamp);
+        const cIdx = STATE.customRecords.customers.findIndex(x => x && String(x.id) === String(c.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords.customers[cIdx], c);
+        else STATE.customRecords.customers.unshift(Object.assign({}, c));
         custUpdated++;
         if (Array.isArray(extraApiPosts)) extraApiPosts.push(['customers', c]);
       }
@@ -41193,7 +41452,72 @@
   const SHIFT_DAY_SHORT_NAMES = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
   const SHIFT_DAY_ORDER_KEYS = ['1', '2', '3', '4', '5', '6', '0'];
 
-  function normalizeDayTimingsMap(rawMap, satDiffEnabled, satStart, satEnd) {
+  function parseOptionalGraceMin(v, max = 180) {
+    if (v == null || typeof v === 'boolean') return null;
+    const s = String(v).trim();
+    if (!s) return null;
+    const n = Number(s);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(max, Math.round(n)));
+  }
+
+  function parseRequiredGraceMin(v, fallback = 10, max = 180) {
+    const p = parseOptionalGraceMin(v, max);
+    if (p != null) return p;
+    const f = parseOptionalGraceMin(fallback, max);
+    return f != null ? f : 10;
+  }
+
+  function dayTimingWinSig(item) {
+    if (!item) return '';
+    const gi = parseOptionalGraceMin(item.grace_min);
+    const go = parseOptionalGraceMin(item.early_leave_grace_min);
+    return `${item.start_time || ''}|${item.end_time || ''}|${gi != null ? gi : ''}|${go != null ? go : ''}`;
+  }
+
+  function formatDayTimingGraceTag(item) {
+    if (!item) return '';
+    const gi = parseOptionalGraceMin(item.grace_min);
+    const go = parseOptionalGraceMin(item.early_leave_grace_min);
+    if (gi != null && go != null) {
+      return gi === go ? `[${gi}m grace]` : `[IN ${gi}m / OUT ${go}m]`;
+    }
+    if (gi != null) return `[IN ${gi}m]`;
+    if (go != null) return `[OUT ${go}m]`;
+    return '';
+  }
+
+  function formatShiftGracePill(inMin, outMin) {
+    const gi = parseRequiredGraceMin(inMin, 10, 180);
+    const go = parseRequiredGraceMin(outMin, gi, 180);
+    return gi === go ? `${fmtNum(gi, 0)}m grace` : `IN ${fmtNum(gi, 0)}m / OUT ${fmtNum(go, 0)}m`;
+  }
+
+  function makeDayTimingEntry(st, et, graceIn = null, graceOut = null) {
+    const cSt = fmtAttClockTime(st || '') || '';
+    const cEt = fmtAttClockTime(et || '') || '';
+    const gi = parseOptionalGraceMin(graceIn);
+    const go = parseOptionalGraceMin(graceOut);
+    if (cSt && cEt) {
+      const out = {
+        start_time: cSt,
+        end_time: cEt,
+        hours: computeShiftWorkedHours(cSt, cEt) || 8.0
+      };
+      if (gi != null) out.grace_min = gi;
+      if (go != null) out.early_leave_grace_min = go;
+      return out;
+    }
+    if (gi != null || go != null) {
+      const out = {};
+      if (gi != null) out.grace_min = gi;
+      if (go != null) out.early_leave_grace_min = go;
+      return out;
+    }
+    return null;
+  }
+
+  function normalizeDayTimingsMap(rawMap, satDiffEnabled, satStart, satEnd, _fallbackStart = '', _fallbackEnd = '') {
     const out = {};
     let src = rawMap;
     if (typeof src === 'string' && src.trim()) {
@@ -41204,15 +41528,12 @@
       Object.entries(src).forEach(([k, v]) => {
         const dIdx = String(k).trim();
         if (!/^[0-6]$/.test(dIdx) || !v || typeof v !== 'object') return;
+        const gIn = parseOptionalGraceMin(v.grace_min);
+        const gOut = parseOptionalGraceMin(v.early_leave_grace_min);
         const st = fmtAttClockTime(v.start_time || v.start || '') || '';
         const et = fmtAttClockTime(v.end_time || v.end || '') || '';
-        if (st && et) {
-          out[dIdx] = {
-            start_time: st,
-            end_time: et,
-            hours: computeShiftWorkedHours(st, et) || 8.0
-          };
-        }
+        const entry = makeDayTimingEntry(st, et, gIn, gOut);
+        if (entry) out[dIdx] = entry;
       });
     }
     // Only synthesize legacy Saturday override when no explicit day_timings map object was supplied
@@ -41220,11 +41541,8 @@
     if (!hasExplicitMap && isSatOn) {
       const sSt = fmtAttClockTime(satStart || '07:00') || '07:00';
       const sEt = fmtAttClockTime(satEnd || '14:00') || '14:00';
-      out['6'] = {
-        start_time: sSt,
-        end_time: sEt,
-        hours: computeShiftWorkedHours(sSt, sEt) || 7.0
-      };
+      const satEntry = makeDayTimingEntry(sSt, sEt);
+      if (satEntry) out['6'] = satEntry;
     }
     return out;
   }
@@ -41266,12 +41584,14 @@
       // A shortened day (Ramadan / winter preset): no fixed window, the day's own timing (weekday or regular,
       // split windows kept) ends `shorten_min` minutes earlier. Resolved in resolveShiftTimingForDate.
       const shortenMin = dayOff ? 0 : Math.max(0, Math.min(720, Math.round(Number(item.shorten_min || 0))));
-      // Signed offsets (Punch Drift dated rule): the day's own start / end moved by N minutes, or arrival grace override.
+      // Signed offsets (Punch Drift dated rule): the day's own start / end moved by N minutes, or arrival/leaving grace override.
       const startShift = dayOff ? 0 : Math.max(-720, Math.min(720, Math.round(Number(item.start_shift_min || 0))));
       const endShift = dayOff ? 0 : Math.max(-720, Math.min(720, Math.round(Number(item.end_shift_min || 0))));
-      const hasGraceOverride = !dayOff && item.grace_min != null && item.grace_min !== '' && Number.isFinite(Number(item.grace_min));
-      const graceOverride = hasGraceOverride ? Math.max(0, Math.min(120, Math.round(Number(item.grace_min)))) : null;
-      const relative = !dayOff && (shortenMin > 0 || startShift !== 0 || endShift !== 0 || hasGraceOverride);
+      const graceOverride = dayOff ? null : parseOptionalGraceMin(item.grace_min, 180);
+      const hasGraceOverride = graceOverride != null;
+      const earlyGraceOverride = dayOff ? null : parseOptionalGraceMin(item.early_leave_grace_min, 180);
+      const hasEarlyGraceOverride = earlyGraceOverride != null;
+      const relative = !dayOff && (shortenMin > 0 || startShift !== 0 || endShift !== 0 || hasGraceOverride || hasEarlyGraceOverride);
       // A closed or relative item may also carry a plain window: shells before v19.6.327 drop any item without
       // one (and could save that loss back), so presets write a harmless fallback. Newer shells ignore it.
       const st = fmtAttClockTime(item.start_time || item.start || '') || '';
@@ -41279,7 +41599,7 @@
       if (!dayOff && !relative && (!st || !et)) return;
       const hrs = (dayOff || relative) ? 0 : (computeShiftWorkedHours(st, et) || 8.0);
       const note = String(item.note || item.label || '').trim().slice(0, 60);
-      const id = String(item.id || (dayOff ? `dt_${sd}_${ed}_off` : (relative ? `dt_${sd}_${ed}_s${shortenMin}_${startShift}_${endShift}${hasGraceOverride ? `_g${graceOverride}` : ''}` : `dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`)));
+      const id = String(item.id || (dayOff ? `dt_${sd}_${ed}_off` : (relative ? `dt_${sd}_${ed}_s${shortenMin}_${startShift}_${endShift}${hasGraceOverride ? `_g${graceOverride}` : ''}${hasEarlyGraceOverride ? `_go${earlyGraceOverride}` : ''}` : `dt_${sd}_${ed}_${st.replace(':', '')}_${et.replace(':', '')}`)));
       const out = {
         id,
         start_date: sd,
@@ -41295,6 +41615,7 @@
       if (relative && startShift) out.start_shift_min = startShift;
       if (relative && endShift) out.end_shift_min = endShift;
       if (hasGraceOverride) out.grace_min = graceOverride;
+      if (hasEarlyGraceOverride) out.early_leave_grace_min = earlyGraceOverride;
       // Weekdays each offset applies on (Punch Drift: a Friday-only early leave moves Fridays only).
       const dowList = raw => (Array.isArray(raw) ? Array.from(new Set(raw.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b) : null);
       const sDows = startShift ? dowList(item.start_dows) : null;
@@ -41331,7 +41652,7 @@
 
   // Text of a relative dated exception: "2h shorter" (preset) or "start +45 min, end -30 min" (Punch Drift).
   function fmtRelativeDateTimingText(item) {
-    if (item.shorten_min && !item.start_shift_min && !item.end_shift_min && item.grace_min == null) {
+    if (item.shorten_min && !item.start_shift_min && !item.end_shift_min && item.grace_min == null && item.early_leave_grace_min == null) {
       return `${fmtNum(item.shorten_min / 60, item.shorten_min % 60 ? 1 : 0)}h shorter`;
     }
     const sgn = n => (n > 0 ? `+${n}` : `${n}`);
@@ -41339,14 +41660,20 @@
     if (item.start_shift_min) out.push(`start ${sgn(item.start_shift_min)} min`);
     const endDelta = Number(item.end_shift_min || 0) - Number(item.shorten_min || 0);
     if (endDelta) out.push(`end ${sgn(endDelta)} min`);
-    if (item.grace_min != null) out.push(`grace ${item.grace_min} min`);
+    if (item.grace_min != null && item.early_leave_grace_min != null) {
+      out.push(`grace IN ${item.grace_min}m / OUT ${item.early_leave_grace_min}m`);
+    } else if (item.grace_min != null) {
+      out.push(`grace ${item.grace_min} min`);
+    } else if (item.early_leave_grace_min != null) {
+      out.push(`OUT grace ${item.early_leave_grace_min} min`);
+    }
     return out.join(', ');
   }
 
   // Chip body for one dated exception: its clock window and hours, or "Closed" for a closed day.
   function fmtDateTimingWindowHtml(item, hrs) {
     if (item && item.day_off) return '<b class="mono">Closed</b>';
-    if (item && (item.shorten_min || item.start_shift_min || item.end_shift_min || item.grace_min != null)) return `<b class="mono">${esc(fmtRelativeDateTimingText(item))}</b>`;
+    if (item && (item.shorten_min || item.start_shift_min || item.end_shift_min || item.grace_min != null || item.early_leave_grace_min != null)) return `<b class="mono">${esc(fmtRelativeDateTimingText(item))}</b>`;
     return `<b class="mono">${esc(item.start_time)}-${esc(item.end_time)}</b>${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}`;
   }
 
@@ -41357,14 +41684,22 @@
     const grouped = new Map();
     SHIFT_DAY_ORDER_KEYS.forEach(k => {
       const item = dt[k];
-      if (!item || !item.start_time || !item.end_time) return;
-      const sig = `${item.start_time}-${item.end_time}`;
+      if (!item) return;
+      const hasClk = Boolean(item.start_time && item.end_time);
+      const hasGr = Boolean(parseOptionalGraceMin(item.grace_min) != null || parseOptionalGraceMin(item.early_leave_grace_min) != null);
+      if (!hasClk && !hasGr) return;
+      const sig = dayTimingWinSig(item);
       if (!grouped.has(sig)) grouped.set(sig, { item, days: [] });
       grouped.get(sig).days.push(SHIFT_DAY_SHORT_NAMES[k] || 'Day');
     });
     grouped.forEach(({ item, days }) => {
-      const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
-      parts.push(`${days.join(', ')} ${item.start_time}-${item.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`);
+      const grTag = formatDayTimingGraceTag(item);
+      if (item.start_time && item.end_time) {
+        const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+        parts.push(`${days.join(', ')} ${item.start_time}-${item.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}${grTag ? ` ${grTag}` : ''}`);
+      } else if (grTag) {
+        parts.push(`${days.join(', ')} ${grTag}`);
+      }
     });
     dList.forEach(dItem => {
       const dateLbl = dItem.start_date === dItem.end_date
@@ -41375,7 +41710,7 @@
         parts.push(`${prefix}${dateLbl} Closed`);
         return;
       }
-      if (dItem.shorten_min || dItem.start_shift_min || dItem.end_shift_min) {
+      if (dItem.shorten_min || dItem.start_shift_min || dItem.end_shift_min || dItem.grace_min != null || dItem.early_leave_grace_min != null) {
         parts.push(`${prefix}${dateLbl} ${fmtRelativeDateTimingText(dItem)}`);
         return;
       }
@@ -41463,10 +41798,27 @@
 
   function resolveShiftTimingForWeekday(shiftOrRule, dayIdx) {
     if (!shiftOrRule || typeof shiftOrRule !== 'object') {
-      return { start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, isDaySpecific: false, isDateSpecific: false, dateTiming: null, forcesWorkday: false, dayName: '' };
+      return {
+        start_time: '08:00',
+        end_time: '16:00',
+        hours: 8.0,
+        overnight: false,
+        grace_min: 10,
+        early_leave_grace_min: 10,
+        hasDayGraceIn: false,
+        hasDayGraceOut: false,
+        hasDayHours: false,
+        isDaySpecific: false,
+        isDateSpecific: false,
+        dateTiming: null,
+        forcesWorkday: false,
+        dayName: ''
+      };
     }
     const baseStart = fmtAttClockTime(shiftOrRule.start_time || shiftOrRule.custom_start || '08:00') || '08:00';
     const baseEnd = fmtAttClockTime(shiftOrRule.end_time || shiftOrRule.custom_end || '16:00') || '16:00';
+    const baseGraceIn = parseRequiredGraceMin(shiftOrRule.grace_min, 10, 180);
+    const baseGraceOut = parseRequiredGraceMin(shiftOrRule.early_leave_grace_min, baseGraceIn, 180);
     const dt = normalizeDayTimingsMap(
       shiftOrRule.day_timings,
       shiftOrRule.sat_diff_enabled,
@@ -41475,18 +41827,29 @@
     );
     const key = String(dayIdx != null ? dayIdx : -1);
     const dayEntry = dt[key] || null;
-    const st = (dayEntry && dayEntry.start_time) ? dayEntry.start_time : baseStart;
-    const et = (dayEntry && dayEntry.end_time) ? dayEntry.end_time : baseEnd;
+    const hasDayClk = Boolean(dayEntry && dayEntry.start_time && dayEntry.end_time);
+    const st = hasDayClk ? dayEntry.start_time : baseStart;
+    const et = hasDayClk ? dayEntry.end_time : baseEnd;
+    const dayGraceIn = dayEntry ? parseOptionalGraceMin(dayEntry.grace_min, 180) : null;
+    const dayGraceOut = dayEntry ? parseOptionalGraceMin(dayEntry.early_leave_grace_min, 180) : null;
+    const hasDayHours = Boolean(hasDayClk && (st !== baseStart || et !== baseEnd));
     const sMin = parseClockMinutes(st);
     const eMin = parseClockMinutes(et);
     const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
-    const hours = computeShiftWorkedHours(st, et) || Number(shiftOrRule.hours || 8.0);
+    const hours = hasDayHours
+      ? (computeShiftWorkedHours(st, et) || Number(shiftOrRule.hours || 8.0))
+      : (Number(shiftOrRule.hours || 0) || computeShiftWorkedHours(st, et) || 8.0);
     return {
       start_time: st,
       end_time: et,
       hours,
       overnight,
-      isDaySpecific: Boolean(dayEntry && (Boolean(shiftOrRule.split_enabled) || st !== baseStart || et !== baseEnd)),
+      grace_min: dayGraceIn != null ? dayGraceIn : baseGraceIn,
+      early_leave_grace_min: dayGraceOut != null ? dayGraceOut : baseGraceOut,
+      hasDayGraceIn: dayGraceIn != null,
+      hasDayGraceOut: dayGraceOut != null,
+      hasDayHours,
+      isDaySpecific: Boolean(dayEntry && (hasDayHours || dayGraceIn != null || dayGraceOut != null)),
       isDateSpecific: false,
       dateTiming: null,
       forcesWorkday: false,
@@ -41521,11 +41884,15 @@
           return a.end_date.localeCompare(b.end_date);
         });
         const m = matches[0];
+        const base = resolveShiftTimingForWeekday(shiftOrRule, dayIdx);
+        const dtGraceIn = parseOptionalGraceMin(m.grace_min, 180);
+        const dtGraceOut = parseOptionalGraceMin(m.early_leave_grace_min, 180);
         if (m.day_off) {
           // Closed on this date: no clock window, so the day is not a workday (see resolveStaffShiftForDate).
-          const base = resolveShiftTimingForWeekday(shiftOrRule, dayIdx);
           return Object.assign({}, base, {
             hours: 0,
+            hasDayGraceIn: false,
+            hasDayGraceOut: false,
             isDaySpecific: false,
             isDateSpecific: true,
             isOff: true,
@@ -41537,7 +41904,6 @@
           // Relative day: the day's own timing (that weekday's window, else regular hours; a split shift keeps
           // both windows) ends `shorten_min` earlier (Ramadan / winter preset) or has its start / end moved by
           // `start_shift_min` / `end_shift_min` (Punch Drift dated rule). At least an hour stays. Off days stay off.
-          const base = resolveShiftTimingForWeekday(shiftOrRule, dayIdx);
           const splitBase = Boolean(shiftOrRule.split_enabled) && !base.isDaySpecific;
           const st0 = splitBase ? (fmtAttClockTime(shiftOrRule.split_start_1 || base.start_time) || base.start_time) : base.start_time;
           const et0 = splitBase ? (fmtAttClockTime(shiftOrRule.split_end_2 || base.end_time) || base.end_time) : base.end_time;
@@ -41572,6 +41938,10 @@
               end_time: clk(endMin),
               hours,
               overnight: endMin >= 1440,
+              grace_min: dtGraceIn != null ? dtGraceIn : base.grace_min,
+              early_leave_grace_min: dtGraceOut != null ? dtGraceOut : base.early_leave_grace_min,
+              hasDayGraceIn: dtGraceIn != null ? true : base.hasDayGraceIn,
+              hasDayGraceOut: dtGraceOut != null ? true : base.hasDayGraceOut,
               isDaySpecific: true,
               isDateSpecific: true,
               isShortened: true,
@@ -41583,15 +41953,21 @@
           }
           return Object.assign({}, base, { isDateSpecific: true, dateTiming: m });
         }
-        const sMin = parseClockMinutes(m.start_time);
-        const eMin = parseClockMinutes(m.end_time);
+        const effSt = m.start_time || base.start_time;
+        const effEt = m.end_time || base.end_time;
+        const sMin = parseClockMinutes(effSt);
+        const eMin = parseClockMinutes(effEt);
         const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
-        const hours = Number(m.hours || computeShiftWorkedHours(m.start_time, m.end_time) || 8.0);
+        const hours = Number(m.hours || computeShiftWorkedHours(effSt, effEt) || 8.0);
         return {
-          start_time: m.start_time,
-          end_time: m.end_time,
+          start_time: effSt,
+          end_time: effEt,
           hours,
           overnight,
+          grace_min: dtGraceIn != null ? dtGraceIn : base.grace_min,
+          early_leave_grace_min: dtGraceOut != null ? dtGraceOut : base.early_leave_grace_min,
+          hasDayGraceIn: dtGraceIn != null ? true : base.hasDayGraceIn,
+          hasDayGraceOut: dtGraceOut != null ? true : base.hasDayGraceOut,
           isDaySpecific: true,
           isDateSpecific: true,
           dateTiming: m,
@@ -41702,17 +42078,17 @@
     r.day_timings = normalizeDayTimingsMap(r.day_timings, r.sat_diff_enabled, r.sat_start_time, r.sat_end_time);
     r.date_timings = normalizeDateTimingsList(r.date_timings);
     const satEntry = r.day_timings['6'] || null;
-    r.sat_diff_enabled = Boolean(satEntry && (satEntry.start_time !== r.start_time || satEntry.end_time !== r.end_time));
-    r.sat_start_time = satEntry ? satEntry.start_time : (r.sat_start_time || '07:00');
-    r.sat_end_time = satEntry ? satEntry.end_time : (r.sat_end_time || '14:00');
+    r.sat_diff_enabled = Boolean(satEntry && (satEntry.start_time !== r.start_time || satEntry.end_time !== r.end_time || parseOptionalGraceMin(satEntry.grace_min) != null || parseOptionalGraceMin(satEntry.early_leave_grace_min) != null));
+    r.sat_start_time = (satEntry && satEntry.start_time) ? satEntry.start_time : (r.sat_start_time || '07:00');
+    r.sat_end_time = (satEntry && satEntry.end_time) ? satEntry.end_time : (r.sat_end_time || '14:00');
     r.has_day_timings = Object.keys(pruneDayTimingsToWorkdays(r.day_timings, r.days)).length > 0 || r.date_timings.length > 0;
     // Summary lists workdays only (one setting per weekday); stored hours of other days are kept, not shown.
     const excSummary = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(r.day_timings, r.days), r.date_timings, r.start_time, r.end_time);
     r.day_schedule_summary = isSplit
       ? `Split ${r.split_window_label} (${fmtNum(r.hours, 1)}h)${excSummary !== 'Same Every Workday' ? ` · ${excSummary}` : ''}`
       : excSummary;
-    r.grace_min = Math.max(0, Math.min(180, Number(r.grace_min != null ? r.grace_min : 10)));
-    r.early_leave_grace_min = Math.max(0, Math.min(180, Number(r.early_leave_grace_min != null ? r.early_leave_grace_min : r.grace_min)));
+    r.grace_min = parseRequiredGraceMin(r.grace_min, 10, 180);
+    r.early_leave_grace_min = parseRequiredGraceMin(r.early_leave_grace_min, r.grace_min, 180);
     r.is_bu_default = Boolean(r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1);
     if (!r.shift_code) {
       r.shift_code = r.shift_id || (/split/i.test(nm) ? 'split_shift' : (/mon[\s-]*fri|office/i.test(nm) ? 'office_mon_fri' : (/night/i.test(nm) ? 'night_7_3' : (/ext/i.test(nm) ? 'ext_7_4' : 'day_8_4'))));
@@ -41769,10 +42145,11 @@
     // shortened day (Ramadan / winter) comes back with its own start and end (first start, last end on a split).
     if (t && t.isOff) return null;
     const special = Boolean(t && t.isDaySpecific);
+    const hasCustomHours = Boolean(t && (t.isDateSpecific || t.hasDayHours));
     if (!days.includes(dow) && !(special && t.forcesWorkday)) return null;
     let s;
     let e;
-    if (ver.split_enabled && !special) {
+    if (ver.split_enabled && !hasCustomHours) {
       s = parseClockMinutes(ver.split_start_1);
       e = parseClockMinutes(ver.split_end_2);
     } else {
@@ -41780,9 +42157,11 @@
       e = parseClockMinutes(t && t.end_time ? t.end_time : ver.end_time);
     }
     if (s == null || e == null || s === e) return null;
-    const grace = Number(ver.grace_min != null ? ver.grace_min : 10);
-    const eGrace = Number(ver.early_leave_grace_min != null ? ver.early_leave_grace_min : grace);
-    return { s, e, grace: Number.isFinite(grace) ? grace : 10, eGrace: Number.isFinite(eGrace) ? eGrace : 10 };
+    const baseGrace = parseRequiredGraceMin(ver.grace_min, 10, 180);
+    const baseEarlyGrace = parseRequiredGraceMin(ver.early_leave_grace_min, baseGrace, 180);
+    const grace = (t && t.hasDayGraceIn && t.grace_min != null) ? t.grace_min : baseGrace;
+    const eGrace = (t && t.hasDayGraceOut && t.early_leave_grace_min != null) ? t.early_leave_grace_min : baseEarlyGrace;
+    return { s, e, grace, eGrace };
   }
 
   function buildWorkShiftActuals(shiftRows, attRows) {
@@ -42234,7 +42613,7 @@
     const peers = pool.filter(r => r && !r.voided && !r.end_date && norm(r.company || 'WTC') === rowCoN);
     const info = getWorkShiftRetireInfo([row], peers).get(row.id);
     if (!info || !info.eligible) return { ok: false, error: 'This shift has staff or attendance in the last 90 days' };
-    const nowIso = new Date().toISOString();
+    const nowIso = nextMonotonicIsoForRecord(row);
     const u = activeUser() || {};
     const endIso = todayISO();
     // Same close markers as an explicit End Date, so a sync merge keeps the end (_preserveClosedEffectiveDates).
@@ -42341,7 +42720,7 @@
       const weekdayMap = new Map();
       SHIFT_DAY_ORDER_KEYS.forEach(k => {
         const item = dt[k];
-        if (!days.includes(Number(k)) || !item) return;
+        if (!days.includes(Number(k)) || !item || !item.start_time || !item.end_time) return;
         if (item.start_time === ws.start_time && item.end_time === ws.end_time) return;
         const sig = `${item.start_time}-${item.end_time}`;
         if (!weekdayMap.has(sig)) weekdayMap.set(sig, { item, dayNames: [] });
@@ -42521,6 +42900,7 @@
         matchingSeed.start_time = st.start_time || matchingSeed.start_time;
         matchingSeed.end_time = st.end_time || matchingSeed.end_time;
         matchingSeed.grace_min = st.grace_min != null ? st.grace_min : matchingSeed.grace_min;
+        matchingSeed.early_leave_grace_min = st.early_leave_grace_min != null ? st.early_leave_grace_min : matchingSeed.early_leave_grace_min;
         if (st.day_timings) matchingSeed.day_timings = st.day_timings;
         if (Array.isArray(st.date_timings)) matchingSeed.date_timings = normalizeDateTimingsList(st.date_timings);
         if (st.sat_diff_enabled != null) matchingSeed.sat_diff_enabled = st.sat_diff_enabled;
@@ -42581,6 +42961,21 @@
     return rec.work_shifts;
   }
 
+  function _cmpWorkShiftPriority(a, b, { byDefaultFirst = false } = {}) {
+    const sd = String(b.start_date || '').localeCompare(String(a.start_date || ''));
+    if (sd !== 0) return sd;
+    if (byDefaultFirst) {
+      const bd = (b.is_bu_default ? 1 : 0) - (a.is_bu_default ? 1 : 0);
+      if (bd !== 0) return bd;
+    }
+    const ma = _stampMs(b.modified_at || b.updated_at || '') - _stampMs(a.modified_at || a.updated_at || '');
+    if (ma !== 0) return ma;
+    const saSeed = /^ws_seed_/i.test(String(a.id || '')) ? 1 : 0;
+    const sbSeed = /^ws_seed_/i.test(String(b.id || '')) ? 1 : 0;
+    if (sbSeed !== saSeed) return sbSeed - saSeed;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  }
+
   function getBuDefaultShift(companyRaw, isoDate = todayISO()) {
     ensureWorkShiftsSeeded();
     const co = String(companyRaw || defaultEntryCompany() || 'WTC').trim();
@@ -42593,13 +42988,13 @@
       && norm(r.company || 'WTC') === coNorm
       && (!r.start_date || String(r.start_date).slice(0, 10) <= d)
       && (!r.end_date || String(r.end_date).slice(0, 10) >= d)
-    ).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    ).sort((a, b) => _cmpWorkShiftPriority(a, b));
     if (activeDefaults.length) return activeDefaults[0];
     const anyCoDefault = list.filter(r =>
       r && !r.voided
       && (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1)
       && norm(r.company || 'WTC') === coNorm
-    ).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    ).sort((a, b) => _cmpWorkShiftPriority(a, b));
     if (anyCoDefault.length) return anyCoDefault[0];
     return list.find(r => r && !r.voided && norm(r.company || 'WTC') === coNorm) || list[0] || null;
   }
@@ -42621,7 +43016,7 @@
       const s = String(r.start_date || '').slice(0, 10);
       const e = String(r.end_date || '').slice(0, 10);
       return (!s || s <= d) && (!e || e >= d);
-    }).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    }).sort((a, b) => _cmpWorkShiftPriority(a, b, { byDefaultFirst: true }));
     if (inWindow.length) return inWindow[0];
     if (matching.length) {
       // Intentional gap between dated shift windows in this company -> fall back to company default shift on `d`
@@ -42793,6 +43188,62 @@
       }
     }
     return out;
+  }
+
+  // Automatic attendance backfills must advance modified_at strictly above any prior edit timestamp
+  // so other devices/tabs converge in mergeCustomRecords, WITHOUT setting modified_by (which signals human edit).
+  function stampAttendanceBackfillModified(row, stampIso) {
+    if (!row || typeof row !== 'object') return row;
+    _ATT_PRE_RENDER_HYDRATED.delete(row);
+    let st = stampIso || nextMonotonicIso();
+    const prevMs = Math.max(_stampMs(_recModTs(row)), _stampMs(_lastPreVoidEditTs(row)));
+    const stMs = Date.parse(st);
+    if (prevMs > 0 && (!Number.isFinite(stMs) || stMs <= prevMs)) {
+      let nextMs = prevMs + 1;
+      if (nextMs <= _lastRecordSkewMs) nextMs = _lastRecordSkewMs + 1;
+      _lastRecordSkewMs = nextMs;
+      st = new Date(nextMs).toISOString();
+    }
+    row.modified_at = st;
+    return row;
+  }
+
+  function isAttendanceProtectedFromShiftBackfill(a, customAttIds, fallbackCo, dateIso, opts = {}) {
+    if (!a || a.voided) return 'skip_kind';
+    const rawType = String(a.type || a.status || '').trim();
+    if (/^(config|extra|site\s*(?:present|off)|vacabsence|paid\s*leave|sick)/i.test(rawType)) return 'skip_kind';
+    const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+    const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+    if (!inT && !outT) return 'skip_kind';
+    const aId = String(a.id || '').trim();
+    if (!opts.skipSeedGuard && /^at_[0-9a-f]{12}$/i.test(aId) && !isAppRecord(a) && !a.origin && !a.shift_id && (!customAttIds || !customAttIds.has(aId))) {
+      return 'skip_kind';
+    }
+    const d = String(dateIso || a.set_date || a.rep_date || a.date || '').slice(0, 10);
+    const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
+      ? window.MFG_AI_EDGE.checkPeriodCloseGuard(a.company || fallbackCo || 'WTC', d, String(a.rep_date || d).slice(0, 10))
+      : null;
+    if (closeGuard && closeGuard.blocked) return 'skip_closed';
+    if (opts.presetOnly && a.modified_by) return 'hand_owned';
+    const isDoorTab = a.origin === 'door_tablet';
+    const isKioskCreated = /^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk';
+    const isCalloutRow = a.att_preset === 'callout'
+      || a.att_preset === 'noclock'
+      || (!isDoorTab && !isKioskCreated && a.att_preset !== 'regular' && !a.shift_id && (
+        Boolean(a.is_callout)
+        || (isAppRecord(a) && !a.origin && a.scheduled_hours != null && Number(a.scheduled_hours) === 0
+          && Number(a.overtime_hours || 0) > 0
+          && Math.abs(Number(a.worked_hours || 0) - Number(a.overtime_hours || 0)) <= 0.15)
+      ));
+    if (isCalloutRow || Boolean(a.manual_override)) return 'hand_owned';
+    const isModifiedManual = isDoorTab
+      ? isHandOwnedTabletRow(a)
+      : (Boolean(a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig));
+    if (isModifiedManual) return 'hand_owned';
+    if (a.manual_override == null && isAppRecord(a) && !a.origin && !isKioskCreated && !a.tab_sig && Number(a.overtime_hours || 0) > 0) {
+      return 'hand_owned';
+    }
+    return '';
   }
 
   function setBuDefaultShift(companyRaw, shiftIdOrCode, opts = {}) {
@@ -43058,14 +43509,14 @@
     const attRows = (SEED && SEED.records && SEED.records.attendance) || [];
     if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
     const customAttIds = new Set(STATE.customRecords.attendance.map(x => x && String(x.id || '').trim()).filter(Boolean));
+    const bfStamp = nextMonotonicIso();
     let attUpdated = 0;
     let handKept = 0;
     for (let i = 0; i < attRows.length; i++) {
       const a = attRows[i];
       if (!a || a.voided) continue;
-      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) continue;
-      // Door tablet row whose figures are still the ones the import wrote (see attendanceFigureSig).
       const importFigures = a.origin === 'door_tablet' && Boolean(a.tab_sig) && attendanceFigureSig(a) === a.tab_sig;
+      const hadTabSig = Boolean(a.tab_sig);
       const sk = norm(a.staff || '');
       const aCoNorm = norm(a.company || 'WTC');
       if (coNorm && aCoNorm && aCoNorm !== coNorm) continue;
@@ -43073,29 +43524,9 @@
       if (!associatedStaff.has(sk) && !matchesExplicitShift) continue;
       const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       if (!inBackfillWindow(d)) continue;
-      // SharePoint workbook seed rows stay untouched unless explicitly customized or given an explicit shift_id.
-      const aId = String(a.id || '').trim();
-      if (/^at_[0-9a-f]{12}$/i.test(aId) && !isAppRecord(a) && !a.origin && !a.shift_id && !customAttIds.has(aId)) {
-        continue;
-      }
-      const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
-        ? window.MFG_AI_EDGE.checkPeriodCloseGuard(a.company || co, d, String(a.rep_date || d).slice(0, 10))
-        : null;
-      if (closeGuard && closeGuard.blocked) continue;
-      // A preset never rewrites a row someone corrected by hand.
-      if (presetOnly && a.modified_by) {
-        handKept++;
-        continue;
-      }
-      const isDoorTab = a.origin === 'door_tablet';
-      const isKioskCreated = /^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk';
-      const isManualEdited = Boolean(a.manual_override) || (
-        isDoorTab
-          ? isHandOwnedTabletRow(a)
-          : (Boolean(a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
-      );
-      if (isManualEdited) {
-        handKept++;
+      const protReason = isAttendanceProtectedFromShiftBackfill(a, customAttIds, co, d, { presetOnly });
+      if (protReason) {
+        if (protReason === 'hand_owned') handKept++;
         continue;
       }
 
@@ -43163,11 +43594,18 @@
 
       if (rowChanged) {
         attUpdated++;
-        if (importFigures) a.tab_sig = attendanceFigureSig(a);   // re-worked by a rule change, not by a person
+        if (a.manual_override == null) a.manual_override = false;
+        stampAttendanceBackfillModified(a, bfStamp);
+        if (importFigures || hadTabSig) a.tab_sig = attendanceFigureSig(a);   // re-worked by a rule change, not by a person
+        const cleanAtt = stripAttRenderTransientFields(Object.assign({}, a));
         const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id) === String(a.id));
-        if (cIdx >= 0) Object.assign(STATE.customRecords.attendance[cIdx], a);
-        else STATE.customRecords.attendance.unshift(Object.assign({}, a));
-        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['attendance', a]);
+        if (cIdx >= 0) {
+          _ATT_PRE_RENDER_HYDRATED.delete(STATE.customRecords.attendance[cIdx]);
+          Object.assign(STATE.customRecords.attendance[cIdx], cleanAtt);
+          stripAttRenderTransientFields(STATE.customRecords.attendance[cIdx]);
+        }
+        else STATE.customRecords.attendance.unshift(cleanAtt);
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['attendance', cleanAtt]);
       }
     }
 
@@ -56612,7 +57050,7 @@
       else if (/^config\s*vac/i.test(attType)) displayType = 'Opening Vac.';
       else if (/^config/i.test(attType)) displayType = 'Opening Bal.';
 
-      let isCallout = false;
+      let isCallout = Boolean((a.is_callout || a.att_preset === 'callout') && otH > 0);
       let shiftBasisLbl = '—';
       if (/^site\s*present$/i.test(attType)) {
         shiftBasisLbl = 'Site Tally (On Site)';
@@ -56635,7 +57073,7 @@
           ? 'Paid Leave (0 Ded.)'
           : (/^sick/i.test(attType) ? 'Sick Leave (0 Ded.)' : 'Unpaid Leave');
       } else if (workedH > 0) {
-        if (otH > 0 && Math.abs(workedH - otH) <= 0.15) {
+        if (a.att_preset !== 'regular' && otH > 0 && Math.abs(workedH - otH) <= 0.15) {
           isCallout = true;
           shiftBasisLbl = wk.isSunday ? 'Sun Off (100% OT)' : 'Call-Out (100% OT)';
         } else if (a.shift_label) {
@@ -56669,25 +57107,33 @@
       const absDedRow = imp.absDedUsd;
       const impactUsd = imp.netImpactUsd;
 
-      a.type = attType;
-      a.status = attType;
+      if (!_ATT_PRE_RENDER_HYDRATED.has(a) || _ATT_PRE_RENDER_HYDRATED.get(a).modAt !== String(a.modified_at || '')) {
+        const snapVals = {};
+        for (let hi = 0; hi < _ATT_RENDER_HYDRATABLE_KEYS.length; hi++) {
+          const hk = _ATT_RENDER_HYDRATABLE_KEYS[hi];
+          snapVals['has_' + hk] = Object.prototype.hasOwnProperty.call(a, hk);
+          snapVals[hk] = a[hk];
+        }
+        _ATT_PRE_RENDER_HYDRATED.set(a, { modAt: String(a.modified_at || ''), vals: snapVals });
+      }
+      if (!a.type && attType) a.type = attType;
+      if (!a.status && attType) a.status = attType;
       a.display_type = displayType;
-      a.tally = tally;
-      a.in_time = inFmt;
-      a.out_time = outFmt;
+      if (inFmt && a.in_time !== inFmt) a.in_time = inFmt;
+      if (outFmt && a.out_time !== outFmt) a.out_time = outFmt;
       a.eff_date = effAttDate;
       a.tx_date = txAttDate;
       a.weekday = wk.short;
       a.is_sunday = wk.isSunday;
       a.is_overnight = isOvernight;
-      a.is_callout = isCallout;
+      a._render_is_callout = isCallout;
       a.shift_basis_lbl = shiftBasisLbl;
-      a.worked_hours = workedH;
-      a.regular_hours = regH;
-      a.overtime_hours = otH;
-      a.late_hours = ltH;
-      a.leave_days = lvD;
-      a.extra_usd = extUsd;
+      if (!(a.worked_hours > 0) && workedH > 0) a.worked_hours = workedH;
+      if (a.regular_hours == null || Math.abs(Number(a.regular_hours || 0) - regH) > 1e-4) a.regular_hours = regH;
+      if (otH > 0 || 'overtime_hours' in a) a.overtime_hours = otH;
+      if (ltH > 0 || 'late_hours' in a) a.late_hours = ltH;
+      if (lvD > 0 || Number(a.leave_days || 0) > 0) a.leave_days = lvD;
+      if (extUsd > 0 || Number(a.extra_usd || 0) > 0) a.extra_usd = extUsd;
       a.ot_pay_usd = otPayRow;
       a.late_ded_usd = lateDedRow;
       a.abs_ded_usd = absDedRow;
@@ -56928,7 +57374,7 @@
         const a = attAll[i];
         const tp = String(a.type || '');
         if (Number(a.overtime_hours || 0) > 0) otAttCount++;
-        if (a.is_callout) calloutAttCount++;
+        if (a._render_is_callout != null ? a._render_is_callout : a.is_callout) calloutAttCount++;
         if (Number(a.late_hours || 0) > 0 || Number(a.raw_late_hours || 0) > 0 || Number(a.raw_late_min || 0) > 0) lateAttCount++;
         if (/^config/i.test(tp)) configAttCount++;
         else if (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(tp)) absentAttCount++;
@@ -56939,7 +57385,7 @@
     const filteredAttBase = subMode === 'attendance'
       ? (STATE.chipFilter === 'all' ? attAll : attAll.filter(a => {
           if (STATE.chipFilter === 'ot_att') return Number(a.overtime_hours || 0) > 0;
-          if (STATE.chipFilter === 'callout_att') return Boolean(a.is_callout);
+          if (STATE.chipFilter === 'callout_att') return Boolean(a._render_is_callout != null ? a._render_is_callout : a.is_callout);
           if (STATE.chipFilter === 'late_att') return Number(a.late_hours || 0) > 0 || Number(a.raw_late_hours || 0) > 0 || Number(a.raw_late_min || 0) > 0;
           if (STATE.chipFilter === 'absent_att') return !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(String(a.type || '')));
           if (STATE.chipFilter === 'extra_att') return /^extra/i.test(String(a.type || ''));
@@ -57416,7 +57862,7 @@
                     && !(Number(a.leave_days || 0) > 0)
                     && !/^(?:Half\s*Day|Absence|Absent|VacAbsence|Paid\s*Leave|Sick|Extra|Config|Site\s*(?:Present|Off))/i.test(tp);
                   const basisInner = a.shift_basis_lbl && a.shift_basis_lbl !== '—'
-                    ? `<span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl)}</span>${showPerMinBasisTag ? ' <span class="att-math-pill">$/min</span>' : ''}`
+                    ? `<span class="att-basis-pill${(a._render_is_callout != null ? a._render_is_callout : a.is_callout) ? ' is-callout' : ''}">${esc(a.shift_basis_lbl)}</span>${showPerMinBasisTag ? ' <span class="att-math-pill">$/min</span>' : ''}`
                     : '<span class="mu">—</span>';
                   const otAuditHtml = renderRuleAuditPillsHtml(a, { kind: 'ot', inline: true });
                   const lateAuditHtml = renderRuleAuditPillsHtml(a, { kind: 'late', inline: true });
@@ -125353,13 +125799,18 @@
         });
         // Visible workday cells count only while "Different Timing" is Yes; a hidden day-off cell always carries
         // its stored hours (never deleted as a side effect of a save).
+        const effEndForDay = isSplit ? splitE2 : outT;
         const dayMap = {};
         ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
           if (!satDiff && wsWorkdays.includes(Number(dIdx))) return;
           const dIn = fmtAttClockTime(val(`f_day_in_${dIdx}`)) || '';
           const dOut = fmtAttClockTime(val(`f_day_out_${dIdx}`)) || '';
+          const dGrIn = parseOptionalGraceMin(val(`f_day_grace_${dIdx}`));
+          const dGrOut = parseOptionalGraceMin(val(`f_day_early_grace_${dIdx}`));
           if (dIn && dOut) {
-            dayMap[dIdx] = { start_time: dIn, end_time: dOut, hours: computeShiftWorkedHours(dIn, dOut) || 7.0 };
+            dayMap[dIdx] = makeDayTimingEntry(dIn, dOut, dGrIn, dGrOut);
+          } else if (!dIn && !dOut && (dGrIn != null || dGrOut != null)) {
+            dayMap[dIdx] = makeDayTimingEntry('', '', dGrIn, dGrOut);
           }
         });
         const dateList = satDiff ? normalizeDateTimingsList(val('f_date_timings_json') || '[]') : [];
@@ -125835,9 +126286,11 @@
           FORM_UI.lastAttDate = attDate;
           if (preset !== 'noclock') {
             if (wk.isSunday) {
+              if (FORM_UI.attPreset !== 'callout') FORM_UI.attPresetAutoSunday = true;
               FORM_UI.attPreset = 'callout';
-            } else if (FORM_UI.attPreset === 'callout') {
+            } else if (FORM_UI.attPreset === 'callout' && FORM_UI.attPresetAutoSunday) {
               FORM_UI.attPreset = 'regular';
+              FORM_UI.attPresetAutoSunday = false;
             }
           }
         }
@@ -125919,11 +126372,13 @@
           const autoLate = timingEval
             ? Number(timingEval.lateHours ?? timingEval.late_hours ?? 0)
             : (isPerMinAuto ? (Math.round(Math.max(0, sched - worked) * 10000) / 10000) : (Math.round(Math.max(0, sched - worked) * 10) / 10));
-          if ($('f_hours') && document.activeElement !== $('f_hours')) {
-            $('f_hours').value = String(autoOt);
-          }
-          if ($('f_late_hours') && document.activeElement !== $('f_late_hours')) {
-            $('f_late_hours').value = String(autoLate);
+          if (!FORM_UI.attManualHoursLocked) {
+            if ($('f_hours') && document.activeElement !== $('f_hours')) {
+              $('f_hours').value = String(autoOt);
+            }
+            if ($('f_late_hours') && document.activeElement !== $('f_late_hours')) {
+              $('f_late_hours').value = String(autoLate);
+            }
           }
         }
 
@@ -129752,6 +130207,7 @@
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
     FORM_UI.attPreset = 'regular'; FORM_UI.attClockManual = false;
+    FORM_UI.attPresetAutoSunday = false; FORM_UI.attManualHoursLocked = false;
     FORM_UI.lastAttStaff = ''; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
     FORM_UI.lastEmpRole = ''; FORM_UI.lastStaffRoleName = '';
     FORM_UI.lastSalStaffMonthKey = '';
@@ -130839,6 +131295,8 @@
         if (btn.hasAttribute('data-att-preset')) {
           const p = btn.getAttribute('data-att-preset') || 'regular';
           FORM_UI.attPreset = p;
+          FORM_UI.attPresetAutoSunday = false;
+          FORM_UI.attManualHoursLocked = false;
           FORM_UI.lastAttTimeKey = '';
           const curSt = val('f_staff');
           const curCo = val('f_company') || defaultEntryCompany();
@@ -130878,7 +131336,14 @@
     });
     ['f_in', 'f_out'].forEach(fid => {
       const clkEl = $(fid);
-      if (clkEl) clkEl.addEventListener('input', () => { FORM_UI.attClockManual = true; });
+      if (clkEl) {
+        const markClkManual = () => {
+          FORM_UI.attClockManual = true;
+          if (!FORM_UI.hydrating) FORM_UI.attManualHoursLocked = false;
+        };
+        clkEl.addEventListener('input', markClkManual);
+        clkEl.addEventListener('change', markClkManual);
+      }
     });
 
     const addSupDrvBtn = $('btnAddSupDriver');
@@ -131976,7 +132441,7 @@
         }
         if (el.id === 'f_time') FORM_UI.otManual = false;
         if (el.id === 'f_overtime') FORM_UI.otManual = true;
-        if (el.id === 'f_staff' && !FORM_UI.hydrating) { FORM_UI.attClockManual = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
+        if (el.id === 'f_staff' && !FORM_UI.hydrating) { FORM_UI.attClockManual = false; FORM_UI.attManualHoursLocked = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
         if (el.id === 'f_workdays' || el.id === 'f_workhours' || el.id === 'f_vacdays' || el.id === 'f_role_cat') { el.dataset.userEdited = '1'; }
         if (el.id === 'f_paytype' && STATE.modalForm === 'employment' && $('f_vacdays') && $('f_vacdays').dataset.userEdited !== '1') {
           $('f_vacdays').value = '0';
@@ -134827,15 +135292,15 @@
       const outT = fmtAttClockTime(val('f_out_time') || (isSplit ? '15:00' : '16:00')) || (isSplit ? '15:00' : '16:00');
       const splitS2 = fmtAttClockTime(val('f_split_s2') || '19:00') || '19:00';
       const splitE2 = fmtAttClockTime(val('f_split_e2') || '23:00') || '23:00';
-      const graceMin = Math.max(0, Math.min(180, Number(val('f_grace_min') || 10)));
-      const earlyGraceMin = Math.max(0, Math.min(180, Number(val('f_early_grace_min') || graceMin)));
+      const graceMin = parseRequiredGraceMin(val('f_grace_min'), 10, 180);
+      const earlyGraceMin = parseRequiredGraceMin(val('f_early_grace_min'), graceMin, 180);
       const workdaysRaw = val('f_working_days') || 'Mon,Tue,Wed,Thu,Fri,Sat';
       const daysArr = parseWorkdaysArrayFromLabel(workdaysRaw, [1, 2, 3, 4, 5, 6]);
       const satDiff = val('f_sat_diff') === 'Yes';
       const rawDayJson = val('f_day_timings_json') || '{}';
       // f_day_timings_json already holds only what may be saved (visible days gated by "Different Timing",
       // hidden day-off cells always), so it is read whatever satDiff says.
-      const dayTimings = normalizeDayTimingsMap(rawDayJson);
+      const dayTimings = normalizeDayTimingsMap(rawDayJson, false, '', '', inT, isSplit ? splitE2 : outT);
       let dateTimings = satDiff ? normalizeDateTimingsList(val('f_date_timings_json') || '[]') : [];
       if (satDiff) {
         const pendingFd = String(val('ws_dt_from') || '').slice(0, 10);
@@ -134860,6 +135325,16 @@
       if (!shName) addErr('f_shift_name', 'Shift Name is required.');
       if (!inT) addErr('f_in_time', 'Regular Start Time is required.');
       if (!outT) addErr('f_out_time', 'Regular End Time is required.');
+      if (satDiff) {
+        for (const dIdx of ['1', '2', '3', '4', '5', '6', '0']) {
+          const dIn = fmtAttClockTime(val(`f_day_in_${dIdx}`));
+          const dOut = fmtAttClockTime(val(`f_day_out_${dIdx}`));
+          if (Boolean(dIn) !== Boolean(dOut)) {
+            addErr(dIn ? `f_day_out_${dIdx}` : `f_day_in_${dIdx}`, 'Enter both Start and End time, or leave both blank for grace-only');
+            break;
+          }
+        }
+      }
       if (endDate && endDate < date) addErr('f_enddate', 'Effective End Date cannot be before Effective Start Date.');
       const editOrigWs = (STATE.editingRecord && STATE.editingRecord.crKey === 'work_shifts') ? STATE.editingRecord.orig : null;
       const shCode = (editOrigWs && editOrigWs.shift_code)
@@ -135148,6 +135623,10 @@
           late_hours: 0,
           leave_days: lvDays,
           pay_treatment: lvPay,
+          shift_id: '',
+          shift_label: '',
+          is_callout: false,
+          att_preset: 'leave',
           extra_usd: 0,
           tally: lvDays
         };
@@ -135206,6 +135685,8 @@
           check_out: outFmt,
           shift_id: staffShiftSave ? staffShiftSave.id : '',
           shift_label: staffShiftSave ? staffShiftSave.badgeLabel : '',
+          att_preset: isNoClock ? 'noclock' : (isCallout ? 'callout' : 'regular'),
+          is_callout: Boolean(isCallout),
           scheduled_hours: schedH,
           worked_hours: workedH,
           regular_hours: regH,
@@ -135230,7 +135711,7 @@
           policy_ot_mult: Number(polRuleSave.ot_multiplier || 1.5),
           policy_late_mult: effPolLateMultSave,
           late_mult_baked: matchesLtSave,
-          manual_override: !isNoClock && !isCallout && Boolean(timingSave) && !matchesTimingSave,
+          manual_override: Boolean(isNoClock || isCallout || (timingSave && !matchesTimingSave)),
           leave_days: 0,
           extra_usd: 0,
           tally: tallyVal
@@ -136157,7 +136638,8 @@
       if (orig.entered_by_email) record.entered_by_email = orig.entered_by_email;
       if (orig.entered_at) record.entered_at = orig.entered_at;
       record.modified_by = who.email;
-      record.modified_at = new Date().toISOString();
+      record.modified_at = nextMonotonicIsoForRecord(orig, record);
+      if (crKey === 'attendance') _ATT_PRE_RENDER_HYDRATED.delete(record);
       if (f === 'receipt' || f === 'settlement') {
         delete record.usd_amount;
         delete record.lbp_amount;
@@ -145202,7 +145684,9 @@
         const outClock = String(row.out_time || row.check_out || '').trim();
         const hasClocks = Boolean(inClock && outClock);
         const schedHrs = Number(row.scheduled_hours != null ? row.scheduled_hours : 8);
-        FORM_UI.attPreset = !hasClocks ? 'noclock' : (schedHrs === 0 ? 'callout' : 'regular');
+        FORM_UI.attPreset = !hasClocks ? 'noclock' : ((row.att_preset === 'callout' || row.is_callout || schedHrs === 0) ? 'callout' : 'regular');
+        FORM_UI.attPresetAutoSunday = false;
+        FORM_UI.attManualHoursLocked = Boolean(row.manual_override || row.is_callout || row.att_preset === 'callout');
         FORM_UI.attClockManual = true;
         if (hasClocks) {
           setModalControlVal('f_in', inClock);
@@ -145565,7 +146049,7 @@
         }
         setModalControlVal('f_working_days', rowDaysLbl);
       }
-      const dtMap = normalizeDayTimingsMap(row.day_timings, row.sat_diff_enabled, row.sat_start_time, row.sat_end_time);
+      const dtMap = normalizeDayTimingsMap(row.day_timings, row.sat_diff_enabled, row.sat_start_time, row.sat_end_time, row.start_time, row.end_time);
       const dtDates = normalizeDateTimingsList(row.date_timings);
       // "Different Timing" opens on Yes only for what the form shows (workday hours or dates); hours of a day
       // the row does not work sit in hidden cells and are saved either way.
@@ -145573,8 +146057,10 @@
       setModalControlVal('f_sat_diff', hasAnyDayDiff ? 'Yes' : 'No');
       ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
         const dSpec = dtMap[dIdx];
-        if ($(`f_day_in_${dIdx}`)) $(`f_day_in_${dIdx}`).value = $(`f_day_in_${dIdx}`).dataset.wsLoaded = dSpec ? dSpec.start_time : '';
-        if ($(`f_day_out_${dIdx}`)) $(`f_day_out_${dIdx}`).value = $(`f_day_out_${dIdx}`).dataset.wsLoaded = dSpec ? dSpec.end_time : '';
+        if ($(`f_day_in_${dIdx}`)) $(`f_day_in_${dIdx}`).value = $(`f_day_in_${dIdx}`).dataset.wsLoaded = (dSpec && dSpec.start_time) ? dSpec.start_time : '';
+        if ($(`f_day_out_${dIdx}`)) $(`f_day_out_${dIdx}`).value = $(`f_day_out_${dIdx}`).dataset.wsLoaded = (dSpec && dSpec.end_time) ? dSpec.end_time : '';
+        if ($(`f_day_grace_${dIdx}`)) $(`f_day_grace_${dIdx}`).value = $(`f_day_grace_${dIdx}`).dataset.wsLoaded = (dSpec && dSpec.grace_min != null) ? String(dSpec.grace_min) : '';
+        if ($(`f_day_early_grace_${dIdx}`)) $(`f_day_early_grace_${dIdx}`).value = $(`f_day_early_grace_${dIdx}`).dataset.wsLoaded = (dSpec && dSpec.early_leave_grace_min != null) ? String(dSpec.early_leave_grace_min) : '';
       });
       if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dtMap);
       if ($('f_date_timings_json')) $('f_date_timings_json').value = JSON.stringify(dtDates);
@@ -149210,12 +149696,14 @@
     if (key === 'work_shifts') {
       hydrateWorkShiftRowComputed(row);
       const ended = Boolean(row.end_date && String(row.end_date).slice(0, 10) < todayISO());
+      const inspIn = parseRequiredGraceMin(row.grace_min, 10, 180);
+      const inspOut = parseRequiredGraceMin(row.early_leave_grace_min, inspIn, 180);
       return {
         bu: row.company || 'WTC',
         title: `${row.name || 'Shift'} (${row.start_time}-${row.end_time})`,
         pill: row.is_bu_default ? `BU DEFAULT · ${row.company || 'WTC'}` : (ended ? 'HISTORICAL WINDOW' : 'ACTIVE SHIFT'),
         cards: [
-          { lbl: 'REGULAR CLOCK WINDOW', tag: row.is_bu_default ? 'BU DEFAULT' : 'SHIFT TIMING', tone: 'good', val: `${row.start_time} - ${row.end_time}`, sub1: `${fmtNum(row.hours || 8, 1)}h · Workdays: ${row.workdays_label || 'Mon-Sat'}`, sub2: `IN Tol: ${row.grace_min || 10}m · OUT Tol: ${row.early_leave_grace_min || 10}m`, pct: 95 },
+          { lbl: 'REGULAR CLOCK WINDOW', tag: row.is_bu_default ? 'BU DEFAULT' : 'SHIFT TIMING', tone: 'good', val: `${row.start_time} - ${row.end_time}`, sub1: `${fmtNum(row.hours || 8, 1)}h · Workdays: ${row.workdays_label || 'Mon-Sat'}`, sub2: `IN Tol: ${inspIn}m · OUT Tol: ${inspOut}m`, pct: 95 },
           { lbl: 'TIMING EXCEPTIONS', tag: row.has_day_timings ? 'CUSTOM TIMING' : 'UNIFORM', tone: row.has_day_timings ? 'info' : 'good', val: row.day_schedule_summary || 'Same Every Workday', sub1: row.has_day_timings ? 'Weekday / Date Overrides Active' : 'Same timing on all workdays', sub2: `Entity: ${row.company || 'WTC'}`, pct: 90 },
           { lbl: 'ASSOCIATED STAFF & BACKFILL', tag: `${fmtNum(row.associated_staff_count || 0)} STAFF`, tone: 'info', val: `${fmtNum(row.associated_staff_count || 0)} Staff`, sub1: row.is_bu_default ? `Default for all ${row.company || 'WTC'} staff` : 'Assigned to this shift', sub2: 'Changes backfill from Effective Date', pct: 88 },
           { lbl: 'EFFECTIVE WINDOW', tag: ended ? 'HISTORICAL' : 'OPEN', tone: ended ? 'warn' : 'good', val: fmtDateDMY(row.start_date), sub1: `Start: ${fmtDateDMY(row.start_date)}`, sub2: `End: ${row.end_date ? fmtDateDMY(row.end_date) : 'Open (Active)'}`, pct: ended ? 60 : 100 }
@@ -155137,7 +155625,7 @@
         row.renewal_receipt_no = rcptVal;
         row.renewal_submitted_date = nextMode === 'submitted' ? (rawDate || todayISO()) : '';
         row.modified_by = (activeUser() && activeUser().email) || '';
-        row.modified_at = nextMonotonicIso();
+        row.modified_at = nextMonotonicIsoForRecord(row);
         if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
         const crIdx = STATE.customRecords[key].findIndex(x => x && String(x.id) === String(row.id));
         if (crIdx >= 0) Object.assign(STATE.customRecords[key][crIdx], row);
@@ -157364,7 +157852,7 @@
           }
         }
         row.modified_by = activeUser().email;
-        row.modified_at = nextMonotonicIso();
+        row.modified_at = nextMonotonicIsoForRecord(origRowSnap, row);
         const inspSiteCascadePosts = Array.isArray(row._inspSiteCascadePosts) ? row._inspSiteCascadePosts : [];
         delete row._inspSiteCascadePosts;
         if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
@@ -158108,7 +158596,8 @@
         if (!Array.isArray(arr)) { cleanCustomRecs[tbl] = arr; return; }
         let arrChanged = false;
         const nextArr = arr.map(rec => {
-          const clean = _stripTurnaroundInternals(rec);
+          const stripped = _stripTurnaroundInternals(rec);
+          const clean = tbl === 'attendance' ? _cleanAttRowForStorageOrCloud(stripped, rec) : stripped;
           if (clean !== rec) arrChanged = true;
           return clean;
         });
@@ -159175,7 +159664,19 @@
 
   function _recModTs(r) {
     if (!r || typeof r !== 'object') return '';
-    return String(r.modified_at || r.updated_at || r.price_entered_at || r.salary_entered_at || r.restored_at || '');
+    let best = '';
+    let bestMs = -1;
+    const keys = ['modified_at', 'updated_at', 'updatedAt', 'price_entered_at', 'salary_entered_at', 'restored_at'];
+    for (let i = 0; i < keys.length; i++) {
+      const s = String(r[keys[i]] || '').trim();
+      if (!s) continue;
+      const ms = _stampMs(s);
+      if (!best || ms > bestMs || (ms === bestMs && s > best)) {
+        best = s;
+        bestMs = ms;
+      }
+    }
+    return best;
   }
 
   // Union-merge another device's app entries into ours. A void tombstone always wins.
@@ -159251,7 +159752,12 @@
           }
         }
         if ('_pinCleared' in r) r._pinCleared = r._pinCleared === true || r._pinCleared === 1 || (typeof r._pinCleared === 'string' && /^(?:1|true|yes)$/i.test(r._pinCleared.trim()));
-        if (!cur) { mine.push(r); byId.set(r.id, r); changed = true; }
+        if (!cur) {
+          if (k === 'attendance') stripAttRenderTransientFields(r);
+          mine.push(r);
+          byId.set(r.id, r);
+          changed = true;
+        }
         else if (r.voided && !cur.voided) {
           const curRestTs = String(cur.restored_at || '');
           const inVoidTs = String(r.voided_at || '');
@@ -159267,7 +159773,11 @@
         }
         else if (!r.voided && cur.voided && r.restored_at && (!cur.voided_at || _stampMs(r.restored_at) > _stampMs(cur.voided_at))) {
           const preMergeCur = Object.assign({}, cur);
-          if (r.origin === 'door_tablet') Object.assign(cur, r);   // its figures were re-worked from the punches; take them with it
+          if (k === 'attendance') _ATT_PRE_RENDER_HYDRATED.delete(cur);
+          if (r.origin === 'door_tablet') {
+            if (k === 'attendance') _syncAssignAttendanceRecord(cur, r);
+            else Object.assign(cur, r);   // its figures were re-worked from the punches; take them with it
+          }
           cur.voided = false;
           cur.restored_at = r.restored_at;
           if (r.modified_at) cur.modified_at = r.modified_at;
@@ -159279,16 +159789,23 @@
         else if (!cur.voided && !r.voided) {
           const rModTs = _recModTs(r);
           const curModTs = _recModTs(cur);
+          const rModMs = _stampMs(rModTs);
+          const curModMs = _stampMs(curModTs);
+          const rNewerMod = Boolean(rModTs && (!curModTs || (rModMs && curModMs ? (rModMs > curModMs || (rModMs === curModMs && rModTs > curModTs)) : rModTs > curModTs)));
+          const rEdMs = _stampMs(_lastPreVoidEditTs(r));
+          const curEdMs = _stampMs(_lastPreVoidEditTs(cur));
+          const sameModNewerServerEdit = Boolean(rModTs && (rModTs === curModTs || (rModMs > 0 && rModMs === curModMs)) && rEdMs > curEdMs);
           const completedPending = (cur.price_pending && !r.price_pending && Number(r.amount ?? r.total ?? 0) > 0)
             || (cur.salary_pending && !r.salary_pending && Number(r.amount || 0) > 0)
             || (!cur.out_time && Boolean(r.out_time))
             || (Array.isArray(r.adj_windows) && (!Array.isArray(cur.adj_windows) || r.adj_windows.length > cur.adj_windows.length));
-          if ((rModTs && (!curModTs || rModTs > curModTs)) || (!curModTs && completedPending)) {
+          if (rNewerMod || sameModNewerServerEdit || (!curModTs && completedPending)) {
             _preserveClosedEffectiveDates(cur, r);
             if (k === 'equipment') _syncReopenedAdjWindows(cur.adj_windows, r.adj_windows);
             const preMergeCur = Object.assign({}, cur);
             const prevSeedOrig = cur._seed_orig;
-            Object.assign(cur, r);
+            if (k === 'attendance') _syncAssignAttendanceRecord(cur, r);
+            else Object.assign(cur, r);
             if (prevSeedOrig && !cur._seed_orig) cur._seed_orig = prevSeedOrig;
             _mergePreVoidAuditMeta(cur, preMergeCur, r);
             if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
@@ -159344,6 +159861,7 @@
         }
       }
     });
+    if (Array.isArray(STATE.customRecords.attendance) && healBackfillDamagedAttendanceRows(STATE.customRecords.attendance) > 0) changed = true;
     if (sanitizeUniversalCustomRecords()) changed = true;
     return changed;
   }
@@ -159578,7 +160096,8 @@
             if (k === 'equipment') _syncReopenedAdjWindows(existingById.adj_windows, r.adj_windows);
           }
           _preserveClosedEffectiveDates(existingById, r);
-          Object.assign(existingById, r);
+          if (k === 'attendance') _syncAssignAttendanceRecord(existingById, r);
+          else Object.assign(existingById, r);
           if (!r.admin_overrides && existingById.admin_overrides) delete existingById.admin_overrides;
           touched = true;
           return;
@@ -160176,10 +160695,46 @@
     }
     return true;
   }
+  function _cleanAttRowForStorageOrCloud(base, origRef) {
+    if (!base || typeof base !== 'object' || base.voided) return base;
+    let hasTransient = false;
+    for (let i = 0; i < ATT_RENDER_TRANSIENT_KEYS.length; i++) {
+      if (ATT_RENDER_TRANSIENT_KEYS[i] in base) { hasTransient = true; break; }
+    }
+    const src = (origRef && typeof origRef === 'object') ? origRef : base;
+    const preHyd = _ATT_PRE_RENDER_HYDRATED.get(src);
+    const restorePreHyd = Boolean(preHyd && String(base.modified_at || '') === preHyd.modAt);
+    const clearRenderCallout = Boolean(
+      base.is_callout !== undefined
+      && (
+        base.att_preset === 'regular'
+        || ((base.origin === 'door_tablet' || base.origin === 'wall_kiosk') && base.att_preset !== 'callout' && !base.manual_override)
+        || (!base.att_preset && !base.manual_override && base.is_callout === true && Number(base.scheduled_hours || 0) > 0 && !(base._pre_void_orig && base._pre_void_orig.is_callout === true))
+      )
+    );
+    if (hasTransient || clearRenderCallout || restorePreHyd) {
+      base = stripAttRenderTransientFields(Object.assign({}, base));
+      if (clearRenderCallout) delete base.is_callout;
+      if (restorePreHyd) {
+        for (let hi = 0; hi < _ATT_RENDER_HYDRATABLE_KEYS.length; hi++) {
+          const hk = _ATT_RENDER_HYDRATABLE_KEYS[hi];
+          if (preHyd.vals['has_' + hk]) base[hk] = preHyd.vals[hk];
+          else delete base[hk];
+        }
+      }
+    }
+    return base;
+  }
+
+  function _cleanCustomRecordForCloud(tableKey, r) {
+    const base = _slimRecordForCloud(r);
+    return tableKey === 'attendance' ? _cleanAttRowForStorageOrCloud(base, r) : base;
+  }
+
   function sliceCustomRecordsForCloud(tableKey, arr, cap = CLOUD_CUSTOM_ROW_CAP) {
     const list = Array.isArray(arr) ? arr : [];
     if (list.length <= cap) {
-      return { rows: list.map(_slimRecordForCloud), truncated: false };
+      return { rows: list.map(r => _cleanCustomRecordForCloud(tableKey, r)), truncated: false };
     }
     let mustKeepCount = 0;
     const droppable = [];
@@ -160193,7 +160748,7 @@
     }
     const keepDropQuota = Math.max(0, cap - mustKeepCount);
     if (droppable.length <= keepDropQuota) {
-      return { rows: list.map(_slimRecordForCloud), truncated: false };
+      return { rows: list.map(r => _cleanCustomRecordForCloud(tableKey, r)), truncated: false };
     }
     const keptDropIdx = new Set();
     if (keepDropQuota > 0) {
@@ -160207,7 +160762,7 @@
     for (let i = 0; i < list.length; i++) {
       const r = list[i];
       if (!isDroppableSysTopupStub(tableKey, r) || keptDropIdx.has(i)) {
-        out.push(_slimRecordForCloud(r));
+        out.push(_cleanCustomRecordForCloud(tableKey, r));
       }
     }
     return { rows: out, truncated: true };
@@ -160592,7 +161147,7 @@
         if (k === 'attendance' && isShiftBackfillBloatedSeedAttRow(r)) continue;
         const rid = String(r.id).trim();
         if (!rid) continue;
-        try { m.set(rid, { json: _deltaCmpJson(_slimRecordForCloud(r)), row: r }); } catch (_) {}
+        try { m.set(rid, { json: _deltaCmpJson(_cleanCustomRecordForCloud(k, r)), row: r }); } catch (_) {}
       }
       cr[k] = m;
     });
@@ -160702,7 +161257,31 @@
         }
         let curJson = '';
         try { curJson = _deltaCmpJson(r); } catch (_) {}
-        if (curJson !== baseEntry.json) modRows.push(r);
+        if (curJson === baseEntry.json) continue;
+        if (baseEntry.row && !r.voided && !baseEntry.row.voided) {
+          if (k === 'attendance' || k === 'work_shifts') {
+            const myModTs = _recModTs(r);
+            const baseModTs = _recModTs(baseEntry.row);
+            const myModMs = _stampMs(myModTs);
+            const baseModMs = _stampMs(baseModTs);
+            const myEdMs = _stampMs(_lastPreVoidEditTs(r));
+            const baseEdMs = _stampMs(_lastPreVoidEditTs(baseEntry.row));
+            if ((baseModMs > 0 && (myModMs === 0 || myModMs < baseModMs))
+              || (baseModTs && (myModTs === baseModTs || (myModMs > 0 && myModMs === baseModMs)) && baseEdMs > myEdMs)) {
+              continue;
+            }
+          }
+          if (k === 'attendance') {
+            let onlyTransient = true;
+            const kSet = new Set([...Object.keys(r), ...Object.keys(baseEntry.row)]);
+            for (const fld of kSet) {
+              if (ATT_RENDER_TRANSIENT_KEY_SET.has(fld) || fld === '_pre_void_orig' || fld === '_pre_void_edits') continue;
+              if (JSON.stringify(r[fld]) !== JSON.stringify(baseEntry.row[fld])) { onlyTransient = false; break; }
+            }
+            if (onlyTransient) continue;
+          }
+        }
+        modRows.push(r);
       }
       if (modRows.length) changedCr[k] = modRows;
       const dels = [];
@@ -178607,10 +179186,10 @@
       out.ot_count_from = normalizeOtCountFrom(raw.ot_count_from);
     }
     if (raw.grace_min != null && raw.grace_min !== '' && Number.isFinite(Number(raw.grace_min))) {
-      out.grace_min = Math.max(0, Math.min(120, Math.round(Number(raw.grace_min))));
+      out.grace_min = Math.max(0, Math.min(180, Math.round(Number(raw.grace_min))));
     }
     if (raw.early_leave_grace_min != null && raw.early_leave_grace_min !== '' && Number.isFinite(Number(raw.early_leave_grace_min))) {
-      out.early_leave_grace_min = Math.max(0, Math.min(120, Math.round(Number(raw.early_leave_grace_min))));
+      out.early_leave_grace_min = Math.max(0, Math.min(180, Math.round(Number(raw.early_leave_grace_min))));
     }
     if (raw.late_when && ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(raw.late_when)) {
       out.late_when = raw.late_when;
@@ -179037,7 +179616,8 @@
       const expectedDefShift = normalizeShiftCodeAlias(companyDefaultShiftIdFor(s.name, co) || coDefShiftId);
       const hasShiftIdDiff = Boolean(rawShiftNorm && (rawShiftNorm === 'custom' || rawShiftNorm !== expectedDefShift));
       const hasShiftOvDates = Array.isArray(raw.shift_overrides) && raw.shift_overrides.length > 0;
-      const hasCustomTimings = Boolean((Array.isArray(raw.date_timings) && raw.date_timings.length) || (Array.isArray(raw.day_timings) && raw.day_timings.length));
+      const hasCustomDayTimings = Boolean(raw.use_custom_day_timings && raw.day_timings && typeof raw.day_timings === 'object' && !Array.isArray(raw.day_timings) && Object.keys(raw.day_timings).length > 0);
+      const hasCustomTimings = Boolean((Array.isArray(raw.date_timings) && raw.date_timings.length) || hasCustomDayTimings);
       const shiftDiff = hasShiftIdDiff || hasShiftOvDates || hasCustomTimings;
 
       const notInheritingFlag = raw.follows_company_default === false;
@@ -179516,7 +180096,7 @@
                 </div>
                 <div class="att-co-def-tile-meta">
                   <span class="att-meta-pill">${esc(formatWorkdaysCompact(curShiftDays))}</span>
-                  <span class="att-meta-pill">${fmtNum((curShiftObj && curShiftObj.grace_min) != null ? curShiftObj.grace_min : 10, 0)}m grace</span>
+                  <span class="att-meta-pill">${esc(formatShiftGracePill(curShiftObj && curShiftObj.grace_min, curShiftObj && curShiftObj.early_leave_grace_min))}</span>
                   ${hasShiftExc ? `<span class="att-meta-pill is-exc">${esc(curShiftExc)}</span>` : ''}
                   ${!isLocked ? '<span class="att-card-act-spacer is-co-def" aria-hidden="true"></span>' : ''}
                 </div>
@@ -179605,8 +180185,8 @@
     const sickDays = finiteClamp(base.sick_days, 7, 0, 60, true);
     const workDaysNum = Number(base.working_days);
     const workDays = [26, 30].includes(workDaysNum) ? workDaysNum : 30;
-    const graceM = finiteClamp(base.grace_min, 10, 0, 120, true);
-    const earlyGraceM = finiteClamp(base.early_leave_grace_min, graceM, 0, 120, true);
+    const graceM = finiteClamp(base.grace_min, 10, 0, 180, true);
+    const earlyGraceM = finiteClamp(base.early_leave_grace_min, graceM, 0, 180, true);
     const noOutRule = ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(base.no_clock_out_rule)
       ? base.no_clock_out_rule
       : 'half_day';
@@ -179742,6 +180322,7 @@
       copyKeys.forEach(k => {
         if (win[k] !== undefined && win[k] !== null && win[k] !== '') merged[k] = win[k];
       });
+      if (win.grace_min != null && win.early_leave_grace_min == null) merged.early_leave_grace_min = win.grace_min;
       merged.ot_snap_mode = normalizeOtSnapMode(merged.ot_snap_mode);
       merged.ot_block_min = normalizeOtBlockMin(merged.ot_block_min);
       merged.ot_snap_at_min = clampOtSnapAtMin(merged.ot_snap_at_min, merged.ot_block_min);
@@ -179802,6 +180383,8 @@
       if (win.ot_multiplier != null) out.ot_multiplier = Number(win.ot_multiplier);
       if (win.ot_mode) out.ot_mode = win.ot_mode;
       if (win.grace_min != null) out.grace_min = Number(win.grace_min);
+      if (win.early_leave_grace_min != null) out.early_leave_grace_min = Number(win.early_leave_grace_min);
+      else if (win.grace_min != null) out.early_leave_grace_min = Number(win.grace_min);
     } else if (coDef && (!Array.isArray(coDef.policy_timeline) || coDef.policy_timeline.length === 0) && (!grp.activeVersion || hasExplicitCoOverride)) {
       if (coDef.math_mode) out.math_mode = normalizeAttMathMode(coDef.math_mode);
       if (coDef.ot_threshold_min != null) out.ot_threshold_min = clampAttThresholdMin(coDef.ot_threshold_min, out.ot_threshold_min);
@@ -181394,25 +181977,16 @@
       const outT = fmtAttClockTime(a.out_time || a.check_out || '');
       if (!inT && !outT) continue;
 
-      const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
-        ? window.MFG_AI_EDGE.checkPeriodCloseGuard(a.company || company, effD, String(a.rep_date || effD).slice(0, 10))
-        : null;
-      if (closeGuard && closeGuard.blocked) {
+      const protReason = isAttendanceProtectedFromShiftBackfill(a, null, a.company || company, effD, { skipSeedGuard: true });
+      if (protReason === 'skip_closed') {
         skippedClosed++;
         continue;
       }
-
-      const isDoorTab = a.origin === 'door_tablet';
-      const isKioskCreated = /^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk';
-      const isManualEdited = Boolean(a.manual_override) || (
-        isDoorTab
-          ? isHandOwnedTabletRow(a)
-          : (Boolean(a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
-      );
-      if (isManualEdited) {
+      if (protReason === 'hand_owned') {
         skippedManual++;
         continue;
       }
+      if (protReason) continue;
 
       const evalRes = evaluateShiftPunchTiming(a.staff, a.company || company, effD, inT, outT, {
         outDate: a.out_date || a.date || effD,
@@ -181503,8 +182077,11 @@
       netDeltaUsd = round2(netDeltaUsd + (newImp.netImpactUsd - oldImp.netImpactUsd));
 
       if (!dryRun) {
-        Object.assign(a, nextFields, { modified_at: nowIso });
-        if (a.origin) a.tab_sig = attendanceFigureSig(a);
+        Object.assign(a, nextFields);
+        if (a.manual_override == null) a.manual_override = false;
+        stampAttendanceBackfillModified(a, nowIso);
+        stripAttRenderTransientFields(a);
+        if (a.origin || a.tab_sig) a.tab_sig = attendanceFigureSig(a);
       }
     }
 
@@ -182503,24 +183080,16 @@
     const co = canonCompany(a && (a.company || companyHint)) || 'WTC';
     const effD = String((a && (a.set_date || a.date)) || '').slice(0, 10);
     const repD = String((a && (a.rep_date || effD)) || '').slice(0, 10);
-    const closeGuard = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function')
-      ? window.MFG_AI_EDGE.checkPeriodCloseGuard(co, effD, repD)
-      : null;
-    const isClosed = Boolean(closeGuard && closeGuard.blocked);
-    const isDoorTab = Boolean(a && a.origin === 'door_tablet');
-    const isKioskCreated = Boolean(a && (/^Kiosk\b/i.test(String(a.notes || '')) || a.origin === 'wall_kiosk'));
-    const isManual = Boolean(a && a.manual_override) || (
-      isDoorTab
-        ? isHandOwnedTabletRow(a)
-        : (Boolean(a && a.modified_by) && !isKioskCreated && (!a.tab_sig || attendanceFigureSig(a) !== a.tab_sig))
-    );
+    const prot = isAttendanceProtectedFromShiftBackfill(a, null, co, effD || repD, { skipSeedGuard: true });
+    const isClosed = prot === 'skip_closed';
+    const isManual = prot === 'hand_owned' || Boolean(a && a.manual_override);
     const canEditCo = canEditShiftsAndRules(null, co);
     return {
       isClosed,
       isManual,
       canEditCo,
-      isProtected: isClosed || isManual || !canEditCo,
-      protReason: isClosed ? 'closed_month' : (isManual ? 'manual_override' : (!canEditCo ? 'read_only' : ''))
+      isProtected: isClosed || isManual || !canEditCo || prot === 'skip_kind',
+      protReason: isClosed ? 'closed_month' : (isManual ? 'manual_override' : (!canEditCo ? 'read_only' : (prot === 'skip_kind' ? 'skip_kind' : '')))
     };
   }
 
@@ -182886,24 +183455,28 @@
         const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id || '') === aid);
         if (cIdx >= 0) {
           const target = STATE.customRecords.attendance[cIdx];
-          Object.assign(target, nextFields, { modified_at: nowIso });
-          if (target.origin) target.tab_sig = attendanceFigureSig(target);
+          Object.assign(target, stripAttRenderTransientFields(Object.assign({}, nextFields)));
+          if (target.manual_override == null) target.manual_override = false;
+          stampAttendanceBackfillModified(target, nowIso);
+          if (target.origin || target.tab_sig) target.tab_sig = attendanceFigureSig(target);
           if (a !== target) {
-            Object.assign(a, nextFields, { modified_at: nowIso });
-            if (a.origin) a.tab_sig = attendanceFigureSig(a);
+            Object.assign(a, nextFields, { modified_at: target.modified_at, manual_override: target.manual_override });
+            if (target.tab_sig) a.tab_sig = target.tab_sig;
           }
         } else {
           const origSnap = (typeof isAppRecord === 'function' && !isAppRecord(a) && typeof captureSeedOrigSnapshot === 'function')
             ? captureSeedOrigSnapshot('attendance', a)
             : null;
-          const cloned = Object.assign({}, a, nextFields, { modified_at: nowIso });
+          const cloned = stripAttRenderTransientFields(Object.assign({}, a, nextFields));
+          if (cloned.manual_override == null) cloned.manual_override = false;
+          stampAttendanceBackfillModified(cloned, nowIso);
           if (origSnap && !cloned._seed_orig && typeof buildSeedOrigMeta === 'function') {
             cloned._seed_orig = buildSeedOrigMeta(origSnap);
           }
-          if (cloned.origin) cloned.tab_sig = attendanceFigureSig(cloned);
+          if (cloned.origin || cloned.tab_sig) cloned.tab_sig = attendanceFigureSig(cloned);
           STATE.customRecords.attendance.unshift(cloned);
-          Object.assign(a, nextFields, { modified_at: nowIso });
-          if (a.origin) a.tab_sig = attendanceFigureSig(a);
+          Object.assign(a, nextFields, { modified_at: cloned.modified_at, manual_override: cloned.manual_override });
+          if (cloned.tab_sig) a.tab_sig = cloned.tab_sig;
         }
       }
     }
@@ -184364,9 +184937,13 @@
     const dayTimings = normalizeDayTimingsMap(base.day_timings, base.sat_diff_enabled, base.sat_start_time, base.sat_end_time);
     const dateTimings = normalizeDateTimingsList(base.date_timings);
     const satSpec = dayTimings['6'] || null;
-    const satDiff = Boolean(satSpec && (satSpec.start_time !== effStart || satSpec.end_time !== effEnd));
-    const graceM = Math.max(0, Math.min(180, Number(base.grace_min != null ? base.grace_min : 10)));
-    const earlyGraceM = Math.max(0, Math.min(180, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : graceM)));
+    const satDiff = Boolean(satSpec && (
+      (satSpec.start_time && satSpec.end_time && (satSpec.start_time !== effStart || satSpec.end_time !== effEnd))
+      || parseOptionalGraceMin(satSpec.grace_min) != null
+      || parseOptionalGraceMin(satSpec.early_leave_grace_min) != null
+    ));
+    const graceM = parseRequiredGraceMin(base.grace_min, 10, 180);
+    const earlyGraceM = parseRequiredGraceMin(base.early_leave_grace_min, graceM, 180);
     const excSummary = formatShiftExceptionsSummary(pruneDayTimingsToWorkdays(dayTimings, daysArr), dateTimings, effStart, effEnd);
     return {
       id: String(normId),
@@ -185292,10 +185869,10 @@
       || 'shift_end';
     const defGrace = resolvedShiftRow && resolvedShiftRow.grace_min != null
       ? Number(resolvedShiftRow.grace_min)
-      : (resolvedPkgToday ? Number(resolvedPkgToday.grace_min || 10) : 10);
+      : (resolvedPkgToday && resolvedPkgToday.grace_min != null ? Number(resolvedPkgToday.grace_min) : 10);
     const defEarlyGrace = resolvedShiftRow && resolvedShiftRow.early_leave_grace_min != null
       ? Number(resolvedShiftRow.early_leave_grace_min)
-      : defGrace;
+      : (resolvedPkgToday && resolvedPkgToday.early_leave_grace_min != null ? Number(resolvedPkgToday.early_leave_grace_min) : defGrace);
     const defVacDays = (prof.hasContract && prof.vacationDays != null && Number(prof.vacationDays) > 0)
       ? Number(prof.vacationDays)
       : Number(resolvedPkgToday.vacation_days != null ? resolvedPkgToday.vacation_days : 15);
@@ -185386,9 +185963,9 @@
     base.ot_snap_mode = normalizeOtSnapMode(base.ot_snap_mode || coDefOtSnapMode);
     base.ot_block_min = normalizeOtBlockMin(base.ot_block_min != null ? base.ot_block_min : coDefOtBlockMin);
     base.ot_snap_at_min = clampOtSnapAtMin(base.ot_snap_at_min != null ? base.ot_snap_at_min : coDefOtSnapAtMin, base.ot_block_min);
-    const rawOrDefGrace = Number(base.grace_min != null ? base.grace_min : defGrace);
-    base.grace_min = Math.max(0, Math.min(120, rawOrDefGrace));
-    base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : rawOrDefGrace)));
+    const rawOrDefGrace = parseRequiredGraceMin(base.grace_min, defGrace, 180);
+    base.grace_min = rawOrDefGrace;
+    base.early_leave_grace_min = parseRequiredGraceMin(base.early_leave_grace_min, rawOrDefGrace, 180);
     base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
     base.late_count_from = ['shift_start', 'after_grace'].includes(base.late_count_from) ? base.late_count_from : 'shift_start';
     base.late_penalty_mode = VALID_LATE_PENALTY_MODES.includes(String(base.late_penalty_mode || '').trim().toLowerCase())
@@ -185419,7 +185996,12 @@
       : [1, 2, 3, 4, 5, 6];
     base.day_timings = normalizeDayTimingsMap(base.day_timings, base.sat_diff_enabled, base.sat_start_time, base.sat_end_time);
     base.date_timings = normalizeDateTimingsList(base.date_timings);
-    base.sat_diff_enabled = Boolean(base.day_timings['6'] && (base.day_timings['6'].start_time !== base.custom_start || base.day_timings['6'].end_time !== base.custom_end));
+    const satRuleSpec = base.day_timings['6'] || null;
+    base.sat_diff_enabled = Boolean(satRuleSpec && (
+      (satRuleSpec.start_time && satRuleSpec.end_time && (satRuleSpec.start_time !== base.custom_start || satRuleSpec.end_time !== base.custom_end))
+      || parseOptionalGraceMin(satRuleSpec.grace_min) != null
+      || parseOptionalGraceMin(satRuleSpec.early_leave_grace_min) != null
+    ));
     base.shift_overrides = Array.isArray(base.shift_overrides) ? base.shift_overrides.filter(o => o && o.start_date) : [];
     base.ot_passes = Array.isArray(base.ot_passes) ? base.ot_passes.filter(p => p && p.start_date) : [];
     if (memo.staffRule.size > 4096) memo.staffRule.clear();
@@ -185671,7 +186253,12 @@
           late_below_bracket_mode: effectivePatch.late_below_bracket_mode != null ? normalizeLateBelowBracketMode(effectivePatch.late_below_bracket_mode) : normalizeLateBelowBracketMode(actWin.late_below_bracket_mode || cur.late_below_bracket_mode),
           late_half_day_after_min: effectivePatch.late_half_day_after_min != null ? Number(effectivePatch.late_half_day_after_min) : (actWin.late_half_day_after_min != null ? actWin.late_half_day_after_min : cur.late_half_day_after_min),
           late_multiplier: effectivePatch.late_multiplier != null ? Number(effectivePatch.late_multiplier) : (actWin.late_multiplier != null ? actWin.late_multiplier : cur.late_multiplier),
-          grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : (actWin.grace_min != null ? actWin.grace_min : cur.grace_min)
+          grace_min: effectivePatch.grace_min != null ? Number(effectivePatch.grace_min) : (actWin.grace_min != null ? actWin.grace_min : cur.grace_min),
+          early_leave_grace_min: effectivePatch.early_leave_grace_min != null
+            ? Number(effectivePatch.early_leave_grace_min)
+            : (effectivePatch.grace_min != null
+              ? Number(effectivePatch.grace_min)
+              : (actWin.early_leave_grace_min != null ? actWin.early_leave_grace_min : cur.early_leave_grace_min))
         });
         nextTimeline = normalizePolicyTimelineList(
           nextTimeline.map(w => (w && w.id === actWin.id ? updatedActWin : w))
@@ -185743,11 +186330,11 @@
     next.ot_snap_mode = normalizeOtSnapMode(next.ot_snap_mode);
     next.ot_block_min = normalizeOtBlockMin(next.ot_block_min);
     next.ot_snap_at_min = clampOtSnapAtMin(next.ot_snap_at_min, next.ot_block_min);
-    next.grace_min = finiteClamp(next.grace_min, 10, 0, 120, true);
+    next.grace_min = finiteClamp(next.grace_min, 10, 0, 180, true);
     if (applyFields.grace_min != null && applyFields.early_leave_grace_min == null) {
       next.early_leave_grace_min = next.grace_min;
     } else {
-      next.early_leave_grace_min = finiteClamp(next.early_leave_grace_min, next.grace_min, 0, 120, true);
+      next.early_leave_grace_min = finiteClamp(next.early_leave_grace_min, next.grace_min, 0, 180, true);
     }
     next.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(next.late_when) ? next.late_when : 'both';
     next.late_count_from = ['shift_start', 'after_grace'].includes(next.late_count_from) ? next.late_count_from : 'shift_start';
@@ -185927,6 +186514,8 @@
     let chosenShift = null;
     if (activeOv) {
       if (activeOv.shift_id === 'off') {
+        const offGrace = parseRequiredGraceMin(datedRule.grace_min, 10, 180);
+        const offEarlyGrace = parseRequiredGraceMin(datedRule.early_leave_grace_min, offGrace, 180);
         return {
           id: 'off',
           name: 'Scheduled Day Off',
@@ -185939,7 +186528,8 @@
           hours: 0,
           overnight: false,
           days: [],
-          grace_min: Number(datedRule.grace_min != null ? datedRule.grace_min : 10),
+          grace_min: offGrace,
+          early_leave_grace_min: offEarlyGrace,
           tone: 'muted',
           isOverride: true,
           overrideObj: activeOv,
@@ -185950,6 +186540,7 @@
         };
       }
       if (activeOv.shift_id === 'custom') {
+        const cGrace = parseRequiredGraceMin(datedRule.grace_min, 10, 180);
         chosenShift = normalizeShiftTypeObj({
           id: 'custom',
           name: activeOv.note || 'Custom Rotation',
@@ -185957,7 +186548,8 @@
           start_time: activeOv.custom_start || rule.custom_start,
           end_time: activeOv.custom_end || rule.custom_end,
           days: [0, 1, 2, 3, 4, 5, 6],
-          grace_min: datedRule.grace_min,
+          grace_min: cGrace,
+          early_leave_grace_min: parseRequiredGraceMin(datedRule.early_leave_grace_min, cGrace, 180),
           tone: 'emerald'
         });
       } else {
@@ -185965,10 +186557,12 @@
         const foundOv = (datedOvShift ? normalizeShiftTypeObj(datedOvShift) : null) || types.find(t => t.id === activeOv.shift_id) || types[0];
         chosenShift = Object.assign({}, foundOv, { days: [0, 1, 2, 3, 4, 5, 6] });
         if (hasDatedGrace && datedRule.grace_min != null) {
-          chosenShift.grace_min = Number(datedRule.grace_min);
+          chosenShift.grace_min = parseRequiredGraceMin(datedRule.grace_min, chosenShift.grace_min, 180);
+          chosenShift.early_leave_grace_min = parseRequiredGraceMin(datedRule.early_leave_grace_min, chosenShift.early_leave_grace_min != null ? chosenShift.early_leave_grace_min : chosenShift.grace_min, 180);
         }
       }
     } else if (rule.shift_id === 'custom') {
+      const cGrace = parseRequiredGraceMin(datedRule.grace_min, 10, 180);
       chosenShift = normalizeShiftTypeObj({
         id: 'custom',
         name: rule.custom_name || 'Custom Shift',
@@ -185976,7 +186570,8 @@
         start_time: rule.custom_start,
         end_time: rule.custom_end,
         days: rule.custom_days,
-        grace_min: datedRule.grace_min,
+        grace_min: cGrace,
+        early_leave_grace_min: parseRequiredGraceMin(datedRule.early_leave_grace_min, cGrace, 180),
         sat_diff_enabled: rule.sat_diff_enabled,
         sat_start_time: rule.sat_start_time,
         sat_end_time: rule.sat_end_time,
@@ -185993,7 +186588,12 @@
         chosenShift.days = rule.custom_days;
       }
       if (hasDatedGrace && datedRule.grace_min != null) {
-        chosenShift.grace_min = Number(datedRule.grace_min);
+        chosenShift.grace_min = parseRequiredGraceMin(datedRule.grace_min, chosenShift.grace_min, 180);
+      }
+      if (hasDatedGrace && datedRule.early_leave_grace_min != null) {
+        chosenShift.early_leave_grace_min = parseRequiredGraceMin(datedRule.early_leave_grace_min, chosenShift.grace_min, 180);
+      } else if (chosenShift.early_leave_grace_min == null) {
+        chosenShift.early_leave_grace_min = chosenShift.grace_min;
       }
       if (ownRule && rule.use_custom_day_timings) {
         chosenShift.day_timings = normalizeDayTimingsMap(rule.day_timings, rule.sat_diff_enabled, rule.sat_start_time, rule.sat_end_time);
@@ -186059,19 +186659,30 @@
         isWorkday = true;
       }
       if (isWorkday && resolvedTiming && resolvedTiming.isDaySpecific) {
-        chosenShift.start_time = resolvedTiming.start_time;
-        chosenShift.end_time = resolvedTiming.end_time;
-        chosenShift.hours = resolvedTiming.hours;
-        chosenShift.overnight = resolvedTiming.overnight;
-        if (resolvedTiming.split) {
-          // Shortened split day: both windows stay, the second one ends earlier.
-          Object.assign(chosenShift, resolvedTiming.split, { split_enabled: true });
-          chosenShift.split_window_label = `${resolvedTiming.split.split_start_1}-${resolvedTiming.split.split_end_1} + ${resolvedTiming.split.split_start_2}-${resolvedTiming.split.split_end_2}`;
-        } else {
-          chosenShift.split_enabled = false;
-          chosenShift.split_window_label = '';
+        const hasHourOverride = Boolean(resolvedTiming.isDateSpecific || resolvedTiming.hasDayHours);
+        if (hasHourOverride) {
+          chosenShift.start_time = resolvedTiming.start_time;
+          chosenShift.end_time = resolvedTiming.end_time;
+          chosenShift.hours = resolvedTiming.hours;
+          chosenShift.overnight = resolvedTiming.overnight;
+          if (resolvedTiming.split) {
+            // Shortened split day: both windows stay, the second one ends earlier.
+            Object.assign(chosenShift, resolvedTiming.split, { split_enabled: true });
+            chosenShift.split_window_label = `${resolvedTiming.split.split_start_1}-${resolvedTiming.split.split_end_1} + ${resolvedTiming.split.split_start_2}-${resolvedTiming.split.split_end_2}`;
+          } else {
+            chosenShift.split_enabled = false;
+            chosenShift.split_window_label = '';
+          }
         }
-        isDaySpecific = true;
+        if (resolvedTiming.hasDayGraceIn && resolvedTiming.grace_min != null) {
+          chosenShift.grace_min = resolvedTiming.grace_min;
+          chosenShift.hasDayGraceIn = true;
+        }
+        if (resolvedTiming.hasDayGraceOut && resolvedTiming.early_leave_grace_min != null) {
+          chosenShift.early_leave_grace_min = resolvedTiming.early_leave_grace_min;
+          chosenShift.hasDayGraceOut = true;
+        }
+        isDaySpecific = Boolean(hasHourOverride);
         isDateSpecific = Boolean(resolvedTiming.isDateSpecific);
         dateTimingNote = (resolvedTiming.dateTiming && resolvedTiming.dateTiming.note) || '';
       }
@@ -186086,6 +186697,7 @@
       let sMove = 0;
       let eMove = 0;
       let ownGrace = null;
+      let ownEarlyGrace = null;
       own.forEach(it => {
         const itIdStr = String(it.id || '');
         if (itIdStr.startsWith('adr_')) {
@@ -186098,11 +186710,17 @@
         if (it.start_shift_min && (!it.start_dows || it.start_dows.includes(wk.dayIdx))) sMove += Number(it.start_shift_min);
         if (it.end_shift_min && (!it.end_dows || it.end_dows.includes(wk.dayIdx))) eMove += Number(it.end_shift_min);
         if (it.grace_min != null) ownGrace = Number(it.grace_min);
-        if ((it.start_shift_min || it.end_shift_min || it.grace_min != null) && it.note) driftNote = it.note;
+        if (it.early_leave_grace_min != null) ownEarlyGrace = Number(it.early_leave_grace_min);
+        if ((it.start_shift_min || it.end_shift_min || it.grace_min != null || it.early_leave_grace_min != null) && it.note) driftNote = it.note;
       });
       if (ownGrace != null) {
         chosenShift.grace_min = ownGrace;
         chosenShift.hasOwnDateGrace = true;
+        if (!dateTimingNote) dateTimingNote = driftNote;
+      }
+      if (ownEarlyGrace != null) {
+        chosenShift.early_leave_grace_min = ownEarlyGrace;
+        chosenShift.hasOwnDateEarlyGrace = true;
         if (!dateTimingNote) dateTimingNote = driftNote;
       }
       if (sMove || eMove) {
@@ -186177,6 +186795,7 @@
           end_time: rule.custom_end,
           days: rule.custom_days,
           grace_min: rule.grace_min,
+          early_leave_grace_min: rule.early_leave_grace_min,
           tone: 'emerald'
         });
       } else {
@@ -186345,11 +186964,23 @@
     const graceMin = Math.max(0, Number(
       (shift && shift.hasOwnDateGrace && shift.grace_min != null)
         ? shift.grace_min
-        : ((hasTimelineGrace && rule.grace_min != null)
-          ? rule.grace_min
-          : (shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)))
+        : ((shift && shift.hasDayGraceIn && shift.grace_min != null)
+          ? shift.grace_min
+          : ((hasTimelineGrace && rule.grace_min != null)
+            ? rule.grace_min
+            : (shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10))))
     ));
-    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
+    const earlyGraceMin = Math.max(0, Number(
+      (shift && shift.hasOwnDateEarlyGrace && shift.early_leave_grace_min != null)
+        ? shift.early_leave_grace_min
+        : ((shift && shift.hasDayGraceOut && shift.early_leave_grace_min != null)
+          ? shift.early_leave_grace_min
+          : ((hasTimelineGrace && rule.early_leave_grace_min != null)
+            ? rule.early_leave_grace_min
+            : (shift.early_leave_grace_min != null
+              ? shift.early_leave_grace_min
+              : (rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin))))
+    ));
     const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
     const schedEndRaw = parseClockMinutes(shift.end_time) ?? 960;
     const schedEndMin = schedEndRaw <= schedStartMin ? (schedEndRaw + 1440) : schedEndRaw;
@@ -186531,16 +187162,24 @@
         ? ovPolicyObj.grace_min
         : ((shift && shift.hasOwnDateGrace && shift.grace_min != null)
           ? shift.grace_min
-          : ((hasTimelineGrace && rule.grace_min != null)
-            ? rule.grace_min
-            : (shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10))))
+          : ((shift && shift.hasDayGraceIn && shift.grace_min != null)
+            ? shift.grace_min
+            : ((hasTimelineGrace && rule.grace_min != null)
+              ? rule.grace_min
+              : (shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)))))
     ));
     const earlyGraceMin = Math.max(0, Number(
       (ovPolicyObj && ovPolicyObj.early_leave_grace_min != null)
         ? ovPolicyObj.early_leave_grace_min
-        : (rule.early_leave_grace_min != null
-          ? rule.early_leave_grace_min
-          : (shift.early_leave_grace_min != null ? shift.early_leave_grace_min : graceMin))
+        : ((shift && shift.hasOwnDateEarlyGrace && shift.early_leave_grace_min != null)
+          ? shift.early_leave_grace_min
+          : ((shift && shift.hasDayGraceOut && shift.early_leave_grace_min != null)
+            ? shift.early_leave_grace_min
+            : ((hasTimelineGrace && rule.early_leave_grace_min != null)
+              ? rule.early_leave_grace_min
+              : (shift.early_leave_grace_min != null
+                ? shift.early_leave_grace_min
+                : (rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin)))))
     ));
     const lateCutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
     const earlyOutCutoffTime = formatMinutesAsClockTime(schedEndMin - earlyGraceMin);
@@ -188138,7 +188777,7 @@
         gone.voided = false;
         delete gone.voided_by;
         delete gone.voided_at;
-        gone.restored_at = new Date().toISOString();
+        gone.restored_at = nextMonotonicIsoForRecord(gone);
         attRec = gone;
         revived = true;
       }
@@ -188308,7 +188947,7 @@
         entered_by: opts.enteredBy || activeUser().full_name,
         entered_by_email: opts.enteredBy ? '' : activeUser().email,
         entered_at: nowStamp(),
-        modified_at: new Date().toISOString(),
+        modified_at: nextMonotonicIso(),
         voided: false,
         notes: noteParts.join(' · ')
       };
@@ -188354,7 +188993,8 @@
       attRec.shift_id = shiftObj.id;
       attRec.shift_label = shiftObj.badgeLabel;
       attRec.scheduled_hours = schedH;
-      attRec.modified_at = new Date().toISOString();
+      _ATT_PRE_RENDER_HYDRATED.delete(attRec);
+      attRec.modified_at = nextMonotonicIsoForRecord(attRec);
       // A note a person typed on an imported row is theirs and stays; the import's own note is kept current.
       if (!opts.origin || attRec.notes === attRec.tab_note || !attRec.modified_by) attRec.notes = noteParts.join(' · ');
       if (opts.origin) { attRec.tab_note = noteParts.join(' · '); attRec.tab_sig = attendanceFigureSig(attRec); }
@@ -188520,9 +189160,10 @@
         // No punch counts for that day any more: the row the import made for it is withdrawn.
         const stale = (STATE.customRecords.attendance || []).find(a => a && a.id === rowId && !a.voided && a.origin === 'door_tablet' && !isHandOwnedTabletRow(a));
         if (stale) {
+          _ATT_PRE_RENDER_HYDRATED.delete(stale);
           stale.voided = true;
           stale.voided_by = DOOR_TABLET_SIGNATURE;   // lets a later punch for that day bring the same row back, in any browser
-          stale.voided_at = new Date().toISOString();
+          stale.voided_at = nextMonotonicIsoForRecord(stale);
           stale.modified_at = stale.voided_at;
           delete stale.restored_at;
           written++;
@@ -194601,7 +195242,9 @@
       rule.use_custom_day_timings ? rule.day_timings : (rule.day_timings || (activeShiftObj && activeShiftObj.day_timings)),
       rule.use_custom_day_timings ? rule.sat_diff_enabled : (rule.sat_diff_enabled || (activeShiftObj && activeShiftObj.sat_diff_enabled)),
       rule.sat_start_time || (activeShiftObj && activeShiftObj.sat_start_time) || '07:00',
-      rule.sat_end_time || (activeShiftObj && activeShiftObj.sat_end_time) || '14:00'
+      rule.sat_end_time || (activeShiftObj && activeShiftObj.sat_end_time) || '14:00',
+      (activeShiftObj && activeShiftObj.start_time) || draftCustomStart,
+      (activeShiftObj && activeShiftObj.end_time) || draftCustomEnd
     );
     // Company calendar presets come from the shift at resolve time (Holidays & Seasons); they are not the
     // person's own exceptions, so they are not listed (or removable) here.
@@ -194616,7 +195259,14 @@
       draftRawDayInputs = {};
       Object.keys(draftDayTimings || {}).forEach(k => {
         const it = draftDayTimings[k];
-        if (it) draftRawDayInputs[String(k)] = { inVal: it.start_time || '', outVal: it.end_time || '' };
+        if (it) {
+          draftRawDayInputs[String(k)] = {
+            inVal: it.start_time || '',
+            outVal: it.end_time || '',
+            graceInVal: it.grace_min != null ? String(it.grace_min) : '',
+            graceOutVal: it.early_leave_grace_min != null ? String(it.early_leave_grace_min) : ''
+          };
+        }
       });
     };
     resetDraftRawDayInputsFromTimings();
@@ -194999,7 +195649,9 @@
                 </div>
                 <div class="ssm-grace-wrap">
                   <label for="ssmGraceMin">Clock-IN Tol. (min)</label>
-                  <input type="number" id="ssmGraceMin" min="0" max="120" step="5" value="${draftGrace}" style="width:74px">
+                  <input type="number" id="ssmGraceMin" min="0" max="180" step="5" value="${draftGrace}" style="width:68px">
+                  <label for="ssmTopEarlyGraceMin">Clock-OUT Tol. (min)</label>
+                  <input type="number" id="ssmTopEarlyGraceMin" min="0" max="180" step="5" value="${draftEarlyGrace}" style="width:68px">
                 </div>
               </div>
 
@@ -195017,7 +195669,7 @@
                     <div class="stm-exc-subcard">
                       <div class="stm-exc-subhead">
                         <strong>Workdays With Different Hours</strong>
-                        <span class="muted">Blank keeps the regular hours; days off are not listed</span>
+                        <span class="muted">Blank keeps the regular hours or grace; days off are not listed</span>
                       </div>
                       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
                         <select id="ssmExcQuickDay" class="kiosk-select" data-plain-options="1" style="height:28px;font-size:11.5px;min-width:130px">
@@ -195026,12 +195678,14 @@
                         </select>
                         ${ssmExcPresets.map(p => `<button type="button" class="kiosk-qchip mono" data-ssm-day-preset="${esc(p.s)}|${esc(p.e)}" data-ui-tip="${esc(shiftWindowPresetTip(p))}">${esc(p.label)}</button>`).join('')}
                       </div>
-                      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px">
+                      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px">
                         ${dayOrder.filter(dIdx => draftDays.includes(dIdx)).map(dIdx => {
                           const dtObj = draftDayTimings && draftDayTimings[String(dIdx)] ? draftDayTimings[String(dIdx)] : null;
                           const rawPair = draftRawDayInputs && draftRawDayInputs[String(dIdx)] ? draftRawDayInputs[String(dIdx)] : null;
                           const inVal = rawPair ? rawPair.inVal : (dtObj ? dtObj.start_time : '');
                           const outVal = rawPair ? rawPair.outVal : (dtObj ? dtObj.end_time : '');
+                          const grInVal = rawPair ? (rawPair.graceInVal != null ? rawPair.graceInVal : '') : (dtObj && dtObj.grace_min != null ? String(dtObj.grace_min) : '');
+                          const grOutVal = rawPair ? (rawPair.graceOutVal != null ? rawPair.graceOutVal : '') : (dtObj && dtObj.early_leave_grace_min != null ? String(dtObj.early_leave_grace_min) : '');
                           return `
                             <div class="ssm-field" style="background:var(--bg);padding:6px;border-radius:6px;border:1px solid var(--line)">
                               <label style="font-size:11px;font-weight:700">${ATT_WEEKDAYS[dIdx]} Override</label>
@@ -195039,6 +195693,11 @@
                                 <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-in="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.start_time)}" value="${esc(inVal)}" style="width:62px;font-size:11.5px;padding:3px 5px">
                                 <span class="muted">-</span>
                                 <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-out="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.end_time)}" value="${esc(outVal)}" style="width:62px;font-size:11.5px;padding:3px 5px">
+                              </div>
+                              <div class="ssm-day-exc-grace-row" style="display:flex;gap:4px;align-items:center;margin-top:4px">
+                                <input type="number" min="0" max="180" step="5" data-ssm-day-grace="${dIdx}" class="mono" placeholder="IN ${draftGrace}m" aria-label="${ATT_WEEKDAYS[dIdx]} Arrival Grace (min)" value="${esc(grInVal)}" style="width:62px;font-size:11px;padding:2px 4px">
+                                <span class="muted" style="font-size:10px">/</span>
+                                <input type="number" min="0" max="180" step="5" data-ssm-day-early-grace="${dIdx}" class="mono" placeholder="OUT ${draftEarlyGrace}m" aria-label="${ATT_WEEKDAYS[dIdx]} Leaving Grace (min)" value="${esc(grOutVal)}" style="width:62px;font-size:11px;padding:2px 4px">
                               </div>
                             </div>
                           `;
@@ -195391,11 +196050,16 @@
                       const wGrp = livePolicyGroups.find(g => g.id === w.policy_group_id);
                       const wFrom = fmtDateDMY(w.start_date);
                       const wTo = w.end_date ? fmtDateDMY(w.end_date) : 'Present';
+                      const wGr = w.grace_min != null ? Number(w.grace_min) : null;
+                      const wEg = w.early_leave_grace_min != null ? Number(w.early_leave_grace_min) : null;
+                      const wGrShow = wGr != null ? wGr : draftGrace;
+                      const wEgShow = wEg != null ? wEg : (wGr != null ? wGr : draftEarlyGrace);
                       return `<div class="att-policy-ver-row ${draftPolEditWinId === w.id ? 'is-editing' : ''}">
                         <span class="mono"><b>${esc(wFrom)}</b> .. ${esc(wTo)}</span>
                         <span class="att-math-pill ${wm === 'per_minute' ? 'is-min' : ''}">$ / Min · ${esc(wSnap)}</span>
                         <span>${esc(wGrp ? wGrp.name : (w.policy_group_id || 'Policy'))}</span>
                         <span class="mono">OT ≥${wt}m</span>
+                        <span class="mono">IN ${wGrShow}m / OUT ${wEgShow}m</span>
                         ${w.note ? `<span class="muted">${esc(w.note)}</span>` : '<span></span>'}
                         <span style="display:inline-flex;gap:4px;margin-inline-start:auto">
                           <button type="button" class="btn kiosk-mini-btn" data-ssm-pol-edit-win="${esc(w.id)}">Edit</button>
@@ -195433,13 +196097,14 @@
               <div class="ssm-tol-cards-grid">
                 <div class="ssm-comp-card">
                   <div class="ssm-comp-head">
-                    <label>Clock-IN Tolerance (After ${esc(curShiftObj.start_time)})</label>
+                    <label for="ssmGraceInput">Clock-IN Tolerance (After ${esc(curShiftObj.start_time)})</label>
                     <span class="badge mono">Cutoff ${esc(cutoffClockLbl)}</span>
                   </div>
                   <div class="ssm-seg-pills">
                     ${[0, 5, 10, 15, 20, 30].map(gm => `
                       <button type="button" class="kiosk-qchip mono ${Number(draftGrace) === gm ? 'active' : ''}" data-ssm-grace-chip="${gm}">${gm}m</button>
                     `).join('')}
+                    <input type="number" id="ssmGraceInput" class="mono" min="0" max="180" step="5" value="${draftGrace}" style="width:64px" aria-label="Clock-IN Tolerance Minutes">
                   </div>
                 </div>
 
@@ -195452,7 +196117,7 @@
                     ${[0, 5, 10, 15, 20, 30].map(gm => `
                       <button type="button" class="kiosk-qchip mono ${Number(draftEarlyGrace) === gm ? 'active' : ''}" data-ssm-early-grace-chip="${gm}">${gm}m</button>
                     `).join('')}
-                    <input type="number" id="ssmEarlyGraceInput" class="mono" min="0" max="120" step="5" value="${draftEarlyGrace}" style="width:64px" aria-label="Clock-OUT Tolerance Minutes">
+                    <input type="number" id="ssmEarlyGraceInput" class="mono" min="0" max="180" step="5" value="${draftEarlyGrace}" style="width:64px" aria-label="Clock-OUT Tolerance Minutes">
                   </div>
                 </div>
               </div>
@@ -195819,8 +196484,22 @@
         if ($('ssmCustomName')) draftCustomName = $('ssmCustomName').value || 'Custom Shift';
         if ($('ssmCustomStart')) draftCustomStart = normalize24hClockTime($('ssmCustomStart').value, draftCustomStart || '08:00');
         if ($('ssmCustomEnd')) draftCustomEnd = normalize24hClockTime($('ssmCustomEnd').value, draftCustomEnd || '16:00');
-        if ($('ssmGraceMin')) draftGrace = Math.max(0, Math.min(120, Number($('ssmGraceMin').value || 0)));
-        if ($('ssmEarlyGraceInput')) draftEarlyGrace = Math.max(0, Math.min(120, Number($('ssmEarlyGraceInput').value || 0)));
+        if (src === 'sec3_grace' && $('ssmGraceInput')) {
+          draftGrace = parseRequiredGraceMin($('ssmGraceInput').value, draftGrace, 180);
+        } else if ($('ssmGraceMin')) {
+          draftGrace = parseRequiredGraceMin($('ssmGraceMin').value, draftGrace, 180);
+        } else if ($('ssmGraceInput')) {
+          draftGrace = parseRequiredGraceMin($('ssmGraceInput').value, draftGrace, 180);
+        }
+        if (src === 'top_early_grace' && $('ssmTopEarlyGraceMin')) {
+          draftEarlyGrace = parseRequiredGraceMin($('ssmTopEarlyGraceMin').value, draftGrace, 180);
+        } else if (src === 'sec3_early_grace' && $('ssmEarlyGraceInput')) {
+          draftEarlyGrace = parseRequiredGraceMin($('ssmEarlyGraceInput').value, draftGrace, 180);
+        } else if ($('ssmTopEarlyGraceMin')) {
+          draftEarlyGrace = parseRequiredGraceMin($('ssmTopEarlyGraceMin').value, draftGrace, 180);
+        } else if ($('ssmEarlyGraceInput')) {
+          draftEarlyGrace = parseRequiredGraceMin($('ssmEarlyGraceInput').value, draftGrace, 180);
+        }
         if ($('ssmLateWhenSelect')) draftLateWhen = $('ssmLateWhenSelect').value || 'both';
         if ($('ssmLateCountFromSelect')) draftLateCountFrom = $('ssmLateCountFromSelect').value || 'shift_start';
         if ($('ssmLateMultInput')) {
@@ -195902,21 +196581,29 @@
             const offDays = [0, 1, 2, 3, 4, 5, 6].filter(d => !draftDays.includes(d));
             const nextDtMap = pruneDayTimingsToWorkdays(draftDayTimings, offDays);
             const nextRawMap = {};
+            const liveShift = (draftShiftId === 'custom')
+              ? { start_time: draftCustomStart, end_time: draftCustomEnd }
+              : (liveShiftTypes.find(t => t.id === draftShiftId) || { start_time: '08:00', end_time: '16:00' });
             dayInputs.forEach(inp => {
               const dIdxStr = String(inp.getAttribute('data-ssm-day-in') || '');
               const outInp = modal.querySelector(`[data-ssm-day-out="${dIdxStr}"]`);
+              const grInInp = modal.querySelector(`[data-ssm-day-grace="${dIdxStr}"]`);
+              const grOutInp = modal.querySelector(`[data-ssm-day-early-grace="${dIdxStr}"]`);
               const rawIn = String(inp.value || '').trim();
               const rawOut = String((outInp && outInp.value) || '').trim();
-              nextRawMap[dIdxStr] = { inVal: rawIn, outVal: rawOut };
+              const gIn = parseOptionalGraceMin(grInInp ? grInInp.value : '');
+              const gOut = parseOptionalGraceMin(grOutInp ? grOutInp.value : '');
+              const giStr = gIn != null ? String(gIn) : '';
+              const goStr = gOut != null ? String(gOut) : '';
+              nextRawMap[dIdxStr] = { inVal: rawIn, outVal: rawOut, graceInVal: giStr, graceOutVal: goStr };
               if (rawIn && rawOut) {
                 const stC = normalize24hClockTime(rawIn, '08:00');
                 const etC = normalize24hClockTime(rawOut, '16:00');
-                nextRawMap[dIdxStr] = { inVal: stC, outVal: etC };
-                nextDtMap[dIdxStr] = {
-                  start_time: stC,
-                  end_time: etC,
-                  hours: computeShiftWorkedHours(stC, etC) || 8.0
-                };
+                nextRawMap[dIdxStr] = { inVal: stC, outVal: etC, graceInVal: giStr, graceOutVal: goStr };
+                nextDtMap[dIdxStr] = makeDayTimingEntry(stC, etC, gIn, gOut);
+              } else if (!rawIn && !rawOut && (gIn != null || gOut != null)) {
+                const entry = makeDayTimingEntry('', '', gIn, gOut);
+                if (entry) nextDtMap[dIdxStr] = entry;
               }
             });
             draftRawDayInputs = nextRawMap;
@@ -196081,6 +196768,9 @@
         if (w.late_penalty_mode) draftLatePenaltyMode = normalizeLatePenaltyMode(w.late_penalty_mode);
         if (Array.isArray(w.late_brackets) && w.late_brackets.length) draftLateBrackets = normalizeLateBrackets(w.late_brackets);
         if (w.late_below_bracket_mode) draftLateBelowBrk = normalizeLateBelowBracketMode(w.late_below_bracket_mode);
+        if (w.grace_min != null) draftGrace = finiteClamp(w.grace_min, draftGrace, 0, 180, true);
+        if (w.early_leave_grace_min != null) draftEarlyGrace = finiteClamp(w.early_leave_grace_min, draftEarlyGrace, 0, 180, true);
+        else if (w.grace_min != null) draftEarlyGrace = draftGrace;
         renderModalInner();
       }));
       modal.querySelectorAll('[data-ssm-pol-del-win]').forEach(btn => btn.addEventListener('click', () => {
@@ -196307,17 +196997,22 @@
           const [ps, pe] = String(btn.getAttribute('data-ssm-day-preset') || '07:00|14:00').split('|');
           const stC = normalize24hClockTime(ps, '07:00');
           const etC = normalize24hClockTime(pe, '14:00');
+          const prevRaw = draftRawDayInputs[String(draftExcQuickDay)] || {};
+          const prevEntry = draftDayTimings[String(draftExcQuickDay)] || {};
+          const gIn = parseOptionalGraceMin(prevRaw.graceInVal != null ? prevRaw.graceInVal : prevEntry.grace_min);
+          const gOut = parseOptionalGraceMin(prevRaw.graceOutVal != null ? prevRaw.graceOutVal : prevEntry.early_leave_grace_min);
           draftHasTimingExc = true;
           draftUseCustomDayTimings = true;
           draftDayTimings = Object.assign({}, draftDayTimings || {}, {
-            [String(draftExcQuickDay)]: {
-              start_time: stC,
-              end_time: etC,
-              hours: computeShiftWorkedHours(stC, etC) || 8.0
-            }
+            [String(draftExcQuickDay)]: makeDayTimingEntry(stC, etC, gIn, gOut)
           });
           draftRawDayInputs = Object.assign({}, draftRawDayInputs || {}, {
-            [String(draftExcQuickDay)]: { inVal: stC, outVal: etC }
+            [String(draftExcQuickDay)]: {
+              inVal: stC,
+              outVal: etC,
+              graceInVal: gIn != null ? String(gIn) : '',
+              graceOutVal: gOut != null ? String(gOut) : ''
+            }
           });
           renderModalInner();
         });
@@ -196332,6 +197027,13 @@
           if ((pair.inVal && pair.outVal) || (!pair.inVal && !pair.outVal)) {
             renderModalInner();
           }
+        });
+      });
+      modal.querySelectorAll('[data-ssm-day-grace], [data-ssm-day-early-grace]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          draftUseCustomDayTimings = true;
+          syncLiveInputs();
+          renderModalInner();
         });
       });
       $('ssmDateExcFrom')?.addEventListener('change', e => {
@@ -196623,8 +197325,8 @@
             grace_min: orig.grace_min != null ? orig.grace_min : 10,
             early_leave_grace_min: orig.early_leave_grace_min != null ? orig.early_leave_grace_min : 10,
             sat_diff_enabled: hasSat,
-            sat_start_time: hasSat ? nextDayMap['6'].start_time : '07:00',
-            sat_end_time: hasSat ? nextDayMap['6'].end_time : '14:00',
+            sat_start_time: (hasSat && nextDayMap['6'].start_time) ? nextDayMap['6'].start_time : '07:00',
+            sat_end_time: (hasSat && nextDayMap['6'].end_time) ? nextDayMap['6'].end_time : '14:00',
             day_timings: nextDayMap,
             date_timings: nextDateList,
             tone: orig.tone || 'amber',
@@ -196675,8 +197377,8 @@
           start_time: stVal,
           end_time: etVal,
           days: [1, 2, 3, 4, 5, 6],
-          grace_min: draftGrace || 10,
-          early_leave_grace_min: draftEarlyGrace || 10,
+          grace_min: Number.isFinite(Number(draftGrace)) ? draftGrace : 10,
+          early_leave_grace_min: Number.isFinite(Number(draftEarlyGrace)) ? draftEarlyGrace : 10,
           sat_diff_enabled: excDayVal === '6',
           sat_start_time: excDayVal === '6' ? excSVal : '07:00',
           sat_end_time: excDayVal === '6' ? excEVal : '14:00',
@@ -196990,19 +197692,37 @@
         $(id)?.addEventListener('input', syncSsmTimingDomInPlace);
       });
 
-      ['ssmCustomStart', 'ssmCustomEnd', 'ssmGraceMin', 'ssmEarlyGraceInput', 'ssmLateWhenSelect', 'ssmLateCountFromSelect'].forEach(id => {
+      ['ssmCustomStart', 'ssmCustomEnd', 'ssmLateWhenSelect', 'ssmLateCountFromSelect'].forEach(id => {
         $(id)?.addEventListener('change', () => {
           syncLiveInputs();
           renderModalInner();
         });
       });
+      $('ssmGraceMin')?.addEventListener('change', e => {
+        if ($('ssmGraceInput')) $('ssmGraceInput').value = e.target.value;
+        syncLiveInputs('top_grace');
+        renderModalInner();
+      });
+      $('ssmGraceInput')?.addEventListener('change', e => {
+        if ($('ssmGraceMin')) $('ssmGraceMin').value = e.target.value;
+        syncLiveInputs('sec3_grace');
+        renderModalInner();
+      });
+      $('ssmTopEarlyGraceMin')?.addEventListener('change', e => {
+        if ($('ssmEarlyGraceInput')) $('ssmEarlyGraceInput').value = e.target.value;
+        syncLiveInputs('top_early_grace');
+        renderModalInner();
+      });
+      $('ssmEarlyGraceInput')?.addEventListener('change', e => {
+        if ($('ssmTopEarlyGraceMin')) $('ssmTopEarlyGraceMin').value = e.target.value;
+        syncLiveInputs('sec3_early_grace');
+        renderModalInner();
+      });
 
       modal.querySelectorAll('[data-ssm-grace-chip]').forEach(btn => {
         btn.addEventListener('click', () => {
           syncLiveInputs();
-          const prevGrace = draftGrace;
           draftGrace = Number(btn.getAttribute('data-ssm-grace-chip') || 0);
-          if (draftEarlyGrace === prevGrace) draftEarlyGrace = draftGrace;
           renderModalInner();
         });
       });
@@ -197400,13 +198120,22 @@
     const baseEnd1 = existing ? (initSplit ? (existing.split_end_1 || '15:00') : (existing.end_time || '16:00')) : '16:00';
     const initStart1 = (draftPatch && draftPatch.start_time) ? normalize24hClockTime(draftPatch.start_time, baseStart1) : baseStart1;
     const initEnd1 = (draftPatch && draftPatch.end_time) ? normalize24hClockTime(draftPatch.end_time, baseEnd1) : baseEnd1;
+    const cohortGraceSeed = cohortProp ? (cohortProp.recommendedGraceMin != null ? cohortProp.recommendedGraceMin : cohortProp.currentGraceMin) : null;
+    const cohortEarlyGraceSeed = cohortProp ? (cohortProp.recommendedEarlyGraceMin != null ? cohortProp.recommendedEarlyGraceMin : cohortProp.currentEarlyGraceMin) : null;
     const initGraceVal = (draftPatch && draftPatch.grace_min != null)
-      ? finiteClamp(draftPatch.grace_min, 10, 0, 60, true)
-      : (existing ? existing.grace_min : 10);
+      ? finiteClamp(draftPatch.grace_min, 10, 0, 180, true)
+      : (cohortGraceSeed != null
+        ? finiteClamp(cohortGraceSeed, 10, 0, 180, true)
+        : (existing ? parseRequiredGraceMin(existing.grace_min, 10, 180) : 10));
+    const initEarlyGraceVal = (draftPatch && draftPatch.early_leave_grace_min != null)
+      ? finiteClamp(draftPatch.early_leave_grace_min, initGraceVal, 0, 180, true)
+      : (cohortEarlyGraceSeed != null
+        ? finiteClamp(cohortEarlyGraceSeed, initGraceVal, 0, 180, true)
+        : (existing ? parseRequiredGraceMin(existing.early_leave_grace_min, initGraceVal, 180) : initGraceVal));
     const initSplitS2 = (existing && existing.split_start_2) || '19:00';
     const initSplitE2 = (existing && existing.split_end_2) || '23:00';
     const initDayMap = existing
-      ? normalizeDayTimingsMap(existing.day_timings, existing.sat_diff_enabled, existing.sat_start_time, existing.sat_end_time)
+      ? normalizeDayTimingsMap(existing.day_timings, existing.sat_diff_enabled, existing.sat_start_time, existing.sat_end_time, baseStart1, baseEnd1)
       : {};
     let draftDateTimings = existing ? normalizeDateTimingsList(existing.date_timings) : [];
     const hasInitExceptions = Object.keys(pruneDayTimingsToWorkdays(initDayMap, draftDays)).length > 0 || draftDateTimings.length > 0;
@@ -197415,9 +198144,16 @@
     SHIFT_DAY_ORDER_KEYS.forEach(dk => {
       const w = initDayMap[dk];
       if (!w) return;
-      const sig = `${w.start_time}|${w.end_time}`;
+      const sig = dayTimingWinSig(w);
       if (!_seenWin.has(sig)) {
-        const g = { sig, start_time: w.start_time, end_time: w.end_time, days: [] };
+        const g = {
+          sig,
+          start_time: w.start_time,
+          end_time: w.end_time,
+          grace_min: parseOptionalGraceMin(w.grace_min),
+          early_leave_grace_min: parseOptionalGraceMin(w.early_leave_grace_min),
+          days: []
+        };
         _seenWin.set(sig, g);
         initGroupedDayWin.push(g);
       }
@@ -197428,18 +198164,16 @@
     // in draftOffDayMap and saved unchanged (staff with their own workdays may work that day); switching the
     // day on brings them back.
     let draftSelectedExcDays = [];
-    let initExcStart = '07:00';
-    let initExcEnd = '14:00';
+    let initExcStart = initSplit ? '' : '07:00';
+    let initExcEnd = initSplit ? '' : '14:00';
+    let initExcGraceIn = '';
+    let initExcGraceOut = '';
     let draftExtraDayMap = {};
     let draftOffDayMap = {};
     initGroupedDayWin.forEach(g => {
       g.days.forEach(dIdx => {
         const target = draftDays.includes(dIdx) ? draftExtraDayMap : draftOffDayMap;
-        target[String(dIdx)] = {
-          start_time: g.start_time,
-          end_time: g.end_time,
-          hours: computeShiftWorkedHours(g.start_time, g.end_time) || 8.0
-        };
+        target[String(dIdx)] = makeDayTimingEntry(g.start_time, g.end_time, g.grace_min, g.early_leave_grace_min);
       });
     });
     const getGroupedActiveExtraDayWindows = (dayMap = draftExtraDayMap) => {
@@ -197447,19 +198181,34 @@
       const grouped = new Map();
       SHIFT_DAY_ORDER_KEYS.forEach(dk => {
         const w = pruned[dk];
-        if (!w || !w.start_time || !w.end_time) return;
-        const sig = `${w.start_time}|${w.end_time}`;
-        if (!grouped.has(sig)) grouped.set(sig, { sig, start_time: w.start_time, end_time: w.end_time, days: [] });
+        if (!w) return;
+        const hasClk = Boolean(w.start_time && w.end_time);
+        const gi = parseOptionalGraceMin(w.grace_min);
+        const go = parseOptionalGraceMin(w.early_leave_grace_min);
+        if (!hasClk && gi == null && go == null) return;
+        const sig = dayTimingWinSig(w);
+        if (!grouped.has(sig)) {
+          grouped.set(sig, {
+            sig,
+            start_time: w.start_time || '',
+            end_time: w.end_time || '',
+            grace_min: gi,
+            early_leave_grace_min: go,
+            days: []
+          });
+        }
         grouped.get(sig).days.push(dk);
       });
       return Array.from(grouped.values());
     };
     const initActiveGroups = getGroupedActiveExtraDayWindows();
     if (initActiveGroups.length === 1) {
-      initExcStart = initActiveGroups[0].start_time;
-      initExcEnd = initActiveGroups[0].end_time;
+      initExcStart = initActiveGroups[0].start_time || '';
+      initExcEnd = initActiveGroups[0].end_time || '';
+      initExcGraceIn = initActiveGroups[0].grace_min != null ? String(initActiveGroups[0].grace_min) : '';
+      initExcGraceOut = initActiveGroups[0].early_leave_grace_min != null ? String(initActiveGroups[0].early_leave_grace_min) : '';
     }
-    let baselineExcSig = `${initExcStart}|${initExcEnd}`;
+    let baselineExcSig = `${initExcStart}|${initExcEnd}|${initExcGraceIn}|${initExcGraceOut}`;
     let excInputsTouched = false;
     const initEffDate = (draftPatch && draftPatch.effective_from)
       ? String(draftPatch.effective_from).slice(0, 10)
@@ -197504,9 +198253,17 @@
     }
 
     const currentExcWindow = () => {
-      const stClock = normalize24hClockTime($('stmExcStart')?.value || initExcStart, initExcStart);
-      const etClock = normalize24hClockTime($('stmExcEnd')?.value || initExcEnd, initExcEnd);
-      return { stClock, etClock, sig: `${stClock}|${etClock}` };
+      const rawS = $('stmExcStart') ? String($('stmExcStart').value || '').trim() : initExcStart;
+      const rawE = $('stmExcEnd') ? String($('stmExcEnd').value || '').trim() : initExcEnd;
+      const stClock = rawS ? normalize24hClockTime(rawS, '') : '';
+      const etClock = rawE ? normalize24hClockTime(rawE, '') : '';
+      const gIn = parseOptionalGraceMin($('stmExcGrace')?.value);
+      const gOut = parseOptionalGraceMin($('stmExcEarlyGrace')?.value);
+      const giStr = gIn != null ? String(gIn) : '';
+      const goStr = gOut != null ? String(gOut) : '';
+      const halfClock = Boolean(stClock) !== Boolean(etClock);
+      const hasAny = !halfClock && Boolean((stClock && etClock) || gIn != null || gOut != null);
+      return { stClock, etClock, gIn, gOut, halfClock, hasAny, sig: `${stClock}|${etClock}|${giStr}|${goStr}` };
     };
     const hasPendingExcWindowEdit = () => Boolean($('stmDiffChk')?.checked) && (excInputsTouched || currentExcWindow().sig !== baselineExcSig);
     const resetExcWindowDirty = sigOpt => {
@@ -197518,19 +198275,18 @@
       const out = Object.assign({}, draftExtraDayMap);
       const isDiffOn = Boolean($('stmDiffChk')?.checked);
       if (!isDiffOn) return {};
-      const { stClock, etClock } = currentExcWindow();
-      if (stClock && etClock) {
-        const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
+      const { stClock, etClock, gIn, gOut, hasAny } = currentExcWindow();
+      if (hasAny) {
         if (draftSelectedExcDays.length) {
           draftSelectedExcDays.forEach(dIdx => {
-            out[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
+            out[String(dIdx)] = makeDayTimingEntry(stClock, etClock, gIn, gOut);
           });
         } else if (hasPendingExcWindowEdit()) {
-          // When a single saved weekday window exists and no other weekday is selected, Start/End edits apply directly to it.
+          // When a single saved weekday window exists and no other weekday is selected, Start/End/Grace edits apply directly to it.
           const activeGroups = getGroupedActiveExtraDayWindows();
           if (activeGroups.length === 1) {
             activeGroups[0].days.forEach(dk => {
-              out[dk] = { start_time: stClock, end_time: etClock, hours: hrs };
+              out[dk] = makeDayTimingEntry(stClock, etClock, gIn, gOut);
             });
           }
         }
@@ -197546,8 +198302,9 @@
       const eff = buildEffectiveDraftDayMap();
       return [1, 2, 3, 4, 5, 6, 0].map(dIdx => {
         const own = draftDays.includes(dIdx) ? eff[String(dIdx)] : null;
-        const ownTxt = own ? `${own.start_time}-${own.end_time}` : '';
-        return `<button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''} ${own ? 'has-own-hours' : ''}" data-stm-day="${dIdx}"${cohortLockAttr}>${ATT_WEEKDAYS[dIdx]}${own ? ` <span class="stm-day-own mono">${esc(ownTxt)}</span>` : ''}</button>`;
+        const grTag = own ? formatDayTimingGraceTag(own) : '';
+        const clkTxt = (own && own.start_time && own.end_time) ? `${own.start_time}-${own.end_time}` : '';
+        return `<button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''} ${own ? 'has-own-hours' : ''}" data-stm-day="${dIdx}"${cohortLockAttr}>${ATT_WEEKDAYS[dIdx]}${clkTxt ? ` <span class="stm-day-own mono">${esc(clkTxt)}</span>` : ''}${grTag ? ` <span class="stm-day-own mono">${esc(grTag)}</span>` : ''}</button>`;
       }).join('');
     };
 
@@ -197571,9 +198328,14 @@
       if (!groups.length) return '';
       return groups.map(g => {
         const dayLbl = g.days.map(k => SHIFT_DAY_SHORT_NAMES[k] || 'Day').join(', ');
-        const hrs = computeShiftWorkedHours(g.start_time, g.end_time) || 0;
+        const hasClk = Boolean(g.start_time && g.end_time);
+        const hrs = hasClk ? (computeShiftWorkedHours(g.start_time, g.end_time) || 0) : 0;
+        const grTag = formatDayTimingGraceTag(g);
         const dayKeysAttr = esc(g.days.join(','));
-        return `<span class="stm-exc-chip"><button type="button" class="stm-exc-chip-edit" data-stm-edit-day-sig="${esc(g.sig)}" data-stm-day-keys="${dayKeysAttr}" data-ui-tip="Edit weekday timing"><b>${esc(dayLbl)}</b> ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}</button><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" data-stm-day-keys="${dayKeysAttr}" data-ui-tip="Remove weekday timing" aria-label="Remove weekday timing">${ic('trash')}</button></span>`;
+        const bodyTxt = hasClk
+          ? ` ${esc(g.start_time)}-${esc(g.end_time)}${hrs ? ` (${fmtNum(hrs, 1)}h)` : ''}${grTag ? ` <span class="mono">${esc(grTag)}</span>` : ''}`
+          : (grTag ? ` <span class="mono">${esc(grTag)}</span>` : '');
+        return `<span class="stm-exc-chip"><button type="button" class="stm-exc-chip-edit" data-stm-edit-day-sig="${esc(g.sig)}" data-stm-day-keys="${dayKeysAttr}" data-ui-tip="Edit weekday timing"><b>${esc(dayLbl)}</b>${bodyTxt}</button><button type="button" class="stm-exc-chip-rm" data-stm-rm-day-sig="${esc(g.sig)}" data-stm-day-keys="${dayKeysAttr}" data-ui-tip="Remove weekday timing" aria-label="Remove weekday timing">${ic('trash')}</button></span>`;
       }).join('');
     };
 
@@ -197658,7 +198420,7 @@
       : '';
 
     modal.innerHTML = `
-      <div class="modal-card" style="width:min(660px,95vw);max-width:660px">
+      <div class="modal-card" style="width:min(740px,95vw);max-width:740px">
         <div class="modal-head">
           <div>
             <div class="modal-title">${modalTitleHtml}</div>
@@ -197684,7 +198446,7 @@
               <input type="text" id="stmShort" maxlength="10" value="${esc(existing ? existing.short : '')}" placeholder="e.g. Day"${cohortLockAttr}>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+          <div class="stm-reg-timing-grid">
             <div class="ssm-field">
               <label for="stmStart" id="stmStartLbl">${initSplit ? 'Window 1 Start (24h)' : 'Regular Start (24h)'}</label>
               <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmStart" value="${esc(normalize24hClockTime(initStart1, '08:00'))}">
@@ -197695,7 +198457,11 @@
             </div>
             <div class="ssm-field">
               <label for="stmGrace">Arrival Grace (min)</label>
-              <input type="number" id="stmGrace" min="0" max="60" step="5" value="${initGraceVal}">
+              <input type="number" id="stmGrace" min="0" max="180" step="5" value="${initGraceVal}">
+            </div>
+            <div class="ssm-field">
+              <label for="stmEarlyGrace">Leaving Grace (min)</label>
+              <input type="number" id="stmEarlyGrace" min="0" max="180" step="5" value="${initEarlyGraceVal}">
             </div>
             <div class="ssm-field">
               <label for="stmStartDate">Effective Date</label>
@@ -197750,13 +198516,23 @@
                 <div class="stm-inline-time-grid" style="margin-top:8px">
                   <div class="ssm-field">
                     <label for="stmExcStart">Start (24h)</label>
-                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmExcStart" value="${esc(normalize24hClockTime(initExcStart, '07:00'))}">
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmExcStart" value="${initExcStart ? esc(normalize24hClockTime(initExcStart, '')) : ''}">
                   </div>
                   <div class="ssm-field">
                     <label for="stmExcEnd">End (24h)</label>
-                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmExcEnd" value="${esc(normalize24hClockTime(initExcEnd, '14:00'))}">
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmExcEnd" value="${initExcEnd ? esc(normalize24hClockTime(initExcEnd, '')) : ''}">
                   </div>
                   <div class="ssm-field">
+                    <label for="stmExcGrace">Arrival Grace (min)</label>
+                    <input type="number" id="stmExcGrace" min="0" max="180" step="5" placeholder="e.g. ${initGraceVal} (default)" value="${esc(initExcGraceIn)}">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="stmExcEarlyGrace">Leaving Grace (min)</label>
+                    <input type="number" id="stmExcEarlyGrace" min="0" max="180" step="5" placeholder="e.g. ${initEarlyGraceVal} (default)" value="${esc(initExcGraceOut)}">
+                  </div>
+                </div>
+                <div class="stm-exc-preset-row">
+                  <div class="ssm-field" style="flex:1;min-width:200px">
                     <label>Quick Preset &amp; Window</label>
                     <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
                       <span id="stmExcPresetChips" style="display:contents">${stmExcPresetChipsHtml(initExcPresets)}</span>
@@ -197895,7 +198671,18 @@
       }
       refreshStmExceptionsUi();
     });
-    ['stmExcStart', 'stmExcEnd'].forEach(id => {
+    const syncExcGracePlaceholders = () => {
+      const regGIn = parseRequiredGraceMin($('stmGrace')?.value, initGraceVal, 180);
+      const regGOut = parseRequiredGraceMin($('stmEarlyGrace')?.value, regGIn, 180);
+      if ($('stmExcGrace')) $('stmExcGrace').placeholder = `e.g. ${regGIn} (default)`;
+      if ($('stmExcEarlyGrace')) $('stmExcEarlyGrace').placeholder = `e.g. ${regGOut} (default)`;
+    };
+    $('stmGrace')?.addEventListener('input', syncExcGracePlaceholders);
+    $('stmGrace')?.addEventListener('change', syncExcGracePlaceholders);
+    $('stmEarlyGrace')?.addEventListener('input', syncExcGracePlaceholders);
+    $('stmEarlyGrace')?.addEventListener('change', syncExcGracePlaceholders);
+
+    ['stmExcStart', 'stmExcEnd', 'stmExcGrace', 'stmExcEarlyGrace'].forEach(id => {
       const onExcInput = () => {
         excInputsTouched = currentExcWindow().sig !== baselineExcSig;
         refreshStmExceptionsUi();
@@ -197915,12 +198702,14 @@
       refreshStmExceptionsUi();
     });
     $('stmResetExcHoursBtn')?.addEventListener('click', () => {
-      const [rawS, rawE] = String(baselineExcSig || `${initExcStart}|${initExcEnd}`).split('|');
-      const stR = normalize24hClockTime(rawS || initExcStart, initExcStart);
-      const etR = normalize24hClockTime(rawE || initExcEnd, initExcEnd);
+      const [rawS, rawE, rawGi = '', rawGo = ''] = String(baselineExcSig || `${initExcStart}|${initExcEnd}||`).split('|');
+      const stR = rawS ? normalize24hClockTime(rawS, '') : '';
+      const etR = rawE ? normalize24hClockTime(rawE, '') : '';
       if ($('stmExcStart')) $('stmExcStart').value = stR;
       if ($('stmExcEnd')) $('stmExcEnd').value = etR;
-      resetExcWindowDirty(`${stR}|${etR}`);
+      if ($('stmExcGrace')) $('stmExcGrace').value = rawGi;
+      if ($('stmExcEarlyGrace')) $('stmExcEarlyGrace').value = rawGo;
+      resetExcWindowDirty(`${stR}|${etR}|${rawGi}|${rawGo}`);
       refreshStmExceptionsUi();
     });
     $('stmShareBtn')?.addEventListener('click', () => {
@@ -197933,7 +198722,8 @@
       const et = normalize24hClockTime($('stmEnd')?.value, isSplit ? '15:00' : '16:00');
       const spS2 = normalize24hClockTime($('stmSplitS2')?.value || '19:00', '19:00');
       const spE2 = normalize24hClockTime($('stmSplitE2')?.value || '23:00', '23:00');
-      const gr = Number($('stmGrace')?.value || 10);
+      const gr = parseRequiredGraceMin($('stmGrace')?.value, initGraceVal, 180);
+      const egr = parseRequiredGraceMin($('stmEarlyGrace')?.value, gr, 180);
       const effDt = String($('stmStartDate')?.value || todayISO()).slice(0, 10);
       const isDiffOn = Boolean($('stmDiffChk')?.checked);
       const draftDayMap = isDiffOn ? buildEffectiveDraftDayMap() : {};
@@ -197953,6 +198743,7 @@
         end_time: isSplit ? spE2 : et,
         days: draftDays.slice(),
         grace_min: gr,
+        early_leave_grace_min: egr,
         day_timings: draftDayMap,
         date_timings: draftDateList,
         tone: draftTone
@@ -197960,15 +198751,22 @@
       openShiftShareModal(draftShift.id, { company: co, draftShift });
     });
     $('stmAddWeekdayRuleBtn')?.addEventListener('click', () => {
-      const { stClock, etClock } = currentExcWindow();
-      const hrs = computeShiftWorkedHours(stClock, etClock) || 8.0;
+      const { stClock, etClock, gIn, gOut, halfClock, hasAny, sig } = currentExcWindow();
+      if (halfClock) {
+        toast('Enter both Start and End time, or leave both blank for grace-only', 'warn');
+        return;
+      }
+      if (!hasAny) {
+        toast('Enter weekday hours or arrival/leaving grace first', 'warn');
+        return;
+      }
       if (!draftSelectedExcDays.length) {
         const activeGroups = getGroupedActiveExtraDayWindows();
         if (activeGroups.length === 1) {
           activeGroups[0].days.forEach(dk => {
-            draftExtraDayMap[dk] = { start_time: stClock, end_time: etClock, hours: hrs };
+            draftExtraDayMap[dk] = makeDayTimingEntry(stClock, etClock, gIn, gOut);
           });
-          resetExcWindowDirty(`${stClock}|${etClock}`);
+          resetExcWindowDirty(sig);
           refreshStmExceptionsUi();
           return;
         }
@@ -197976,36 +198774,43 @@
         return;
       }
       draftSelectedExcDays.filter(dIdx => draftDays.includes(dIdx)).forEach(dIdx => {
-        draftExtraDayMap[String(dIdx)] = { start_time: stClock, end_time: etClock, hours: hrs };
+        draftExtraDayMap[String(dIdx)] = makeDayTimingEntry(stClock, etClock, gIn, gOut);
       });
       draftSelectedExcDays = [];
-      resetExcWindowDirty(`${stClock}|${etClock}`);
+      resetExcWindowDirty(sig);
       refreshStmExceptionsUi();
     });
     $('stmWeekdayRulesList')?.addEventListener('click', e => {
       const editBtn = e.target.closest('[data-stm-edit-day-sig]');
       if (editBtn) {
-        const { stClock: curSt, etClock: curEt } = currentExcWindow();
-        if (draftSelectedExcDays.length && curSt && curEt) {
-          const curHrs = computeShiftWorkedHours(curSt, curEt) || 8.0;
+        const { stClock: curSt, etClock: curEt, gIn: curGi, gOut: curGo, hasAny: curHasAny } = currentExcWindow();
+        if (draftSelectedExcDays.length && curHasAny) {
           draftSelectedExcDays.filter(dIdx => draftDays.includes(dIdx)).forEach(dIdx => {
-            draftExtraDayMap[String(dIdx)] = { start_time: curSt, end_time: curEt, hours: curHrs };
+            draftExtraDayMap[String(dIdx)] = makeDayTimingEntry(curSt, curEt, curGi, curGo);
           });
         }
         const rawSig = String(editBtn.getAttribute('data-stm-edit-day-sig') || '');
         const rawKeys = String(editBtn.getAttribute('data-stm-day-keys') || '').split(',').filter(Boolean);
         const dayKeys = rawKeys.length
           ? rawKeys
-          : Object.keys(draftExtraDayMap).filter(k => draftExtraDayMap[k] && `${draftExtraDayMap[k].start_time}|${draftExtraDayMap[k].end_time}` === rawSig);
+          : Object.keys(draftExtraDayMap).filter(k => draftExtraDayMap[k] && dayTimingWinSig(draftExtraDayMap[k]) === rawSig);
         const firstWin = dayKeys.length ? draftExtraDayMap[dayKeys[0]] : null;
-        const [sigS, sigE] = rawSig.split('|');
-        const stLoad = normalize24hClockTime(sigS || (firstWin && firstWin.start_time) || initExcStart, initExcStart);
-        const etLoad = normalize24hClockTime(sigE || (firstWin && firstWin.end_time) || initExcEnd, initExcEnd);
+        const [sigS, sigE, sigGi = '', sigGo = ''] = rawSig.split('|');
+        const rawLoadS = sigS || (firstWin && firstWin.start_time) || '';
+        const rawLoadE = sigE || (firstWin && firstWin.end_time) || '';
+        const stLoad = rawLoadS ? normalize24hClockTime(rawLoadS, '') : '';
+        const etLoad = rawLoadE ? normalize24hClockTime(rawLoadE, '') : '';
+        const giOpt = firstWin ? parseOptionalGraceMin(firstWin.grace_min) : parseOptionalGraceMin(sigGi);
+        const goOpt = firstWin ? parseOptionalGraceMin(firstWin.early_leave_grace_min) : parseOptionalGraceMin(sigGo);
+        const giLoad = giOpt != null ? String(giOpt) : '';
+        const goLoad = goOpt != null ? String(goOpt) : '';
         dayKeys.forEach(k => { delete draftExtraDayMap[k]; });
         draftSelectedExcDays = dayKeys.map(Number).filter(d => draftDays.includes(d)).sort((a, b) => a - b);
         if ($('stmExcStart')) $('stmExcStart').value = stLoad;
         if ($('stmExcEnd')) $('stmExcEnd').value = etLoad;
-        resetExcWindowDirty(`${stLoad}|${etLoad}`);
+        if ($('stmExcGrace')) $('stmExcGrace').value = giLoad;
+        if ($('stmExcEarlyGrace')) $('stmExcEarlyGrace').value = goLoad;
+        resetExcWindowDirty(`${stLoad}|${etLoad}|${giLoad}|${goLoad}`);
         refreshStmExceptionsUi();
         if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) {
           $('stmExcEnd')?.focus({ preventScroll: true });
@@ -198019,7 +198824,7 @@
       rmKeys.forEach(k => { delete draftExtraDayMap[k]; });
       Object.keys(draftExtraDayMap).forEach(k => {
         const w = draftExtraDayMap[k];
-        if (w && `${w.start_time}|${w.end_time}` === sig) delete draftExtraDayMap[k];
+        if (w && dayTimingWinSig(w) === sig) delete draftExtraDayMap[k];
       });
       if (rmKeys.length) {
         const rmNumSet = new Set(rmKeys.map(Number));
@@ -198134,7 +198939,8 @@
       const et = normalize24hClockTime($('stmEnd')?.value, isSplit ? '15:00' : '16:00');
       const spS2 = normalize24hClockTime($('stmSplitS2')?.value || '19:00', '19:00');
       const spE2 = normalize24hClockTime($('stmSplitE2')?.value || '23:00', '23:00');
-      const gr = Number($('stmGrace')?.value || 10);
+      const gr = parseRequiredGraceMin($('stmGrace')?.value, initGraceVal, 180);
+      const egr = parseRequiredGraceMin($('stmEarlyGrace')?.value, gr, 180);
       const effDt = String($('stmStartDate')?.value || todayISO()).slice(0, 10);
       const isBuDef = Boolean($('stmBuDefault')?.checked);
       const isDiffOn = Boolean($('stmDiffChk')?.checked);
@@ -198144,6 +198950,7 @@
           recommendedStartTime: st,
           recommendedEndTime: isSplit ? spE2 : et,
           recommendedGraceMin: gr,
+          recommendedEarlyGraceMin: egr,
           effective_from: effDt,
           allowDualEdit: true,
           backfill: doBackfill
@@ -198164,6 +198971,11 @@
       }
       if (!draftDays.length) {
         toast('Switch on at least one workday', 'warn');
+        return;
+      }
+      if (isDiffOn && (draftSelectedExcDays.length || excInputsTouched) && currentExcWindow().halfClock) {
+        toast('Enter both Start and End time, or leave both blank for grace-only', 'warn');
+        $('stmExcEnd')?.focus({ preventScroll: true });
         return;
       }
       if (isDiffOn && !draftSelectedExcDays.length && excInputsTouched) {
@@ -198209,9 +199021,10 @@
         end_time: isSplit ? spE2 : et,
         days: draftDays,
         grace_min: gr,
+        early_leave_grace_min: egr,
         sat_diff_enabled: hasSat,
-        sat_start_time: hasSat ? finalDayMap['6'].start_time : '07:00',
-        sat_end_time: hasSat ? finalDayMap['6'].end_time : '14:00',
+        sat_start_time: (hasSat && finalDayMap['6'].start_time) ? finalDayMap['6'].start_time : '07:00',
+        sat_end_time: (hasSat && finalDayMap['6'].end_time) ? finalDayMap['6'].end_time : '14:00',
         day_timings: finalDayMap,
         date_timings: finalDateList,
         tone: draftTone,
@@ -198314,8 +199127,8 @@
     let winPart = '';
     if (item.day_off) {
       winPart = lang === 'ar' ? 'مغلق (عطلة)' : (lang === 'fr' ? 'Fermé' : 'Closed');
-    } else if (item.shorten_min || item.start_shift_min || item.end_shift_min || item.grace_min != null) {
-      if (item.shorten_min && !item.start_shift_min && !item.end_shift_min && item.grace_min == null) {
+    } else if (item.shorten_min || item.start_shift_min || item.end_shift_min || item.grace_min != null || item.early_leave_grace_min != null) {
+      if (item.shorten_min && !item.start_shift_min && !item.end_shift_min && item.grace_min == null && item.early_leave_grace_min == null) {
         const hrsVal = fmtNum(item.shorten_min / 60, item.shorten_min % 60 ? 1 : 0);
         winPart = lang === 'ar' ? `دوام أقصر بـ ${hrsVal} س` : (lang === 'fr' ? `${hrsVal}h plus court` : `${hrsVal}h shorter`);
       } else {
@@ -198329,8 +199142,16 @@
         if (endDelta) {
           pieces.push(`${lang === 'ar' ? 'النهاية' : (lang === 'fr' ? 'fin' : 'end')} ${sgn(endDelta)} ${minLbl}`);
         }
-        if (item.grace_min != null) {
+        if (item.grace_min != null && item.early_leave_grace_min != null) {
+          pieces.push(lang === 'ar'
+            ? `سماح دخول ${item.grace_min}${minLbl} / خروج ${item.early_leave_grace_min}${minLbl}`
+            : (lang === 'fr'
+              ? `tolérance entrée ${item.grace_min}m / sortie ${item.early_leave_grace_min}m`
+              : `grace IN ${item.grace_min}m / OUT ${item.early_leave_grace_min}m`));
+        } else if (item.grace_min != null) {
           pieces.push(`${lang === 'ar' ? 'السماح' : (lang === 'fr' ? 'tolérance' : 'grace')} ${item.grace_min} ${minLbl}`);
+        } else if (item.early_leave_grace_min != null) {
+          pieces.push(`${lang === 'ar' ? 'سماح الانصراف' : (lang === 'fr' ? 'tolérance départ' : 'OUT grace')} ${item.early_leave_grace_min} ${minLbl}`);
         }
         winPart = pieces.join(', ');
       }
@@ -198353,13 +199174,15 @@
     if (!sh || typeof sh !== 'object') return '';
     const days = (Array.isArray(sh.days) ? sh.days : [1, 2, 3, 4, 5, 6]).slice().sort((a, b) => a - b);
     const dt = pruneDayTimingsToWorkdays(
-      normalizeDayTimingsMap(sh.day_timings, sh.sat_diff_enabled, sh.sat_start_time, sh.sat_end_time),
+      normalizeDayTimingsMap(sh.day_timings, sh.sat_diff_enabled, sh.sat_start_time, sh.sat_end_time, sh.start_time, sh.end_time),
       days
     );
-    const daySig = SHIFT_DAY_ORDER_KEYS.map(k => (dt[k] ? `${k}:${dt[k].start_time}-${dt[k].end_time}` : '')).filter(Boolean).join(';');
+    const daySig = SHIFT_DAY_ORDER_KEYS.map(k => (dt[k] ? `${k}:${dayTimingWinSig(dt[k])}` : '')).filter(Boolean).join(';');
     const dateSig = normalizeDateTimingsList(sh.date_timings).map(d =>
-      `${d.start_date}..${d.end_date}:${d.day_off ? 'off' : `${d.start_time}-${d.end_time}`}:${d.shorten_min || 0}:${d.start_shift_min || 0}:${d.end_shift_min || 0}:${d.note || ''}`
+      `${d.start_date}..${d.end_date}:${d.day_off ? 'off' : `${d.start_time}-${d.end_time}`}:${d.shorten_min || 0}:${d.start_shift_min || 0}:${d.end_shift_min || 0}:${d.grace_min != null ? d.grace_min : ''}:${d.early_leave_grace_min != null ? d.early_leave_grace_min : ''}:${d.note || ''}`
     ).join(';');
+    const graceIn = parseRequiredGraceMin(sh.grace_min, 10, 180);
+    const graceOut = parseRequiredGraceMin(sh.early_leave_grace_min, graceIn, 180);
     return [
       sh.start_time || '',
       sh.end_time || '',
@@ -198369,7 +199192,8 @@
       sh.split_start_2 || '',
       sh.split_end_2 || '',
       days.join(','),
-      sh.grace_min != null ? Number(sh.grace_min) : 10,
+      graceIn,
+      graceOut,
       daySig,
       dateSig
     ].join('|');
@@ -198490,7 +199314,7 @@
     const activeDays = (Array.isArray(st.days) && st.days.length ? st.days : [1, 2, 3, 4, 5, 6]).slice();
     const offDays = [1, 2, 3, 4, 5, 6, 0].filter(d => !activeDays.includes(d));
     const dayTimingsPruned = pruneDayTimingsToWorkdays(
-      normalizeDayTimingsMap(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time),
+      normalizeDayTimingsMap(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time, st.start_time, st.end_time),
       activeDays
     );
     const regDays = activeDays.filter(d => !dayTimingsPruned[String(d)]);
@@ -198498,10 +199322,20 @@
     const _excSeen = new Map();
     SHIFT_DAY_ORDER_KEYS.forEach(dk => {
       const w = dayTimingsPruned[dk];
-      if (!w || !w.start_time || !w.end_time) return;
-      const sig = `${w.start_time}-${w.end_time}`;
+      if (!w) return;
+      const gi = parseOptionalGraceMin(w.grace_min);
+      const go = parseOptionalGraceMin(w.early_leave_grace_min);
+      if ((!w.start_time || !w.end_time) && gi == null && go == null) return;
+      const sig = dayTimingWinSig(w);
       if (!_excSeen.has(sig)) {
-        const g = { sig, start_time: w.start_time, end_time: w.end_time, days: [] };
+        const g = {
+          sig,
+          start_time: w.start_time || '',
+          end_time: w.end_time || '',
+          grace_min: gi,
+          early_leave_grace_min: go,
+          days: []
+        };
         _excSeen.set(sig, g);
         excGroups.push(g);
       }
@@ -198518,13 +199352,31 @@
         : '';
       return `${st.start_time}-${st.end_time}${ovn}`;
     };
+    const formatShareGroupGraceSuffix = (g, lang) => {
+      const gi = parseOptionalGraceMin(g && g.grace_min);
+      const go = parseOptionalGraceMin(g && g.early_leave_grace_min);
+      if (gi == null && go == null) return '';
+      if (lang === 'ar') {
+        if (gi != null && go != null) return gi === go ? ` [سماح ${gi}د]` : ` [دخول ${gi}د / خروج ${go}د]`;
+        return gi != null ? ` [دخول ${gi}د]` : ` [خروج ${go}د]`;
+      }
+      if (lang === 'fr') {
+        if (gi != null && go != null) return gi === go ? ` [Tol. ${gi}m]` : ` [Entrée ${gi}m / Sortie ${go}m]`;
+        return gi != null ? ` [Entrée ${gi}m]` : ` [Sortie ${go}m]`;
+      }
+      if (gi != null && go != null) return gi === go ? ` [${gi}m grace]` : ` [IN ${gi}m / OUT ${go}m]`;
+      return gi != null ? ` [IN ${gi}m]` : ` [OUT ${go}m]`;
+    };
     const buildScheduleLine = lang => {
       const segs = [];
       if (regDays.length) {
         segs.push(`${formatShiftDaysLabelByLang(regDays, lang)} ${buildRegularWindowTxt(lang)}`);
       }
       excGroups.forEach(g => {
-        segs.push(`${formatShiftDaysLabelByLang(g.days, lang)} ${g.start_time}-${g.end_time}`);
+        const winTxt = (g.start_time && g.end_time)
+          ? `${g.start_time}-${g.end_time}${formatShareGroupGraceSuffix(g, lang)}`
+          : formatShareGroupGraceSuffix(g, lang).trim();
+        segs.push(`${formatShiftDaysLabelByLang(g.days, lang)} ${winTxt}`);
       });
       if (!segs.length) {
         segs.push(`${formatShiftDaysLabelByLang(activeDays, lang)} ${buildRegularWindowTxt(lang)}`);
@@ -198620,7 +199472,8 @@
       shiftOptions,
       activeDays,
       offDays,
-      graceMin: st.grace_min != null ? Number(st.grace_min) : 10,
+      graceMin: parseRequiredGraceMin(st.grace_min, 10, 180),
+      earlyGraceMin: parseRequiredGraceMin(st.early_leave_grace_min, parseRequiredGraceMin(st.grace_min, 10, 180), 180),
       effectiveDate: st.start_date ? fmtDateDMY(st.start_date) : '',
       hours: Number(st.hours || computeShiftWorkedHours(st.start_time, st.end_time) || 8),
       scheduleLine: {
@@ -198660,6 +199513,7 @@
         lines.push(`أوقات العمل: ${ctx.scheduleLine.ar}`);
         lines.push(`أيام العطلة الأسبوعية: ${ctx.offDaysLabel.ar}`);
         lines.push(`فترة السماح عند الحضور: ${fmtNum(ctx.graceMin, 0)} دقيقة`);
+        if (ctx.earlyGraceMin != null) lines.push(`فترة السماح عند الانصراف: ${fmtNum(ctx.earlyGraceMin, 0)} دقيقة`);
         if (ctx.effectiveDate) lines.push(`ساري من: ${ctx.effectiveDate}`);
         lines.push(`عدد الموظفين: ${fmtNum(ctx.assignedCount, 0)}`);
         if (ctx.upcomingDates.length) {
@@ -198681,6 +199535,7 @@
         lines.push(`Heures: ${ctx.scheduleLine.fr}`);
         lines.push(`Jours de repos: ${ctx.offDaysLabel.fr}`);
         lines.push(`Tolérance d'arrivée: ${fmtNum(ctx.graceMin, 0)} min`);
+        if (ctx.earlyGraceMin != null) lines.push(`Tolérance de départ: ${fmtNum(ctx.earlyGraceMin, 0)} min`);
         if (ctx.effectiveDate) lines.push(`Date d'effet: ${ctx.effectiveDate}`);
         lines.push(`Effectif assigné: ${fmtNum(ctx.assignedCount, 0)}`);
         if (ctx.upcomingDates.length) {
@@ -198702,6 +199557,7 @@
         lines.push(`Hours: ${ctx.scheduleLine.en}`);
         lines.push(`Off Days: ${ctx.offDaysLabel.en}`);
         lines.push(`Arrival Grace: ${fmtNum(ctx.graceMin, 0)} min`);
+        if (ctx.earlyGraceMin != null) lines.push(`Leaving Grace: ${fmtNum(ctx.earlyGraceMin, 0)} min`);
         if (ctx.effectiveDate) lines.push(`Effective Date: ${ctx.effectiveDate}`);
         lines.push(`Assigned Crew: ${fmtNum(ctx.assignedCount, 0)} staff`);
         if (ctx.upcomingDates.length) {
@@ -198770,8 +199626,8 @@
             <b>${esc(isAr ? ctx.offDaysLabel.ar : (isFr ? ctx.offDaysLabel.fr : ctx.offDaysLabel.en))}${isBi ? ` / ${esc(ctx.offDaysLabel.ar)}` : ''}</b>
           </div>
           <div class="sss-kpi">
-            <span>${esc(L('Arrival Grace', 'فترة السماح', 'Tolérance'))}</span>
-            <b class="mono">${fmtNum(ctx.graceMin, 0)} ${esc(isAr ? 'دقيقة' : 'min')}</b>
+            <span>${esc(L('Grace (IN / OUT)', 'فترة السماح (دخول / خروج)', 'Tolérance (Entrée / Sortie)'))}</span>
+            <b class="mono">${ctx.earlyGraceMin != null && ctx.earlyGraceMin !== ctx.graceMin ? `${fmtNum(ctx.graceMin, 0)}${isAr ? 'د' : 'm'} / ${fmtNum(ctx.earlyGraceMin, 0)}${isAr ? 'د' : 'm'}` : `${fmtNum(ctx.graceMin, 0)} ${isAr ? 'دقيقة' : 'min'}`}</b>
           </div>
           <div class="sss-kpi">
             <span>${esc(L('Assigned Crew', 'عدد الموظفين', 'Effectif'))}</span>
@@ -199277,15 +200133,21 @@
     }
     const attRows = (SEED && SEED.records && SEED.records.attendance) || [];
     if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+    const customAttIds = new Set(STATE.customRecords.attendance.map(x => x && String(x.id || '').trim()).filter(Boolean));
+    const holStamp = nextMonotonicIso();
     for (let i = 0; i < attRows.length; i++) {
       const a = attRows[i];
       if (!a || a.voided || !a.staff) continue;
-      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) continue;
       if (norm(a.company || 'WTC') !== coNorm) continue;
       const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       if (!d || d > today || !shouldRecalc(norm(a.staff), d)) continue;
-      if (a.modified_by) { handKept++; continue; }
+      const protReason = isAttendanceProtectedFromShiftBackfill(a, customAttIds, co, d);
+      if (protReason) {
+        if (protReason === 'hand_owned') handKept++;
+        continue;
+      }
       const importFigures = a.origin === 'door_tablet' && Boolean(a.tab_sig) && attendanceFigureSig(a) === a.tab_sig;
+      const hadTabSig = Boolean(a.tab_sig);
       const shiftOnDate = resolveStaffShiftForDate(a.staff, a.company || co, d);
       const schedH = shiftOnDate.isWorkday ? Number(shiftOnDate.hours || 8) : 0;
       let rowChanged = false;
@@ -199334,10 +200196,17 @@
       }
       if (rowChanged) {
         attUpdated++;
-        if (importFigures) a.tab_sig = attendanceFigureSig(a);
+        if (a.manual_override == null) a.manual_override = false;
+        stampAttendanceBackfillModified(a, holStamp);
+        if (importFigures || hadTabSig) a.tab_sig = attendanceFigureSig(a);
+        const cleanAtt = stripAttRenderTransientFields(Object.assign({}, a));
         const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id) === String(a.id));
-        if (cIdx >= 0) Object.assign(STATE.customRecords.attendance[cIdx], a);
-        else STATE.customRecords.attendance.unshift(Object.assign({}, a));
+        if (cIdx >= 0) {
+          _ATT_PRE_RENDER_HYDRATED.delete(STATE.customRecords.attendance[cIdx]);
+          Object.assign(STATE.customRecords.attendance[cIdx], cleanAtt);
+          stripAttRenderTransientFields(STATE.customRecords.attendance[cIdx]);
+        }
+        else STATE.customRecords.attendance.unshift(cleanAtt);
       }
     }
     if (attUpdated > 0 && SEED) {
@@ -200929,7 +201798,13 @@
         const ne = Math.max(ns + 60, eMin + (eDays.includes(d) ? mv.end : 0));
         const st = shiftCalMinutesToClock(ns);
         const et = shiftCalMinutesToClock(ne);
-        dayMap[String(d)] = { start_time: st, end_time: et, hours: computeShiftWorkedHours(st, et) || Math.round(((ne - ns) / 60) * 100) / 100 };
+        const existingDay = dayMap[String(d)];
+        dayMap[String(d)] = makeDayTimingEntry(
+          st,
+          et,
+          existingDay ? existingDay.grace_min : null,
+          existingDay ? existingDay.early_leave_grace_min : null
+        );
       });
       const patch = { company: finding.company, use_custom_day_timings: true, day_timings: dayMap };
       if (!cur.use_custom_day_timings) {
@@ -200962,7 +201837,7 @@
     Object.entries(ws.staffRules || {}).forEach(([rk, r]) => {
       if (!r || r.reset_default || !r.staff) return;
       if (!staffRuleKeyMatchesCompany(rk, r)) return;
-      const items = normalizeDateTimingsList(r.own_date_timings).filter(it => !(it.end_date < today || !(it.start_shift_min || it.end_shift_min || it.grace_min != null)));
+      const items = normalizeDateTimingsList(r.own_date_timings).filter(it => !(it.end_date < today || !(it.start_shift_min || it.end_shift_min || it.grace_min != null || it.early_leave_grace_min != null)));
       if (!items.length) return;
       // An older bare-name rule applies in every active company of the person that has no rule of its own.
       let cos = [r.company || ''];
@@ -202537,6 +203412,11 @@
           currentStart: baseSh.start_time || sh.start_time || '08:00',
           currentEnd: baseSh.end_time || sh.end_time || '16:00',
           currentGraceMin: Math.max(0, Number(sh.grace_min != null ? sh.grace_min : (baseSh.grace_min != null ? baseSh.grace_min : 10))),
+          currentEarlyGraceMin: Math.max(0, Number(sh.early_leave_grace_min != null
+            ? sh.early_leave_grace_min
+            : (baseSh.early_leave_grace_min != null
+              ? baseSh.early_leave_grace_min
+              : (sh.grace_min != null ? sh.grace_min : (baseSh.grace_min != null ? baseSh.grace_min : 10))))),
           members: new Set(),
           inDeltas: [],
           outDeltas: [],
@@ -202589,6 +203469,7 @@
         currentStart: c.currentStart,
         currentEnd: c.currentEnd,
         currentGraceMin: c.currentGraceMin,
+        currentEarlyGraceMin: c.currentEarlyGraceMin,
         medianInMin: medIn,
         medianOutMin: medOut,
         obsCount,
@@ -202606,6 +203487,7 @@
             id: `adr_grace_${cohortIdStem}`,
             kind: 'grace_tolerance',
             recommendedGraceMin: nextGrace,
+            recommendedEarlyGraceMin: c.currentEarlyGraceMin,
             recommendedStartTime: c.currentStart,
             recommendedEndTime: c.currentEnd,
             startDeltaMin: 0,
@@ -202631,6 +203513,7 @@
             id: `adr_shift_${cohortIdStem}`,
             kind: 'shift_timing',
             recommendedGraceMin: c.currentGraceMin,
+            recommendedEarlyGraceMin: c.currentEarlyGraceMin,
             recommendedStartTime: shiftCalMinutesToClock(nextS),
             recommendedEndTime: shiftCalMinutesToClock(nextE),
             startDeltaMin,
@@ -202882,13 +203765,16 @@
       : (opts.recommendedEndTime != null
           ? punchDriftWrap((parseClockMinutes(nextEnd) ?? 960) - (parseClockMinutes(curEnd) ?? 960))
           : Number(proposal.endDeltaMin || 0));
-    const curGrace = finiteClamp(proposal.currentGraceMin, 10, 0, 60, true);
+    const curGrace = finiteClamp(proposal.currentGraceMin, 10, 0, 180, true);
+    const curEarlyGrace = finiteClamp(proposal.currentEarlyGraceMin != null ? proposal.currentEarlyGraceMin : curGrace, curGrace, 0, 180, true);
     const hasGraceOpt = opts.recommendedGraceMin != null;
-    const targetGrace = finiteClamp(hasGraceOpt ? opts.recommendedGraceMin : proposal.recommendedGraceMin, curGrace, 0, 60, true);
+    const hasEarlyGraceOpt = opts.recommendedEarlyGraceMin != null;
+    const targetGrace = finiteClamp(hasGraceOpt ? opts.recommendedGraceMin : proposal.recommendedGraceMin, curGrace, 0, 180, true);
+    const targetEarlyGrace = finiteClamp(hasEarlyGraceOpt ? opts.recommendedEarlyGraceMin : (proposal.recommendedEarlyGraceMin != null ? proposal.recommendedEarlyGraceMin : curEarlyGrace), curEarlyGrace, 0, 180, true);
     const allowDualEdit = Boolean(opts.allowDualEdit);
     const applyGrace = opts.applyGrace != null
       ? Boolean(opts.applyGrace)
-      : Boolean(proposal.kind === 'grace_tolerance' || (allowDualEdit && hasGraceOpt && targetGrace !== curGrace));
+      : Boolean(proposal.kind === 'grace_tolerance' || (allowDualEdit && ((hasGraceOpt && targetGrace !== curGrace) || (hasEarlyGraceOpt && targetEarlyGrace !== curEarlyGrace))));
     const applyShift = opts.applyShift != null
       ? Boolean(opts.applyShift)
       : Boolean(proposal.kind === 'shift_timing' || (allowDualEdit && (sDelta !== 0 || eDelta !== 0 || nextStart !== curStart || nextEnd !== curEnd)));
@@ -202949,7 +203835,7 @@
       const capEnd = nextLaterStart ? shiftIsoDateByDays(nextLaterStart, -1) : '2099-12-31';
       const spanEnd = (effTo && effTo < capEnd) ? effTo : capEnd;
       const hasShiftChange = applyShift && (sDelta !== 0 || eDelta !== 0 || (sameStartPrev && (sameStartPrev.start_shift_min || sameStartPrev.end_shift_min)));
-      const hasGraceChange = applyGrace || Boolean(sameStartPrev && sameStartPrev.grace_min != null);
+      const hasGraceChange = applyGrace || Boolean(sameStartPrev && (sameStartPrev.grace_min != null || sameStartPrev.early_leave_grace_min != null));
       const patch = { company: co };
       if ((hasGraceChange || hasShiftChange) && spanEnd >= effFrom) {
         const ruleId = `${adrPrefix}${effFrom.replace(/-/g, '')}`;
@@ -202983,8 +203869,10 @@
         }
         if (applyGrace) {
           item.grace_min = targetGrace;
-        } else if (sameStartPrev && sameStartPrev.grace_min != null) {
-          item.grace_min = sameStartPrev.grace_min;
+          item.early_leave_grace_min = targetEarlyGrace;
+        } else if (sameStartPrev) {
+          if (sameStartPrev.grace_min != null) item.grace_min = sameStartPrev.grace_min;
+          if (sameStartPrev.early_leave_grace_min != null) item.early_leave_grace_min = sameStartPrev.early_leave_grace_min;
         }
         patch.own_date_timings = normalizeDateTimingsList(preservedDates.concat([item]));
       } else {
@@ -203089,6 +203977,9 @@
               baseStartTime: (shObj && shObj.start_time) || it.start_time || '08:00',
               baseEndTime: (shObj && shObj.end_time) || it.end_time || '16:00',
               graceMin: it.grace_min != null ? Number(it.grace_min) : Number((shObj && shObj.grace_min) != null ? shObj.grace_min : 10),
+              earlyGraceMin: it.early_leave_grace_min != null
+                ? Number(it.early_leave_grace_min)
+                : Number((shObj && shObj.early_leave_grace_min) != null ? shObj.early_leave_grace_min : (it.grace_min != null ? it.grace_min : ((shObj && shObj.grace_min) != null ? shObj.grace_min : 10))),
               startShiftMin: Number(it.start_shift_min || 0),
               endShiftMin: Number(it.end_shift_min || 0),
               preObs: it.pre_obs != null ? Number(it.pre_obs) : null,
@@ -203200,9 +204091,11 @@
         currentStart: grp.baseStartTime,
         currentEnd: grp.baseEndTime,
         currentGraceMin: grp.graceMin,
+        currentEarlyGraceMin: grp.earlyGraceMin,
         recommendedStartTime: grp.kind === 'grace_tolerance' ? grp.startTime : nextRecStart,
         recommendedEndTime: grp.kind === 'grace_tolerance' ? grp.endTime : nextRecEnd,
         recommendedGraceMin: nextRecGrace,
+        recommendedEarlyGraceMin: grp.earlyGraceMin,
         obsCount: postStats.obs,
         staffCount: grp.members.length,
         memberNames: grp.members.slice(),
@@ -204396,8 +205289,10 @@
                   <input type="number" id="pgmSickDays" class="mono" min="0" max="60" value="${draftSickDays}" style="width:54px">
                   <button type="button" class="kiosk-qchip mono ${draftWorkDays === 30 ? 'active' : ''}" data-pgm-wd="30">30d</button>
                   <button type="button" class="kiosk-qchip mono ${draftWorkDays === 26 ? 'active' : ''}" data-pgm-wd="26">26d</button>
-                  <span class="muted" style="font-size:11px">Tol(m):</span>
-                  <input type="number" id="pgmGrace" class="mono" min="0" max="60" step="5" value="${draftGrace}" style="width:54px">
+                  <span class="muted" style="font-size:11px">IN (m):</span>
+                  <input type="number" id="pgmGrace" class="mono" min="0" max="180" step="5" value="${draftGrace}" style="width:54px">
+                  <span class="muted" style="font-size:11px">OUT (m):</span>
+                  <input type="number" id="pgmEarlyGrace" class="mono" min="0" max="180" step="5" value="${draftEarlyGrace}" style="width:54px">
                 </div>
               </div>
 
@@ -204594,13 +205489,8 @@
         if ($('pgmOtMaxHrs')) draftOtMaxHrs = finiteClamp($('pgmOtMaxHrs').value, draftOtMaxHrs, 0, 24);
         if ($('pgmVacDays')) draftVacDays = finiteClamp($('pgmVacDays').value, draftVacDays, 0, 90, true);
         if ($('pgmSickDays')) draftSickDays = finiteClamp($('pgmSickDays').value, draftSickDays, 0, 60, true);
-        if ($('pgmGrace')) {
-          const nextGrace = finiteClamp($('pgmGrace').value, draftGrace, 0, 120, true);
-          if (nextGrace !== draftGrace) {
-            draftGrace = nextGrace;
-            draftEarlyGrace = nextGrace;
-          }
-        }
+        if ($('pgmGrace')) draftGrace = finiteClamp($('pgmGrace').value, draftGrace, 0, 180, true);
+        if ($('pgmEarlyGrace')) draftEarlyGrace = finiteClamp($('pgmEarlyGrace').value, draftEarlyGrace, 0, 180, true);
         if ($('pgmSetCoDefaultChk')) draftSetCoDef = Boolean($('pgmSetCoDefaultChk').checked);
         if ($('pgmBackfillChk')) draftBackfill = Boolean($('pgmBackfillChk').checked);
       };
@@ -204611,6 +205501,8 @@
       $('pgmLateMode')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
       $('pgmLateBelowBrk')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
       $('pgmLateHalfDayMin')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmGrace')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
+      $('pgmEarlyGrace')?.addEventListener('change', () => { syncPgmDom(); renderGroupModal(); });
       $('pgmBrkPreset15Btn')?.addEventListener('click', () => {
         syncPgmDom();
         draftLateBrackets = DEFAULT_LATE_BRACKETS.map(b => ({ over_min: b.over_min, penalty_min: b.penalty_min }));
@@ -204675,8 +205567,9 @@
         if (v.late_below_bracket_mode) draftLateBelowBrk = normalizeLateBelowBracketMode(v.late_below_bracket_mode);
         if (v.late_half_day_after_min != null) draftLateHalfDayMin = finiteClamp(v.late_half_day_after_min, draftLateHalfDayMin, 5, 360, true);
         if (v.late_multiplier != null) draftLateMult = finiteClamp(v.late_multiplier, draftLateMult, 1, 5);
-        if (v.grace_min != null) draftGrace = finiteClamp(v.grace_min, draftGrace, 0, 120, true);
-        if (v.early_leave_grace_min != null) draftEarlyGrace = finiteClamp(v.early_leave_grace_min, draftEarlyGrace, 0, 120, true);
+        if (v.grace_min != null) draftGrace = finiteClamp(v.grace_min, draftGrace, 0, 180, true);
+        if (v.early_leave_grace_min != null) draftEarlyGrace = finiteClamp(v.early_leave_grace_min, draftEarlyGrace, 0, 180, true);
+        else if (v.grace_min != null) draftEarlyGrace = draftGrace;
         renderGroupModal();
       }));
       modal.querySelectorAll('[data-pgm-del-ver]').forEach(b => b.addEventListener('click', () => {
@@ -206149,7 +207042,7 @@
                             <div class="stc-foot">
                               <div class="stc-chips">
                                 <span class="att-meta-pill">${esc(formatWorkdaysCompact(st.days))}</span>
-                                <span class="att-meta-pill">${fmtNum(st.grace_min != null ? st.grace_min : 10, 0)}m grace</span>
+                                <span class="att-meta-pill">${esc(formatShiftGracePill(st.grace_min, st.early_leave_grace_min))}</span>
                                 ${hasExc ? `<span class="att-meta-pill is-exc">${esc(excSum)}</span>` : ''}
                               </div>
                               <span class="att-card-foot-end" aria-hidden="true">
@@ -220870,6 +221763,14 @@
       report: _rowAuditReport ? { ok: _rowAuditReport.ok, bad: _rowAuditReport.bad } : null,
       trailsOnDemand: _cloudTrailsOnDemand
     }),
+    mergeCustomRecords: typeof mergeCustomRecords === 'function' ? mergeCustomRecords : null,
+    applyCustomRecordsToSeed: typeof applyCustomRecordsToSeed === 'function' ? applyCustomRecordsToSeed : null,
+    backfillCreditTermsToCustomer: typeof backfillCreditTermsToCustomer === 'function' ? backfillCreditTermsToCustomer : null,
+    syncAttendanceRecordFromPunch: typeof syncAttendanceRecordFromPunch === 'function' ? syncAttendanceRecordFromPunch : null,
+    saveLocalAuthAndRecords: typeof saveLocalAuthAndRecords === 'function' ? saveLocalAuthAndRecords : null,
+    recalcHolidayAttendance: typeof recalcHolidayAttendance === 'function' ? recalcHolidayAttendance : null,
+    healBackfillDamagedAttendanceRows: typeof healBackfillDamagedAttendanceRows === 'function' ? healBackfillDamagedAttendanceRows : null,
+    retireUnusedWorkShift: typeof retireUnusedWorkShift === 'function' ? retireUnusedWorkShift : null,
     waitForSyncIdle: async () => {
       for (let i = 0; i < 12 && syncInFlight; i++) {
         try { await syncInFlight; } catch (_) {}
