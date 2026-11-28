@@ -8591,7 +8591,7 @@
     const rentTotal = lSum('annualTtcUsd');
     const winHdr = formatStmtWindowHeader(ctx, rRows, 'date');
     return `
-      ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · ${winHdr}`)}
+      ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L Rent Roll & Lease Schedule · ${winHdr}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
@@ -8611,7 +8611,7 @@
             <th>Tenant</th>
             <th>Term Window</th>
             <th class="num">Annual Base ($)</th>
-            <th class="num">11% VAT ($)</th>
+            <th class="num">VAT ($)</th>
             <th class="num">Annual Total ($)</th>
           </tr>
         </thead>
@@ -8649,7 +8649,7 @@
             <th>Tenant</th>
             <th>Unit</th>
             <th class="num">Base Rent ($)</th>
-            <th class="num">VAT 11% ($)</th>
+            <th class="num">VAT ($)</th>
             <th class="num">Total ($)</th>
             <th class="num">Balance ($)</th>
           </tr>

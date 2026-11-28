@@ -6406,14 +6406,26 @@
     if (periodVal) fields.ide_period = periodVal;
     const freqVal = findFirstLabel(/^(?:billing\s*frequency|payment\s*frequency|rent\s*frequency|frequency)\s*:\s*(.+)$/i);
     if (freqVal) {
-      if (/month/i.test(freqVal)) fields.ide_freq = 'Monthly';
+      if (/semi[-\s]?annual|half[-\s]?year|bi[-\s]?annual|2x\/yr/i.test(freqVal)) fields.ide_freq = 'Semi-Annual';
+      else if (/month/i.test(freqVal)) fields.ide_freq = 'Monthly';
       else if (/annual|year/i.test(freqVal)) fields.ide_freq = 'Annual';
       else if (/quarter/i.test(freqVal)) fields.ide_freq = 'Quarterly';
     }
     const netRent = findLastMoneyLabel(/^(?:period\s*net\s*rent|net\s*rent(?:\s*ex-?vat)?|base\s*rent|net\s*sale\s*amount|net\s*amount(?:\s*ex-?vat)?|subtotal(?:\s*ex-?vat)?)\s*[:$-]*\s*(.+)$/i);
     if (netRent !== null && netRent > 0) fields.ide_net = String(netRent);
+    const vatRateVal = findFirstLabel(/^(?:vat\s*rate|applicable\s*vat(?:\s*rate)?|vat\s*applicable|tax\s*status|tva\s*rate)\s*:\s*(.+)$/i);
+    if (vatRateVal) {
+      if (/0\s*%|exempt|no\b|non/i.test(vatRateVal)) fields.ide_vat_rate = '0%';
+      else if (/11\s*%|yes\b|oui/i.test(vatRateVal)) fields.ide_vat_rate = '11%';
+    }
     const vatVal = findLastMoneyLabel(/^(?:vat\s*(?:11%|amount)?|tva)\s*[:$-]*\s*(.+)$/i);
-    if (vatVal !== null && vatVal >= 0) fields.ide_vat = String(vatVal);
+    if (vatVal !== null && vatVal >= 0) {
+      fields.ide_vat = String(vatVal);
+      if (!fields.ide_vat_rate && (specKey === 're_leases' || specKey === 're_invoicing')) {
+        if (vatVal === 0 && netRent !== null && netRent > 0) fields.ide_vat_rate = '0%';
+        else if (vatVal > 0) fields.ide_vat_rate = '11%';
+      }
+    }
     const depVal = findLastMoneyLabel(/^(?:security\s*deposit|deposit(?:\s*held)?)\s*[:$-]*\s*(.+)$/i);
     if (depVal !== null) fields.ide_deposit = String(depVal);
     const escVal = findFirstLabel(/^(?:escalation(?:\s*clause)?|rent\s*escalation|indexation)\s*:\s*(.+)$/i);

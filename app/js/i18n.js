@@ -16668,7 +16668,48 @@
       "HW Boost": "سطوع فعلي",
       "boost": "رفع سطوع",
       "Android Kiosk APK Update Needed": "يلزم تحديث تطبيق Android Kiosk APK",
-      "APK Update": "تحديث APK"
+      "APK Update": "تحديث APK",
+      "Period Overview": "ملخص الفترة",
+      "Semi-Annual (2x/yr)": "نصف سنوي (مرتين/سنة)",
+      "Quarterly (4x/yr)": "ربع سنوي (4 مرات/سنة)",
+      "Monthly (12x/yr)": "شهري (12 مرة/سنة)",
+      "Annual (1x/yr)": "سنوي (مرة/سنة)",
+      "11% (Official VAT)": "11% (خاضع للضريبة)",
+      "0% (Exempt)": "0% (معفى)",
+      "Next Payment Date": "تاريخ الاستحقاق القادم",
+      "Next Due:": "الاستحقاق القادم:",
+      "Per-lease VAT treatment (11% Official VAT or 0% Exempt)": "معالجة الضريبة لكل عقد (11% خاضع أو 0% معفى)",
+      "Active Rent Roll, 4235 S.A.L VAT Sequence Audit & Receipts": "سجل الإيجارات النشطة وتدقيق تسلسل ضريبة 4235 ش.م.ل والتحصيلات",
+      "Per-lease 11% VAT compliance from 2025-11-01 on 4235 Company S.A.L": "الالتزام الضريبي 11% لكل عقد اعتباراً من 2025-11-01 على شركة 4235 ش.م.ل",
+      "9-Year stepped commercial escalations · Per-lease 11% VAT compliance from 2025-11-01 on 4235 Company S.A.L": "زيادات تجارية متدرجة على 9 سنوات · الالتزام الضريبي 11% لكل عقد اعتباراً من 2025-11-01 على شركة 4235 ش.م.ل",
+      "0 VAT Invoices": "0 فواتير ضريبة",
+      "0 Swap Flags": "0 تنبيهات تبادل",
+      "No cross-tenant receipt anomalies in period": "لا توجد شذوذات إيصالات بين المستأجرين في الفترة",
+      "No official VAT invoices in selected period": "لا توجد فواتير ضريبية رسمية في الفترة المحددة",
+      "Lease Contract ID *": "معرف عقد الإيجار *",
+      "Property / Building *": "العقار / المبنى *",
+      "Leased Unit / Floor *": "الوحدة المؤجرة / الطابق *",
+      "Tenant Name *": "اسم المستأجر *",
+      "Lease Start Date *": "تاريخ بدء العقد *",
+      "Forward chronology: auto-closes prior Open lease on unit at prev day": "التسلسل الزمني الأمامي: يغلق العقد المفتوح السابق للوحدة في اليوم السابق تلقائياً",
+      "Leave blank for Open evergreen lease (preserves vacancy/gap windows)": "اتركه فارغاً لعقد مفتوح المدة (يحفظ فترات الشغور)",
+      "Billing Frequency": "دورية الفوترة",
+      "Net Period Rent ($) *": "صافي إيجار الفترة ($) *",
+      "Applicable VAT Rate (%)": "نسبة ضريبة القيمة المضافة (%)",
+      "Period Billed Rent ($)": "إيجار الفترة المفوتر ($)",
+      "Security Deposit Held ($)": "تأمين الإيجار المحتجز ($)",
+      "Escalation Schedule": "جدول الزيادة السنوية",
+      "Set evergreen Open lease": "تعيين عقد مفتوح المدة",
+      "Contracted Annual Rent ($)": "الإيجار السنوي المتعاقد عليه ($)",
+      "Invoice # *": "رقم الفاتورة *",
+      "Official Tax Sequence": "التسلسل الضريبي الرسمي",
+      "VAT Amount ($)": "قيمة الضريبة ($)",
+      "Total Billed Rent ($)": "إجمالي الإيجار المفوتر ($)",
+      "Official 4235 Company S.A.L Rent Roll & Lease Schedule": "جدول إيجارات وعقود شركة 4235 ش.م.ل الرسمي",
+      "No official VAT sequence yet": "لا يوجد تسلسل ضريبي رسمي بعد",
+      "Leasing, Rent Roll & Tenant Accounting": "التأجير وسجل الإيجارات ومحاسبة المستأجرين",
+      "Period Rent Invoicing & VAT Sequence Audit": "فوترة الإيجار الدورية وتدقيق التسلسل الضريبي",
+      "Period Rent Invoices & 4235 Company S.A.L VAT Sequence Ledger": "فواتير الإيجار الدورية وسجل تسلسل ضريبة شركة 4235 ش.م.ل"
     },
     fr: {
       "Check this pattern with the staff below, or pay overtime by the exact minute instead of rounding up.": "Vérifiez ce schéma avec le personnel ci-dessous, ou payez les heures sup à la minute exacte au lieu d'arrondir.",
@@ -33318,7 +33359,48 @@
       "HW Boost": "Boost matériel",
       "boost": "boost",
       "Android Kiosk APK Update Needed": "Mise à jour APK Android Kiosk requise",
-      "APK Update": "MàJ APK"
+      "APK Update": "MàJ APK",
+      "Period Overview": "Synthèse de la Période",
+      "Semi-Annual (2x/yr)": "Semestriel (2x/an)",
+      "Quarterly (4x/yr)": "Trimestriel (4x/an)",
+      "Monthly (12x/yr)": "Mensuel (12x/an)",
+      "Annual (1x/yr)": "Annuel (1x/an)",
+      "11% (Official VAT)": "11% (TVA officielle)",
+      "0% (Exempt)": "0% (Exonéré)",
+      "Next Payment Date": "Prochaine date d'échéance",
+      "Next Due:": "Prochaine échéance :",
+      "Per-lease VAT treatment (11% Official VAT or 0% Exempt)": "Traitement TVA par bail (11% TVA officielle ou 0% exonéré)",
+      "Active Rent Roll, 4235 S.A.L VAT Sequence Audit & Receipts": "Registre des loyers actifs, audit TVA 4235 S.A.L et encaissements",
+      "Per-lease 11% VAT compliance from 2025-11-01 on 4235 Company S.A.L": "Conformité TVA 11% par bail dès le 2025-11-01 sur 4235 Company S.A.L",
+      "9-Year stepped commercial escalations · Per-lease 11% VAT compliance from 2025-11-01 on 4235 Company S.A.L": "Indexations commerciales échelonnées sur 9 ans · Conformité TVA 11% par bail dès le 2025-11-01 sur 4235 Company S.A.L",
+      "0 VAT Invoices": "0 facture TVA",
+      "0 Swap Flags": "0 alerte croisée",
+      "No cross-tenant receipt anomalies in period": "Aucune anomalie d'encaissement inter-locataires sur la période",
+      "No official VAT invoices in selected period": "Aucune facture TVA officielle sur la période sélectionnée",
+      "Lease Contract ID *": "ID du contrat de bail *",
+      "Property / Building *": "Bien / Immeuble *",
+      "Leased Unit / Floor *": "Unité louée / Étage *",
+      "Tenant Name *": "Nom du locataire *",
+      "Lease Start Date *": "Date de début du bail *",
+      "Forward chronology: auto-closes prior Open lease on unit at prev day": "Chronologie avant : clôture auto du bail ouvert précédent à la veille",
+      "Leave blank for Open evergreen lease (preserves vacancy/gap windows)": "Laisser vide pour un bail ouvert (préserve les périodes de vacance)",
+      "Billing Frequency": "Fréquence de facturation",
+      "Net Period Rent ($) *": "Loyer net périodique ($) *",
+      "Applicable VAT Rate (%)": "Taux de TVA applicable (%)",
+      "Period Billed Rent ($)": "Loyer facturé par période ($)",
+      "Security Deposit Held ($)": "Dépôt de garantie détenu ($)",
+      "Escalation Schedule": "Barème d'indexation",
+      "Set evergreen Open lease": "Définir un bail ouvert sans échéance",
+      "Contracted Annual Rent ($)": "Loyer annuel contractuel ($)",
+      "Invoice # *": "Facture n° *",
+      "Official Tax Sequence": "Séquence fiscale officielle",
+      "VAT Amount ($)": "Montant TVA ($)",
+      "Total Billed Rent ($)": "Total loyer facturé ($)",
+      "Official 4235 Company S.A.L Rent Roll & Lease Schedule": "État Locatif & Échéancier des Baux Officiel 4235 S.A.L",
+      "No official VAT sequence yet": "Aucune séquence TVA officielle pour l'instant",
+      "Leasing, Rent Roll & Tenant Accounting": "Baux, État Locatif & Comptabilité Locataires",
+      "Period Rent Invoicing & VAT Sequence Audit": "Facturation des Loyers & Audit Séquence TVA",
+      "Period Rent Invoices & 4235 Company S.A.L VAT Sequence Ledger": "Factures de Loyers Périodiques & Registre Séquence TVA 4235 S.A.L"
     }
   };
 
@@ -35229,8 +35311,35 @@
     m = trimmed.match(/^(\d+)\s+code-keyed SKUs across\s+(\d+)\s+warehouses$/i);
     if (m) return lang === 'ar' ? `${m[1]} صنفاً مرمّزاً عبر ${m[2]} مستودعات` : `${m[1]} articles codifiés dans ${m[2]} entrepôts`;
 
-    m = trimmed.match(/^(\d+)\s+Msaytbeh commercial leases\s*\(11% VAT scope\)$/i);
-    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار تجارية في المصيطبة (خاضعة لضريبة 11%)` : `${m[1]} baux commerciaux Msaytbeh (assujettis TVA 11 %)`;
+    m = trimmed.match(/^(\d+)\s+Msaytbeh commercial leases\s*\((?:11% VAT scope|(\d+)\s+VAT\s*·\s*(\d+)\s+exempt)\)$/i);
+    if (m) {
+      if (m[2] != null) return lang === 'ar' ? `${m[1]} عقود إيجار تجارية في المصيطبة (${m[2]} خاضعة لضريبة القيمة المضافة · ${m[3]} معفاة)` : `${m[1]} baux commerciaux Msaytbeh (${m[2]} soumis TVA · ${m[3]} exonérés)`;
+      return lang === 'ar' ? `${m[1]} عقود إيجار تجارية في المصيطبة (خاضعة لضريبة 11%)` : `${m[1]} baux commerciaux Msaytbeh (assujettis TVA 11 %)`;
+    }
+
+    m = trimmed.match(/^Chrono\s+Lease\s+([^\s(]+)\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `عقد زمني ${m[1]} (${m[2]})` : `Bail chronologique ${m[1]} (${m[2]})`;
+
+    m = trimmed.match(/^(\d+)\s+official VAT invoices\s*·\s*(\d+)\s+sequence gaps?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فاتورة ضريبية رسمية · ${m[2]} فجوات تسلسل` : `${m[1]} factures TVA officielles · ${m[2]} écarts de séquence`;
+
+    m = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+cross-tenant receipt check\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فحص إيصال متقاطع بين المستأجرين (${m[2]})` : `${m[1]} contrôle d'encaissement inter-locataires (${m[2]})`;
+
+    m = trimmed.match(/^Period rent invoices\s*·\s*Per-lease(?:\s+11%)?\s+VAT breakdown on 4235 Company S.A.L\s*·\s*(.+)$/i);
+    if (m) {
+      const tail = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `فواتير الإيجار الدورية · تفصيل ض.ق.م لكل عقد على شركة 4235 ش.م.ل · ${tail}` : `Factures de loyers périodiques · Détail TVA par bail 4235 S.A.L · ${tail}`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+sequence gaps?\s*\(([^)]+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${m[1]} فجوات تسلسل (${inner})` : `${m[1]} écarts de séquence (${inner})`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+plots\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقارات (${m[2]})` : `${m[1]} parcelles (${m[2]})`;
 
     m = trimmed.match(/^(\d+)\s+active & completed work orders$/i);
     if (m) return lang === 'ar' ? `${m[1]} أوامر عمل نشطة ومنجزة` : `${m[1]} ordres de travaux actifs et terminés`;
@@ -35255,6 +35364,18 @@
 
     m = trimmed.match(/^Net\s+(\$[\d.,]+)\s*\+\s*11% VAT\s+(\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `الصافي ${m[1]} + ضريبة 11% ${m[2]}` : `Net ${m[1]} + TVA 11 % ${m[2]}`;
+
+    m = trimmed.match(/^Base\s+(\$[\d.,]+)\s*\+\s*(?:11%\s+)?VAT\s+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `الأساس ${m[1]} + الضريبة ${m[2]}` : `Base ${m[1]} + TVA ${m[2]}`;
+
+    m = trimmed.match(/^Next Due:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `الاستحقاق القادم: ${m[1]}` : `Prochaine échéance : ${m[1]}`;
+
+    m = trimmed.match(/^Seq\s+(#\d+(?:\.\.#\d+)?)\s*·\s*(?:(\d+)\s+sequence gaps?|Gaps?\s+(.+))$/i);
+    if (m) {
+      if (m[2] != null) return lang === 'ar' ? `تسلسل ${m[1]} · ${m[2]} فجوات تسلسل` : `Séq ${m[1]} · ${m[2]} écarts de séquence`;
+      return lang === 'ar' ? `تسلسل ${m[1]} · فجوات ${m[3]}` : `Séq ${m[1]} · Écarts ${m[3]}`;
+    }
 
     m = trimmed.match(/^Net HT\s+(\$[\d.,]+)\s+across\s+(\d+)\s+resort\(s\)$/i);
     if (m) return lang === 'ar' ? `الصافي دون ضريبة ${m[1]} عبر ${m[2]} منتجعات` : `Net HT ${m[1]} sur ${m[2]} resort(s)`;
@@ -36303,8 +36424,13 @@
     m = trimmed.match(/^Realized gross margin\s+(\$[\d.,]+)\s*\(([^)]+)\s+of sales\) against\s+(\$[\d.,]+)\s+capitalized landed cost\s*·\s*(\d+)\s+invoices below\s+([\d.,]+%)\s+floor\.?$/i);
     if (m) return lang === 'ar' ? `مجمل الربح المحقق ${m[1]} (${m[2]} من المبيعات) مقابل ${m[3]} تكلفة واصلة مرسملة · ${m[4]} فواتير دون الحد الأدنى (${m[5]}).` : `Marge brute réalisée ${m[1]} (${m[2]} des ventes) sur ${m[3]} de coût rendu · ${m[4]} factures sous le seuil de ${m[5]}.`;
 
-    m = trimmed.match(/^(\d+)\s+lease contracts within 90-day renewal window across\s+(\$[\d.,]+)\s+contracted annual rent roll\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار ضمن نافذة التجديد (90 يوماً) من إجمالي إيجارات سنوية متعاقد عليها بقيمة ${m[2]}.` : `${m[1]} baux dans la fenêtre de renouvellement à 90 jours sur ${m[2]} de loyers annuels contractuels.`;
+    m = trimmed.match(/^(\d+)\s+lease contracts? within\s+(\d+)-day renewal window across\s+(\$[\d.,]+)\s+contracted annual rent roll(?:\s*·\s*(\d+)\s+upcoming stepped escalations? within 180d)?\.?$/i);
+    if (m) {
+      const baseAr = `${m[1]} عقود إيجار ضمن نافذة التجديد (${m[2]} يوماً) من إجمالي إيجارات سنوية متعاقد عليها بقيمة ${m[3]}`;
+      const baseFr = `${m[1]} baux dans la fenêtre de renouvellement à ${m[2]} jours sur ${m[3]} de loyers annuels contractuels`;
+      if (m[4]) return lang === 'ar' ? `${baseAr} · ${m[4]} زيادات إيجار متدرجة قادمة خلال 180 يوماً.` : `${baseFr} · ${m[4]} indexation(s) par paliers sous 180j.`;
+      return lang === 'ar' ? `${baseAr}.` : `${baseFr}.`;
+    }
 
     m = trimmed.match(/^([\d/]+)\s+building units occupied\s*\(([^)]+)\)\s*·\s*(\d+)\s+vacant\/fit-out units\s*·\s*(\d+)\s+overlapping active leases\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} وحدة عقارية مشغولة (${m[2]}) · ${m[3]} وحدات شاغرة/قيد التجهيز · ${m[4]} عقود متداخلة.` : `${m[1]} unités occupées (${m[2]}) · ${m[3]} unités vacantes/en travaux · ${m[4]} chevauchements de baux.`;
