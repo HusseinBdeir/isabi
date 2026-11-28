@@ -905,10 +905,15 @@ console.log('\n[16. A database restore: the cloud back at an earlier state]');
   ok('16b. its copy fails the digest check on the next answer and it reads the whole document: no entry of the lost timeline is kept, the new one is there',
     r.refetched === true && r.kind === 'whole' && !has('st-wtc-lost-timeline') && has('st-wtc-new-timeline') && firstDiff(r.doc, await wholeNow(W.tok.owner)) === '' && dev.g.strikes() === 1,
     { refetched: r.refetched, kind: r.kind, lost: has('st-wtc-lost-timeline'), fresh: has('st-wtc-new-timeline'), strikes: dev.g.strikes() });
-  // The report of that failure comes from a whole-store seat: it switches partial answers off. Put them back on.
-  await dev.read();
-  ok('16c. a whole-store seat\'s report of that failure is recorded and switches partial answers off (until the counter is reset)', Number(W.meta().audit_bad) === 1 && /apply sums/.test(String(W.meta().audit_note)), W.meta());
-  W.d1.db.prepare("UPDATE store_row_meta SET audit_bad = 0, audit_note = NULL WHERE doc_key = 'mfg_web_store'").run();
+  // The copy that could not follow is told to the cloud as that, not as a failed comparison: it is noted, the kill
+  // switch stays untouched and the device carries on with partial answers from its fresh copy.
+  await W.legacy.patch({ lbpFxRate: 90650, lbpFxUpdatedAt: nextTs() });
+  const rNext = await dev.read();
+  const m16 = W.meta();
+  ok('16c. that failure is noted by the cloud (kind "apply") and not counted as a failed comparison: partial answers stay on for every device',
+    Number(m16.audit_bad) === 0 && /"kind":"apply"/.test(String(m16.audit_note)) && /apply sums/.test(String(m16.audit_note)) && r.json.rowSyncV1 === true && rNext.kind === 'partial' && dev.g.report() === null,
+    { m16, kind: rNext.kind });
+  W.d1.db.prepare("UPDATE store_row_meta SET audit_note = NULL WHERE doc_key = 'mfg_web_store'").run();
   W.d1.exec("DROP TABLE zz_kv; DROP TABLE zz_idx; DROP TABLE zz_meta;");
 }
 
@@ -1020,6 +1025,40 @@ console.log('\n[17. Scoped seats and the comparison; repeated ids; the mode valu
   // The digest the device checks is the one the cloud computes: same function, same text.
   const probe = ['', 'a', '{"id":"x","n":1.5,"s":"éم😀"}', 'x'.repeat(70000)];
   ok('17k. the device and the cloud hash a text to the same pair', probe.every(t => sameList(RowSyncClient.hashPair(t), hashPair(t))), probe.map(t => [RowSyncClient.hashPair(t), hashPair(t)]).slice(0, 2));
+
+  // A top-level part that does not hash to what the cloud says it hashes to is refused.
+  const tp = new Device(W, W.tok.owner, 'owner-top');
+  await tp.read();
+  await W.legacy.patch({ lbpFxRate: 91300, lbpFxUpdatedAt: nextTs() });
+  const rawTop = (await W.api('sync', { token: W.tok.owner, body: { op: 'get_mfg', doc: DOC_KEY, noTrails: true, rowSync: RowSyncClient.request(tp.g.mirror(), {}) } })).json;
+  const goodCopy = RowSyncClient.seed(RowSyncClient.toDoc(tp.g.mirror()), Object.assign({}, rawTop.rowSync, { rev: tp.g.mirror().rev, sums: tp.last.json.rowSync.sums, topEtags: tp.g.mirror().topEtags }), 'owner-top', Date.now());
+  const bent = JSON.parse(JSON.stringify(rawTop.rowDelta));
+  bent.top.lbpFxRate = 1;
+  const resBent = goodCopy ? RowSyncClient.apply(goodCopy, bent, rawTop.rowSync) : null;
+  const resTrue = RowSyncClient.apply(tp.g.mirror(), rawTop.rowDelta, rawTop.rowSync);
+  ok('17k2. a top-level part altered on the way is refused by the device; the unaltered answer is accepted',
+    Boolean(rawTop.rowDelta) && rawTop.rowDelta.top.lbpFxRate === 91300 && resBent && resBent.ok === false && resBent.reason === 'top' && resTrue && resTrue.ok === true, { resBent, resTrue });
+
+  // More than the limit changed, all of it another company's: the scoped seat's answer must not show it.
+  const sc2 = new Device(W, W.tok.wtc, 'wtc-volume');
+  const own2 = new Device(W, W.tok.owner, 'owner-volume');
+  await sc2.read();
+  await own2.read();
+  const stV = await W.stored();
+  const docV = JSON.parse(JSON.stringify(stV.doc));
+  for (let i = 0; i < ROW_SYNC_MAX_DELTA_ROWS + 60; i++) docV.customRecords.sales_tickets.push({ id: `st-bbc-vol-${i}`, company: 'BBConstruction', date: '2026-11-27', customer: 'ZzVol', total: i, notes: 'BBC-ONLY-MARKER', source: 'app' });
+  const tsV = nextTs();
+  docV.updatedAt = tsV;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docV), tsV, 'system-reconcile');
+  const rScV = await sc2.read();
+  const rOwnV = await own2.read();
+  ok('17m. when more entries than the limit changed and none is the scoped seat\'s, it gets an ordinary partial answer with nothing in it; a whole-store seat gets the whole document',
+    rScV.kind === 'partial' && !rScV.refetched && deltaIds(rScV.delta).rows.length === 0 && deltaIds(rScV.delta).gone.length === 0 && !rScV.txt.includes('st-bbc-vol-') && !rScV.txt.includes('BBC-ONLY-MARKER')
+      && rOwnV.kind === 'whole' && firstDiff(rScV.doc, await wholeNow(W.tok.wtc)) === '', { sc: rScV.kind, own: rOwnV.kind, ids: deltaIds(rScV.delta) });
+  docV.customRecords.sales_tickets = docV.customRecords.sales_tickets.filter(x => !String(x.id).startsWith('st-bbc-vol-'));
+  const tsV2 = nextTs();
+  docV.updatedAt = tsV2;
+  await writeEdgeKvDoc(W.d1, DOC_KEY, JSON.stringify(docV), tsV2, 'system-reconcile');
 
   // A table key with a line break in it is indexed under its own name.
   const stN = await W.stored();

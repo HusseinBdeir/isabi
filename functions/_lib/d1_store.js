@@ -48,6 +48,9 @@ import { invalidateMapsUsageMemCache, MAPS_QUOTA_RULE_IDS } from './google_maps.
 import {
   ROW_SYNC_AUDIT_AFTER,
   ROW_SYNC_AUDIT_TARGET,
+  ROW_SYNC_MAX_DELTA_ROWS,
+  ROW_SYNC_SCOPED_SCAN_ROWS,
+  rowAuditReportCounts,
   beginRowIndexPatch,
   buildRowDelta,
   elideTrailsInDoc,
@@ -10876,7 +10879,12 @@ async function shapeMfgStoreRead(db, request, session, body, storedDoc, scopedDo
   let meta = null;
   let metaKnown = false;
   try {
-    if (req && headRow.partsInStep !== false) cur = await ensureRowIndexCurrent(db, storedDoc, headRow, reqRev);
+    // A whole-store seat is cut off at the limit on every changed line. Any other seat's lines are read well past
+    // it and the limit is applied later to what the seat is actually sent (completeMfgStoreShape): whether it gets a
+    // partial answer must not depend on how much other companies changed.
+    if (req && headRow.partsInStep !== false) {
+      cur = await ensureRowIndexCurrent(db, storedDoc, headRow, reqRev, seesAll ? ROW_SYNC_MAX_DELTA_ROWS : ROW_SYNC_SCOPED_SCAN_ROWS);
+    }
   } catch (err) {
     console.error(`[row-sync] index unavailable: ${String((err && err.message) || err).slice(0, 200)}`);
     cur = null;
@@ -10901,7 +10909,7 @@ async function shapeMfgStoreRead(db, request, session, body, storedDoc, scopedDo
       // comparisons, so only a seat that sees the whole store is believed. Any other seat's report is dropped.
       if (seesAll) {
         await noteRowAuditResult(db, req.auditResult, cur.meta);
-        if (req.auditResult.ok === false && String(req.auditResult.epoch || '') === cur.meta.epoch) cur.meta.audit_bad += 1;
+        if (rowAuditReportCounts(req.auditResult) && String(req.auditResult.epoch || '') === cur.meta.epoch) cur.meta.audit_bad += 1;
       }
       // The device keeps handing its result in until it sees this.
       out.fields.rowAuditNoted = true;
@@ -10941,7 +10949,9 @@ function completeMfgStoreShape(out) {
     const couldSee = seesAll ? null : (kind, table, stub) => (
       kind === 'kioskPunches' ? scopedSeatSeesKioskPunch(session, stub) : scopedSeatSeesCrRow(session, table, stub)
     );
-    const delta = canDelta ? buildRowDelta(out.doc, cur.changed, req.topEtags, reqRev, nowEtags, couldSee) : null;
+    let delta = canDelta ? buildRowDelta(out.doc, cur.changed, req.topEtags, reqRev, nowEtags, couldSee) : null;
+    // More than the limit of the seat's own entries changed: the whole document is the lighter answer.
+    if (delta && delta.size > ROW_SYNC_MAX_DELTA_ROWS) delta = null;
     out.fields.rowSyncV1 = true;
     out.fields.rowSync = {
       epoch: cur.meta.epoch,

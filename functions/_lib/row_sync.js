@@ -22,8 +22,14 @@
 export const ROW_SYNC_DOC_KEY = 'mfg_web_store';
 // More changed entries than this since the device's revision: send the whole document instead.
 export const ROW_SYNC_MAX_DELTA_ROWS = 1500;
+// A seat that does not see the whole store is not told "too many changes" on the count of every company's changes
+// (it could measure them that way): its changed lines are read up to this many, and the limit above is then applied
+// to what the seat would actually be sent.
+export const ROW_SYNC_SCOPED_SCAN_ROWS = 20000;
 // Deleted-entry lines are kept for this many revisions; a device further behind gets the whole document.
 export const ROW_SYNC_TOMBSTONE_KEEP_REVS = 5000;
+// The clean-up of old deleted-entry lines runs on one revision in this many (it scans the index).
+const ROW_SYNC_PRUNE_EVERY = 100;
 // Devices that see the whole store compare their rebuilt copy with the whole document until this many comparisons
 // came back clean.
 export const ROW_SYNC_AUDIT_TARGET = 150;
@@ -321,8 +327,13 @@ export function buildRowDelta(scopedDoc, changed, reqTopEtags, baseRev, nowTopEt
   const topGone = Object.keys(have).filter(k => !Object.prototype.hasOwnProperty.call(nowEtags, k) && !isRowSetTopKey(k));
   // A row set the document no longer has at all (an emptied punch list, a dropped table) cannot be told from its
   // index lines alone once those are pruned, so the list of sets present rides along and the device drops the rest.
+  let size = rows.kioskPunches.length + gone.kioskPunches.length;
+  for (const k of Object.keys(rows.customRecords)) size += rows.customRecords[k].length;
+  for (const k of Object.keys(gone.customRecords)) size += gone.customRecords[k].length;
   return {
     base,
+    // Entries and gone ids in this answer (what the session is actually sent).
+    size,
     rows,
     gone,
     top,
@@ -483,10 +494,10 @@ function metaStmt(db) {
   ).bind(ROW_SYNC_DOC_KEY);
 }
 
-function changedStmt(db, sinceRev) {
+function changedStmt(db, sinceRev, maxRows) {
   return db.prepare(
     'SELECT bucket, row_id, rev, deleted, vis, pvis, vrev FROM store_row_index WHERE doc_key = ?1 AND rev > ?2 ORDER BY rev DESC, bucket ASC, row_id ASC LIMIT ?3'
-  ).bind(ROW_SYNC_DOC_KEY, sinceRev, ROW_SYNC_MAX_DELTA_ROWS + 1);
+  ).bind(ROW_SYNC_DOC_KEY, sinceRev, maxRows + 1);
 }
 
 function normMeta(m) {
@@ -551,7 +562,7 @@ function indexWriteStmts(db, lines, anchor, rev = null) {
 // Deleted-entry lines older than the keep window go, and the floor a device's revision must reach moves up with them.
 function pruneStmts(db, anchor, rev) {
   const floor = rev - ROW_SYNC_TOMBSTONE_KEEP_REVS;
-  if (floor <= 0) return [];
+  if (floor <= 0 || rev % ROW_SYNC_PRUNE_EVERY !== 0) return [];
   return [
     db.prepare(
       `DELETE FROM store_row_index WHERE doc_key = ?1 AND deleted = 1 AND rev < ?2
@@ -597,9 +608,9 @@ async function readHeadTs(db) {
 }
 
 // Reader side. Returns { meta, changed } for the document read as `headRow` (`changed` only when `sinceRev` is a
-// number: entries whose revision is above it, newest first, null when there are too many), or null when the index
-// cannot be brought in line with that read (the document moved on meanwhile, or the tables are unavailable).
-export async function ensureRowIndexCurrent(db, storedDoc, headRow, sinceRev = null) {
+// number: entries whose revision is above it, newest first, null when there are more than `maxRows`), or null when
+// the index cannot be brought in line with that read (the document moved on meanwhile, or the tables are unavailable).
+export async function ensureRowIndexCurrent(db, storedDoc, headRow, sinceRev = null, maxRows = ROW_SYNC_MAX_DELTA_ROWS) {
   const headTs = headRow ? String(headRow.updated_at || '') : '';
   if (!db || !storedDoc || typeof storedDoc !== 'object' || !headTs) return null;
   await ensureRowSyncSchema(db);
@@ -608,10 +619,10 @@ export async function ensureRowIndexCurrent(db, storedDoc, headRow, sinceRev = n
   const wantChanged = Number.isInteger(sinceRev) && sinceRev >= 0;
   const readBoth = async () => {
     if (!wantChanged) return { meta: normMeta(await metaStmt(db).first()), changed: null };
-    const res = await db.batch([metaStmt(db), changedStmt(db, sinceRev)]);
+    const res = await db.batch([metaStmt(db), changedStmt(db, sinceRev, maxRows)]);
     const metaRow = res && res[0] && Array.isArray(res[0].results) ? res[0].results[0] : null;
     const list = res && res[1] && Array.isArray(res[1].results) ? res[1].results : [];
-    return { meta: normMeta(metaRow), changed: list.length > ROW_SYNC_MAX_DELTA_ROWS ? null : list };
+    return { meta: normMeta(metaRow), changed: list.length > maxRows ? null : list };
   };
   let cur = await readBoth();
   if (cur.meta && cur.meta.doc_ts === anchor) return cur;
@@ -684,9 +695,17 @@ export async function finishRowIndexPatch(db, begun, storedNextDoc, newTs, newTe
   return true;
 }
 
-// A device's report of comparing its rebuilt copy with the whole document sent in the same answer. The caller hands
-// in reports from sessions that see the whole store only: one failed report switches partial answers off for every
-// device, so a company-scoped or kiosk seat must not be able to write one (or to end the comparisons early).
+// A failed report that switches partial answers off: a copy compared with the whole document of the same answer and
+// found different. A copy that merely could not follow an answer (`apply`: it failed the digest check, as one held
+// through a database restore does) is the fallback working: the device has already read the whole document.
+export function rowAuditReportCounts(result) {
+  return Boolean(result && typeof result === 'object' && result.ok === false && result.apply !== true);
+}
+
+// A device's report of comparing its rebuilt copy with the whole document sent in the same answer, or of a copy that
+// could not follow an answer. The caller hands in reports from sessions that see the whole store only: one failed
+// comparison switches partial answers off for every device, so a company-scoped or kiosk seat must not be able to
+// write one (or to end the comparisons early). A copy that could not follow is noted, never counted.
 export async function noteRowAuditResult(db, result, meta) {
   if (!db || !meta || !result || typeof result !== 'object') return;
   if (String(result.epoch || '') !== meta.epoch) return;
@@ -696,14 +715,19 @@ export async function noteRowAuditResult(db, result, meta) {
     return;
   }
   if (result.ok === false) {
+    const counts = rowAuditReportCounts(result);
     const note = JSON.stringify({
       at: new Date().toISOString(),
+      kind: counts ? 'compare' : 'apply',
       rev: Number(result.rev) || 0,
       rows: Number(result.rows) || 0,
       bad: Number(result.bad) || 0,
       sample: String(result.sample || '').slice(0, 200)
     });
-    await db.prepare('UPDATE store_row_meta SET audit_bad = audit_bad + 1, audit_note = ?3 WHERE doc_key = ?1 AND epoch = ?2')
-      .bind(ROW_SYNC_DOC_KEY, meta.epoch, note).run();
+    await db.prepare(
+      counts
+        ? 'UPDATE store_row_meta SET audit_bad = audit_bad + 1, audit_note = ?3 WHERE doc_key = ?1 AND epoch = ?2'
+        : 'UPDATE store_row_meta SET audit_note = ?3 WHERE doc_key = ?1 AND epoch = ?2 AND audit_bad = 0'
+    ).bind(ROW_SYNC_DOC_KEY, meta.epoch, note).run();
   }
 }
